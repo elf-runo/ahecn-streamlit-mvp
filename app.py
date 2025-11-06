@@ -89,6 +89,35 @@ SPECIALTIES = ["Obstetrics","Paediatrics","Cardiology","Neurology","Orthopaedics
 INTERVENTIONS = ["CathLab","OBGYN_OT","CT","MRI","Dialysis","Thrombolysis","Ventilator","BloodBank","OR","Neurosurgery"]
 
 def default_facilities():
+    # ---- Schema safety helpers ----
+REQ_CAPS = ["ICU","Ventilator","BloodBank","OR","CT","Thrombolysis","OBGYN_OT","CathLab","Dialysis","Neurosurgery"]
+
+def normalize_facility(f):
+    f = dict(f)  # shallow copy
+    f.setdefault("name", "Unknown Facility")
+    f.setdefault("type", "PHC")
+    f.setdefault("ICU_open", 0)
+    f.setdefault("acceptanceRate", 0.75)
+    f.setdefault("lat", 25.58)
+    f.setdefault("lon", 91.89)
+
+    # nested dicts
+    caps = f.get("caps", {}) or {}
+    f["caps"] = {k: int(bool(caps.get(k, 0))) for k in REQ_CAPS}
+
+    specs = f.get("specialties", {}) or {}
+    f["specialties"] = {s: int(bool(specs.get(s, 0))) for s in SPECIALTIES}
+
+    hi = f.get("highend", {}) or {}
+    f["highend"] = {i: int(bool(hi.get(i, 0))) for i in INTERVENTIONS}
+    return f
+
+def facilities_df():
+    """Flat, guaranteed columns for the admin table."""
+    fac = [normalize_facility(x) for x in st.session_state.facilities]
+    rows = [{"name": x["name"], "type": x["type"], "ICU_open": x["ICU_open"], "acceptanceRate": x["acceptanceRate"]} for x in fac]
+    return pd.DataFrame(rows)
+
     rng=random.Random(17)
     names=[
         "Civil Hospital Shillong","NEIGRIHMS","Nazareth Hospital","Ganesh Das Maternal & Child",
@@ -114,6 +143,8 @@ def default_facilities():
 if "facilities" not in st.session_state: st.session_state.facilities = default_facilities()
 if "referrals"  not in st.session_state: st.session_state.referrals = []
 if "active_fac" not in st.session_state: st.session_state.active_fac = st.session_state.facilities[0]["name"]
+# Ensure facilities schema is consistent even if older JSONs were loaded
+st.session_state.facilities = [normalize_facility(x) for x in st.session_state.facilities]
 
 # ---------------------- UI ----------------------
 st.title("AHECN – Streamlit MVP v1.7 (East Khasi Hills)")
@@ -403,20 +434,25 @@ with tabs[4]:
             out=pd.DataFrame(st.session_state.referrals)
             st.download_button("Download CSV", data=out.to_csv(index=False), file_name="ahecn_referrals.csv", mime="text/csv")
 
-    upload = st.file_uploader("Import JSON", type=["json"])
-    if upload:
-        data=json.load(upload)
-        st.session_state.referrals = data.get("referrals", [])
-        st.session_state.facilities = data.get("facilities", st.session_state.facilities)
-        st.success("Imported")
+upload = st.file_uploader("Import JSON", type=["json"])
+if upload:
+    data = json.load(upload)
+    st.session_state.referrals = data.get("referrals", [])
+    imported_fac = data.get("facilities", st.session_state.facilities)
+    st.session_state.facilities = [normalize_facility(x) for x in imported_fac]
+    st.success("Imported (schema normalized)")
+
 
 # ======== Facility Admin ========
 with tabs[5]:
     st.subheader("Facility capabilities & readiness (edit live)")
-    fac_df = pd.DataFrame(st.session_state.facilities)
-    st.dataframe(fac_df[["name","type","ICU_open","acceptanceRate"]], use_container_width=True)
-    target = st.selectbox("Select facility", [f["name"] for f in st.session_state.facilities])
-    F = [f for f in st.session_state.facilities if f["name"]==target][0]
+fac_df = facilities_df()
+st.dataframe(fac_df, use_container_width=True)
+
+target = st.selectbox("Select facility", [f["name"] for f in st.session_state.facilities])
+# pull normalized record for editing
+F = next(f for f in st.session_state.facilities if f["name"] == target)
+
     c1,c2 = st.columns(2)
     with c1:
         new_icu = st.number_input("ICU_open", 0, 30, value=int(F["ICU_open"]))
