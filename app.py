@@ -231,7 +231,7 @@ with tabs[0]:
     resus_done = [r for i,r in enumerate(RESUS) if cols[i%5].checkbox(r, False)]
 
     st.subheader("Reason(s) for referral + capabilities needed")
-    c1,c2 = st.columns(2)
+    
     with c1:
         ref_beds  = st.checkbox("No ICU/bed available",False)
         ref_tests = st.checkbox("Special intervention/test required",True)
@@ -408,7 +408,7 @@ with tabs[3]:
         st.caption("No data")
 
     st.markdown("### Patterns & Workload")
-    c1,c2 = st.columns(2)
+    
     # referral reasons
     reasons = pd.Series([("Special test" if r["reasons"].get("specialTest") else "No special test") for r in data]).value_counts()
     c1.bar_chart(reasons, use_container_width=True)
@@ -498,27 +498,34 @@ if upload:
 # ======== Facility Admin ========
 with tabs[5]:
     st.subheader("Facility capabilities & readiness (edit live)")
-fac_df = facilities_df()
-st.dataframe(fac_df, use_container_width=True)
 
-target = st.selectbox("Select facility", [f["name"] for f in st.session_state.facilities])
-# pull normalized record for editing
-F = next(f for f in st.session_state.facilities if f["name"] == target)
+    # robust table (uses normalized schema)
+    fac_df = facilities_df()
+    st.dataframe(fac_df, use_container_width=True)
 
+    # pick a facility to edit
+    target = st.selectbox("Select facility", [f["name"] for f in st.session_state.facilities])
+    # pull the normalized record for editing
+    F = next(f for f in st.session_state.facilities if f["name"] == target)
 
-    c1,c2 = st.columns(2)
+    # editable fields: ICU_open + acceptance rate
+    c1, c2 = st.columns(2)
     with c1:
         new_icu = st.number_input("ICU_open", 0, 30, value=int(F["ICU_open"]))
         new_acc = st.slider("Acceptance rate", 0.0, 1.0, value=float(F["acceptanceRate"]), step=0.01)
     with c2:
         st.caption("Toggle key specialties")
         for s in SPECIALTIES:
-            F["specialties"][s] = st.checkbox(s, value=bool(F["specialties"].get(s,0)), key=f"spec_{s}")
+            F["specialties"][s] = st.checkbox(s, value=bool(F["specialties"].get(s, 0)), key=f"spec_{s}")
+
     st.caption("High-end interventional equipment")
     hi_cols = st.columns(5)
-    for i,cap in enumerate(INTERVENTIONS):
-        F["highend"][cap] = hi_cols[i%5].checkbox(cap, value=bool(F["highend"].get(cap,0)), key=f"hi_{cap}")
+    for i, cap in enumerate(INTERVENTIONS):
+        F["highend"][cap] = hi_cols[i % 5].checkbox(cap, value=bool(F["highend"].get(cap, 0)), key=f"hi_{cap}")
+
     if st.button("Update facility"):
-        F["ICU_open"]=int(new_icu); F["acceptanceRate"]=float(new_acc)
+        F["ICU_open"] = int(new_icu)
+        F["acceptanceRate"] = float(new_acc)
         st.success("Facility updated")
+
 
