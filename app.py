@@ -89,7 +89,28 @@ SPECIALTIES = ["Obstetrics","Paediatrics","Cardiology","Neurology","Orthopaedics
 INTERVENTIONS = ["CathLab","OBGYN_OT","CT","MRI","Dialysis","Thrombolysis","Ventilator","BloodBank","OR","Neurosurgery"]
 
 def default_facilities():
-    # ---- Schema safety helpers ----
+    rng = random.Random(17)
+    names = [
+        "Civil Hospital Shillong","NEIGRIHMS","Nazareth Hospital","Ganesh Das Maternal & Child",
+        "Shillong Polyclinic & Trauma Center","Smit Community Health Centre","Pynursla CHC",
+        "Mawsynram PHC","Sohra Civil Hospital","Madansynram CHC","Jowai (ref) Hub","Mawlai CHC"
+    ]
+    fac = []
+    for n in names:
+        lat, lon = rand_geo(rng)
+        caps = {c:int(rng.random()<0.7) for c in ["ICU","Ventilator","BloodBank","OR","CT","Thrombolysis","OBGYN_OT","CathLab","Dialysis","Neurosurgery"]}
+        spec = {s:int(rng.random()<0.6) for s in SPECIALTIES}
+        hi   = {i:int(rng.random()<0.5) for i in INTERVENTIONS}
+        fac.append(dict(
+            name=n, lat=lat, lon=lon,
+            ICU_open=rng.randint(0,4),
+            acceptanceRate=round(0.7+rng.random()*0.25,2),
+            caps=caps, specialties=spec, highend=hi,
+            type=rng.choice(["PHC","CHC","District Hospital","Tertiary"])
+        ))
+    return fac  # ← keep this INSIDE the function
+
+# ---- Schema safety helpers (AT COLUMN 0; do NOT indent) ----
 REQ_CAPS = ["ICU","Ventilator","BloodBank","OR","CT","Thrombolysis","OBGYN_OT","CathLab","Dialysis","Neurosurgery"]
 
 def normalize_facility(f):
@@ -100,23 +121,20 @@ def normalize_facility(f):
     f.setdefault("acceptanceRate", 0.75)
     f.setdefault("lat", 25.58)
     f.setdefault("lon", 91.89)
-
     # nested dicts
     caps = f.get("caps", {}) or {}
     f["caps"] = {k: int(bool(caps.get(k, 0))) for k in REQ_CAPS}
-
     specs = f.get("specialties", {}) or {}
     f["specialties"] = {s: int(bool(specs.get(s, 0))) for s in SPECIALTIES}
-
     hi = f.get("highend", {}) or {}
     f["highend"] = {i: int(bool(hi.get(i, 0))) for i in INTERVENTIONS}
     return f
 
 def facilities_df():
-    """Flat, guaranteed columns for the admin table."""
     fac = [normalize_facility(x) for x in st.session_state.facilities]
     rows = [{"name": x["name"], "type": x["type"], "ICU_open": x["ICU_open"], "acceptanceRate": x["acceptanceRate"]} for x in fac]
     return pd.DataFrame(rows)
+
 
     rng=random.Random(17)
     names=[
@@ -143,8 +161,9 @@ def facilities_df():
 if "facilities" not in st.session_state: st.session_state.facilities = default_facilities()
 if "referrals"  not in st.session_state: st.session_state.referrals = []
 if "active_fac" not in st.session_state: st.session_state.active_fac = st.session_state.facilities[0]["name"]
-# Ensure facilities schema is consistent even if older JSONs were loaded
+# Normalize after init/import so schema never breaks
 st.session_state.facilities = [normalize_facility(x) for x in st.session_state.facilities]
+
 
 # ---------------------- UI ----------------------
 st.title("AHECN – Streamlit MVP v1.7 (East Khasi Hills)")
@@ -443,6 +462,7 @@ if upload:
     st.success("Imported (schema normalized)")
 
 
+
 # ======== Facility Admin ========
 with tabs[5]:
     st.subheader("Facility capabilities & readiness (edit live)")
@@ -452,6 +472,7 @@ st.dataframe(fac_df, use_container_width=True)
 target = st.selectbox("Select facility", [f["name"] for f in st.session_state.facilities])
 # pull normalized record for editing
 F = next(f for f in st.session_state.facilities if f["name"] == target)
+
 
     c1,c2 = st.columns(2)
     with c1:
