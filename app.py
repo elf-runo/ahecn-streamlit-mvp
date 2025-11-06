@@ -7,6 +7,7 @@ from datetime import datetime
 import pandas as pd
 import numpy as np
 import streamlit as st
+import pydeck as pdk
 
 st.set_page_config(page_title="AHECN – Streamlit MVP v1.8", layout="wide")
 
@@ -82,6 +83,16 @@ def facility_card(row):
         return pick, alt
 
 # ---------------------- GEOMETRY & UTILITIES ----------------------
+def interpolate_route(lat1, lon1, lat2, lon2, n=20):
+    # Simple straight-line polyline (demo). In pilots, swap with OSRM/Mapbox.
+    return [[lat1 + (lat2-lat1)*i/(n-1), lon1 + (lon2-lon1)*i/(n-1)] for i in range(n)]
+
+def traffic_factor_for_hour(hr):
+    # crude “rush-hour” model
+    if 8 <= hr <= 10 or 17 <= hr <= 20: return 1.5   # heavy
+    if 7 <= hr < 8 or 10 < hr < 12 or 15 <= hr < 17: return 1.2   # moderate
+    return 1.0  # free
+
 def dist_km(lat1, lon1, lat2, lon2):
     R=6371
     dlat=math.radians(lat2-lat1); dlon=math.radians(lon2-lon1)
@@ -209,37 +220,73 @@ def facilities_df():
 # ---------- Synthetic data seeding ----------
 RESUS = ["Airway positioning","Oxygen","IV fluids","Uterotonics","TXA","Bleeding control","Antibiotics","Nebulization","Immobilization","AED/CPR"]
 
-def seed_referrals(n=250, rng_seed=42):
+def seed_referrals(n=300, rng_seed=42):
     st.session_state.referrals.clear()
     rng = random.Random(rng_seed)
     conds = ["Maternal","Trauma","Stroke","Cardiac","Sepsis","Other"]
-    colors = ["RED","YELLOW","GREEN"]
-    fac_names = [f["name"] for f in st.session_state.facilities]
-    base = time.time() - 5*24*3600  # last 5 days
+    facs  = st.session_state.facilities
+    base  = time.time() - 7*24*3600  # last 7 days
+
     for i in range(n):
-        cond = rng.choices(conds, weights=[0.2,0.25,0.2,0.2,0.1,0.05])[0]
-        col = rng.choices(colors, weights=[0.3,0.5,0.2])[0]
-        ts = base + rng.randint(0, 5*24*3600)
-        amb_avail = (rng.random() > 0.2)
-        t_disp = ts + (rng.randint(2*60, 20*60) if amb_avail else rng.randint(21*60, 60*60))
-        t_arrdest = t_disp + rng.randint(25*60, 120*60)
+        cond = rng.choices(conds, weights=[0.22,0.23,0.18,0.18,0.14,0.05])[0]
+        # vitals (rough distributions)
+        hr   = rng.randint(80, 145)
+        sbp  = rng.randint(85, 140)
+        rr   = rng.randint(14, 32)
+        spo2 = rng.randint(88, 98)
+        temp = round(36 + rng.random()*3, 1)
+        avpu = "A"
+        rf   = dict(
+            rf_sbp   = (sbp < 90 and rng.random() < 0.6),
+            rf_spo2  = (spo2 < 90 and rng.random() < 0.6),
+            rf_avpu  = False, rf_seizure=False,
+            rf_pph   = (cond=="Maternal" and rng.random()<0.35)
+        )
+        vit = dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu, complaint=cond, **rf)
+        color = tri_color(vit)                        # RED/YELLOW/GREEN
+        severity = {"RED":"Critical", "YELLOW":"Moderate", "GREEN":"Non-critical"}[color]
+
+        # geo + facility
         lat, lon = rand_geo(rng)
+        dest = rng.choice(facs)
+        dkm  = dist_km(lat, lon, dest["lat"], dest["lon"])
+        # simple ETA from speed (rural avg ~36 km/h) with traffic multiplier
+        ts_first = base + rng.randint(0, 7*24*3600)
+        hr_of_day = datetime.fromtimestamp(ts_first).hour
+        traffic_mult = traffic_factor_for_hour(hr_of_day)          # 1.0/1.2/1.5
+        speed_kmh = rng.choice([30, 36, 45])                       # simulate road mix
+        eta_min = max(5, int(dkm / speed_kmh * 60 * traffic_mult))
+
+        # route polyline (for pydeck PathLayer)
+        route = interpolate_route(lat, lon, dest["lat"], dest["lon"], n=24)
+
+        # ambulance lifecycle
+        amb_avail = (rng.random() > 0.25)
+        t_dec = ts_first + rng.randint(60, 6*60)
+        t_disp = t_dec + (rng.randint(2*60, 10*60) if amb_avail else rng.randint(15*60, 45*60))
+        t_arr  = t_disp + (eta_min*60)
+        t_hov  = t_arr + rng.randint(5*60, 20*60)
+
         st.session_state.referrals.append(dict(
             id=f"S{i:04d}",
             patient=dict(name=f"Pt{i:04d}", age=rng.randint(1,85), sex=("Female" if rng.random()<0.5 else "Male"),
                          id="", location=dict(lat=lat,lon=lon)),
-            referrer=dict(name="Dr. Demo", facility=rng.choice(["PHC Mawlai","CHC Smit","District Hospital Shillong","Tertiary Shillong Hub"])),
-            provisionalDx=("PPH" if cond=="Maternal" else rng.choice(["—","Sepsis","Head injury","STEMI","Stroke?"])),
+            referrer=dict(name=rng.choice(["Dr. Rai","Dr. Khonglah","ANM Pynsuk"]), facility=rng.choice(
+                ["PHC Mawlai","CHC Smit","CHC Pynursla","District Hospital Shillong","Tertiary Shillong Hub"]
+            )),
+            provisionalDx=("PPH" if cond=="Maternal" else rng.choice(["Sepsis","Head injury","STEMI","Stroke?","—"])),
             resuscitation=rng.sample(RESUS, rng.randint(0,3)),
-            triage=dict(complaint=cond, decision=dict(color=col), hr=rng.randint(80,140), sbp=rng.randint(85,140),
-                        rr=rng.randint(14,32), temp=round(36+rng.random()*3,1), spo2=rng.randint(88,98), avpu="A"),
+            triage=dict(complaint=cond, decision=dict(color=color), hr=hr, sbp=sbp, rr=rr, temp=temp, spo2=spo2, avpu=avpu),
             clinical=dict(summary="Auto-seeded"),
+            severity=severity,      # Critical / Moderate / Non-critical
             reasons=dict(severity=True, bedOrICUUnavailable=(rng.random()<0.2), specialTest=(rng.random()<0.3), requiredCapabilities=[]),
-            dest=rng.choice(fac_names),
-            times=dict(first_contact_ts=ts, decision_ts=ts+60, dispatch_ts=t_disp, arrive_dest_ts=t_arrdest,
-                       handover_ts=(t_arrdest + rng.randint(5*60,25*60) if rng.random()<0.7 else None)),
-            status="HANDOVER",
+            dest=dest["name"],
+            transport=dict(eta_min=eta_min, traffic=traffic_mult, speed_kmh=speed_kmh, ambulance=rng.choice(["BLS","ALS","ALS + Vent"])),
+            route=route,            # list of [lat, lon] points
+            times=dict(first_contact_ts=ts_first, decision_ts=t_dec, dispatch_ts=t_disp, arrive_dest_ts=t_arr, handover_ts=t_hov),
+            status=rng.choice(["HANDOVER","ARRIVE_DEST","DEPART_SCENE"]),   # mix
             ambulance_available=amb_avail
+        
         ))
 
 # ---------------------- SESSION ----------------------
@@ -255,7 +302,7 @@ st.session_state.facilities = [normalize_facility(x) for x in st.session_state.f
 
 # auto-seed on first run (ensures ≥100)
 if len(st.session_state.referrals) < 100:
-    seed_referrals(n=250)
+    seed_referrals(n=300)
 
 # ---------------------- UI TABS ----------------------
 st.title("AHECN – Streamlit MVP v1.8 (East Khasi Hills)")
@@ -318,6 +365,9 @@ with tabs[0]:
 
     # Hero triage banner
     st.markdown("### Triage decision")
+  sev_lbl = {"RED":"Critical","YELLOW":"Moderate","GREEN":"Non-critical"}[tri_color(vit_for_color)]
+st.caption(f"Severity: **{sev_lbl}**")
+
     vit_for_color = dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu,
                          rf_sbp=rf_sbp, rf_spo2=rf_spo2, rf_avpu=rf_avpu, rf_seizure=rf_seizure, rf_pph=rf_pph,
                          complaint=complaint)
@@ -429,22 +479,63 @@ with tabs[0]:
 
 # ======== Ambulance / EMT ========
 with tabs[1]:
-    st.subheader("Active jobs (availability + 5-stage lifecycle)")
+    st.subheader("Active jobs (availability • route • live ETA)")
     avail = st.radio("Ambulance availability", ["Available","Unavailable"], horizontal=True)
-    active = [r for r in st.session_state.referrals if r["status"] in ["PREALERT","DISPATCHED","ARRIVE_SCENE","DEPART_SCENE","ARRIVE_DEST"]]
-    if not active: st.info("No active jobs")
+
+    active = [r for r in st.session_state.referrals if r["status"] in
+              ["PREALERT","DISPATCHED","ARRIVE_SCENE","DEPART_SCENE","ARRIVE_DEST"]]
+    if not active:
+        st.info("No active jobs")
     else:
-        for r in active:
-            st.markdown(f"**{r['patient']['name']}** • {r['triage']['complaint']} ", unsafe_allow_html=True)
-            triage_pill(r['triage']['decision']['color'])
-            st.write(f"→ **{r['dest']}**")
-            c1,c2,c3,c4,c5 = st.columns(5)
-            if c1.button("Dispatch", key=f"d_{r['id']}"): r["times"]["dispatch_ts"]=now_ts(); r["status"]="DISPATCHED"; r["ambulance_available"]=(avail=="Available")
-            if c2.button("Arrive scene", key=f"a_{r['id']}"): r["times"]["arrive_scene_ts"]=now_ts(); r["status"]="ARRIVE_SCENE"
-            if c3.button("Depart scene", key=f"ds_{r['id']}"): r["times"]["depart_scene_ts"]=now_ts(); r["status"]="DEPART_SCENE"
-            if c4.button("Arrive dest", key=f"ad_{r['id']}"): r["times"]["arrive_dest_ts"]=now_ts(); r["status"]="ARRIVE_DEST"
-            if c5.button("Handover", key=f"h_{r['id']}"): r["times"]["handover_ts"]=now_ts(); r["status"]="HANDOVER"
-            st.caption(f"Stage: {r['status']} • Ambulance available at dispatch: {r.get('ambulance_available')}")
+        # pick one to visualize
+        ids = [f"{r['id']} • {r['patient']['name']} • {r['triage']['complaint']} • {r['triage']['decision']['color']}" for r in active]
+        pick = st.selectbox("Select case", ids, index=0)
+        r = active[ids.index(pick)]
+
+        # stage buttons
+        c1,c2,c3,c4,c5 = st.columns(5)
+        if c1.button("Dispatch"):     r["times"]["dispatch_ts"]=now_ts(); r["status"]="DISPATCHED"; r["ambulance_available"]=(avail=="Available")
+        if c2.button("Arrive scene"): r["times"]["arrive_scene_ts"]=now_ts(); r["status"]="ARRIVE_SCENE"
+        if c3.button("Depart scene"): r["times"]["depart_scene_ts"]=now_ts(); r["status"]="DEPART_SCENE"
+        if c4.button("Arrive dest"):  r["times"]["arrive_dest_ts"]=now_ts(); r["status"]="ARRIVE_DEST"
+        if c5.button("Handover"):     r["times"]["handover_ts"]=now_ts();  r["status"]="HANDOVER"
+
+        # Live traffic toggle (recompute ETA)
+        st.markdown("### Route & live traffic")
+        traffic_state = st.radio("Traffic", ["Free","Moderate","Heavy"],
+                                 index=0 if r["transport"].get("traffic",1.0)==1.0 else 1 if r["transport"]["traffic"]<=1.2 else 2,
+                                 horizontal=True)
+        tf = {"Free":1.0,"Moderate":1.2,"Heavy":1.5}[traffic_state]
+        r["transport"]["traffic"] = tf
+        # recompute ETA from stored distance (approx from route endpoints)
+        if r.get("route"):
+            p1, p2 = r["route"][0], r["route"][-1]
+            dkm = dist_km(p1[0],p1[1],p2[0],p2[1])
+            speed = r["transport"].get("speed_kmh", 36)
+            eta_min = max(5, int(dkm / speed * 60 * tf))
+            r["transport"]["eta_min"] = eta_min
+
+        # Show ETA + triage
+        left, right = st.columns([1,3])
+        with left:
+            st.write(f"**ETA:** {r['transport'].get('eta_min','—')} min")
+            st.write(f"**Ambulance:** {r['transport'].get('ambulance','—')}")
+            st.write("**Triage:**"); triage_pill(r['triage']['decision']['color'])
+
+        # Map with route (pydeck PathLayer)
+        if r.get("route"):
+            path = [dict(path=[[pt[1], pt[0]] for pt in r["route"]])]  # lon,lat order for pydeck
+            layer = pdk.Layer(
+                "PathLayer",
+                data=path,
+                get_path="path",
+                get_color=[16,185,129,200],
+                width_scale=5, width_min_pixels=3,
+            )
+            v = pdk.ViewState(latitude=r["route"][0][0], longitude=r["route"][0][1], zoom=10)
+            st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=v, map_style="mapbox://styles/mapbox/dark-v10"))
+        else:
+            st.caption("No route saved in this record.")
 
 # ======== Receiving Hospital ========
 with tabs[2]:
@@ -498,30 +589,28 @@ Notes: {r['clinical'].get('summary', "—")}
 
 # ======== Government (KPIs + Heat Map + Patterns) ========
 with tabs[3]:
-    st.subheader("SLA & Condition KPIs (Real-time)")
+    st.subheader("Government – Master Dashboard (SLA • Severity • Flow • Supply)")
+
+    # Filters
     tri_filter = st.selectbox("Triage",["All","RED","YELLOW","GREEN"],index=0)
-    cond_filter= st.selectbox("Condition",["All","Maternal","Trauma","Stroke","Cardiac","FeverConfusion","Sepsis","Other"],index=0)
-    origin_type= st.selectbox("Referred from (type)",["All","PHC","CHC","District Hospital","Tertiary"],index=0)
-    dest_type  = st.selectbox("Receiving type",["All","PHC","CHC","District Hospital","Tertiary"],index=0)
+    sev_filter = st.selectbox("Severity",["All","Critical","Moderate","Non-critical"],index=0)
+    cond_filter= st.selectbox("Condition",["All","Maternal","Trauma","Stroke","Cardiac","Sepsis","Other"],index=0)
 
     data = st.session_state.referrals.copy()
     fac_by_name = {f["name"]:f for f in st.session_state.facilities}
-    for r in data:
-        r["dest_type"] = fac_by_name.get(r["dest"],{}).get("type","—")
-        r["origin_type"]= r["referrer"]["facility"].split()[0] if r["referrer"]["facility"] else "PHC"
 
     if tri_filter!="All": data=[r for r in data if r["triage"]["decision"]["color"]==tri_filter]
+    if sev_filter!="All": data=[r for r in data if r.get("severity")==sev_filter]
     if cond_filter!="All": data=[r for r in data if r["triage"]["complaint"]==cond_filter]
-    if origin_type!="All": data=[r for r in data if r.get("origin_type")==origin_type]
-    if dest_type!="All": data=[r for r in data if r.get("dest_type")==dest_type]
 
-    reds=[r for r in data if r["triage"]["decision"]["color"]=="RED"]
-    pct_red_60 = int(100* len([r for r in reds if r["times"].get("arrive_dest_ts") and minutes(r["times"]["first_contact_ts"], r["times"]["arrive_dest_ts"])<=60])/len(reds)) if reds else 0
+    total = len(data) or 1
+    reds  = [r for r in data if r["triage"]["decision"]["color"]=="RED"]
     with_disp=[r for r in data if r["times"].get("dispatch_ts")]
-    pct_disp_10 = int(100* len([r for r in with_disp if minutes(r["times"]["first_contact_ts"], r["times"]["dispatch_ts"])<=10])/len(with_disp)) if with_disp else 0
+    pct_red_60 = int(100* len([r for r in reds if r["times"].get("arrive_dest_ts")
+                               and minutes(r["times"]["first_contact_ts"], r["times"]["arrive_dest_ts"])<=60])/(len(reds) or 1))
+    pct_disp_10 = int(100* len([r for r in with_disp if minutes(r["times"]["first_contact_ts"], r["times"]["dispatch_ts"])<=10])/(len(with_disp) or 1))
     accepted   = len([r for r in data if r["status"] in ["ARRIVE_DEST","HANDOVER"]])
-    rejected   = len([r for r in data if r["reasons"].get("rejected")])
-    total      = len(data) or 1
+    rejected   = len([r for r in data if r.get("reasons",{}).get("rejected")])
 
     k1,k2,k3,k4 = st.columns(4)
     with k1: kpi_tile("% RED ≤60m", f"{pct_red_60}%")
@@ -529,42 +618,31 @@ with tabs[3]:
     with k3: kpi_tile("Acceptance rate", f"{int(100*accepted/total)}%")
     with k4: kpi_tile("Rejection rate", f"{int(100*rejected/total)}%")
 
-    st.markdown("### Case heat map (locations)")
+    st.markdown("### Severity mix")
+    sev_series = pd.Series([r.get("severity","—") for r in data]).value_counts()
+    st.bar_chart(sev_series, use_container_width=True)
+
+    st.markdown("### Referral funnel")
+    s1 = len(data)
+    s2 = len([r for r in data if r["times"].get("dispatch_ts")])
+    s3 = len([r for r in data if r["status"] in ["ARRIVE_DEST","HANDOVER"]])
+    funnel_df = pd.DataFrame({"stage":["Referrals","Dispatched","Arrived/Handover"],"count":[s1,s2,s3]}).set_index("stage")
+    st.bar_chart(funnel_df, use_container_width=True)
+
+    st.markdown("### Acceptance by receiving facility")
+    by_fac = pd.Series([r["dest"] for r in data if r["status"] in ["ARRIVE_DEST","HANDOVER"]]).value_counts().head(15)
+    st.bar_chart(by_fac, use_container_width=True)
+
+    st.markdown("### Rejection reasons")
+    rej = pd.Series([r.get("reasons",{}).get("reject_reason","—") for r in data if r.get("reasons",{}).get("rejected")]).value_counts()
+    if not rej.empty: st.bar_chart(rej, use_container_width=True)
+    else: st.caption("No recorded rejections in current filter.")
+
+    st.markdown("### Geo density (cases)")
     if data:
         mdf = pd.DataFrame([dict(lat=r["patient"]["location"]["lat"], lon=r["patient"]["location"]["lon"]) for r in data])
         st.map(mdf, use_container_width=True)
-    else:
-        st.caption("No data")
 
-    st.markdown("### Patterns & Workload")
-    c1,c2 = st.columns(2)
-    reasons = pd.Series([("Special test" if r["reasons"].get("specialTest") else "No special test") for r in data]).value_counts()
-    c1.bar_chart(reasons, use_container_width=True)
-    cats = pd.Series([r["triage"]["complaint"] for r in data]).value_counts()
-    c2.bar_chart(cats, use_container_width=True)
-
-    st.markdown("### Time performance")
-    durations=[]
-    for r in data:
-        if r["times"].get("handover_ts") and r["times"].get("dispatch_ts"):
-            durations.append(minutes(r["times"]["dispatch_ts"], r["times"]["handover_ts"]))
-        elif r["times"].get("arrive_dest_ts") and r["times"].get("dispatch_ts"):
-            durations.append(minutes(r["times"]["dispatch_ts"], r["times"]["arrive_dest_ts"]))
-    avg_time = f"{int(sum(durations)/len(durations))} min" if durations else "—"
-    st.write("Average time (Dispatch → Handover/Arrive dest): **", avg_time, "**")
-
-    st.markdown("### Ambulance availability at dispatch")
-    av_series = pd.Series(["Available" if r.get("ambulance_available") else "Unavailable" for r in data if r.get("ambulance_available") is not None]).value_counts()
-    if not av_series.empty: st.bar_chart(av_series, use_container_width=True)
-    else: st.caption("No dispatch records yet")
-
-    st.markdown("### Download KPIs (CSV)")
-    if data:
-        out = pd.DataFrame([dict(id=r["id"], complaint=r["triage"]["complaint"], triage=r["triage"]["decision"]["color"],
-                                 dest=r["dest"], dest_type=r.get("dest_type"), accepted=(r["status"] in ["ARRIVE_DEST","HANDOVER"]),
-                                 rejected=r["reasons"].get("rejected",False), reject_reason=r["reasons"].get("reject_reason",""),
-                                 ambulance_available=r.get("ambulance_available")) for r in data])
-        st.download_button("Download", data=out.to_csv(index=False), file_name="ahecn_kpis.csv", mime="text/csv")
 
 # ======== Data / Admin ========
 with tabs[4]:
