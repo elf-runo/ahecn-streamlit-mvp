@@ -308,28 +308,60 @@ with tabs[1]:
 # ======== Receiving Hospital ========
 with tabs[2]:
     st.subheader("Incoming referrals & case actions")
-    fac_names=[f["name"] for f in st.session_state.facilities]
-    st.session_state.active_fac = st.selectbox("Facility", fac_names, index=fac_names.index(st.session_state.active_fac))
-    incoming=[r for r in st.session_state.referrals if r["dest"]==st.session_state.active_fac and r["status"] in
-              ["PREALERT","DISPATCHED","ARRIVE_SCENE","DEPART_SCENE","ARRIVE_DEST"]]
-    if not incoming: st.info("No incoming referrals")
-    for r in incoming:
-        st.write(f"**{r['patient']['name']}** — {r['triage']['complaint']} • **{r['triage']['decision']['color']}** | Dx: **{r['provisionalDx']}**")
-        if st.button("Open case",key=f"open_{r['id']}"):
-            isbar=f"""I: {r['patient']['name']}, {r['patient']['age']} {r['patient']['sex']}
+    fac_names = [f["name"] for f in st.session_state.facilities]
+    # keep current selection if valid, else default to first
+    current_idx = fac_names.index(st.session_state.active_fac) if st.session_state.active_fac in fac_names else 0
+    st.session_state.active_fac = st.selectbox("Facility", fac_names, index=current_idx)
+
+    incoming = [
+        r for r in st.session_state.referrals
+        if r["dest"] == st.session_state.active_fac
+        and r["status"] in ["PREALERT", "DISPATCHED", "ARRIVE_SCENE", "DEPART_SCENE", "ARRIVE_DEST"]
+    ]
+
+    if not incoming:
+        st.info("No incoming referrals")
+    else:
+        for r in incoming:
+            st.write(
+                f"**{r['patient']['name']}** — {r['triage']['complaint']} • "
+                f"**{r['triage']['decision']['color']}** | Dx: **{r['provisionalDx']}**"
+            )
+
+            open_key = f"open_{r['id']}"
+            if st.button("Open case", key=open_key):
+                isbar = f"""I: {r['patient']['name']}, {r['patient']['age']} {r['patient']['sex']}
 Dx (provisional): {r['provisionalDx']}
 S: {r['triage']['complaint']}; triage {r['triage']['decision']['color']}
 B: HR {r['triage']['hr']}, SBP {r['triage']['sbp']}, RR {r['triage']['rr']}, Temp {r['triage']['temp']}, SpO2 {r['triage']['spo2']}, AVPU {r['triage']['avpu']}
-A: Resus: {", ".join(r.get('resuscitation',[])) or "—"}
+A: Resus: {", ".join(r.get('resuscitation', [])) or "—"}
 R: {"Bed/ICU unavailable; " if r['reasons'].get('bedOrICUUnavailable') else ""}{"Special test; " if r['reasons'].get('specialTest') else ""}Severity
-Notes: {r['clinical'].get('summary',"—")}
+Notes: {r['clinical'].get('summary', "—")}
 """
-            st.code(isbar)
-            c1,c2,c3 = st.columns(3)
-            if c1.button("Accept",key=f"acc_{r['id']}"):
-                r["status"]="ARRIVE_DEST"; r["times"]["arrive_dest_ts"]=now_ts(); st.success("Accepted")
-            reject_reason = c2.selectbox("Reject reason",["—","No ICU bed","No specialist","Equipment down","Over capacity","Outside scope"], key=f"rejrs_{r['id']}")
-            if c3.button("Reject",key=f"rej_{r['id']}") and reject_reason!="—":
+                st.code(isbar)
+
+                c1, c2, c3 = st.columns(3)
+                # Accept
+                acc_key = f"acc_{r['id']}"
+                if c1.button("Accept", key=acc_key):
+                    r["status"] = "ARRIVE_DEST"
+                    r["times"]["arrive_dest_ts"] = now_ts()
+                    st.success("Accepted")
+
+                # Reject (divert) with reason
+                rejrs_key = f"rejrs_{r['id']}"
+                reject_reason = c2.selectbox(
+                    "Reject reason",
+                    ["—", "No ICU bed", "No specialist", "Equipment down", "Over capacity", "Outside scope"],
+                    key=rejrs_key,
+                )
+                rej_key = f"rej_{r['id']}"
+                if c3.button("Reject", key=rej_key) and reject_reason != "—":
+                    r["status"] = "PREALERT"
+                    r["reasons"]["rejected"] = True
+                    r["reasons"]["reject_reason"] = reject_reason
+                    st.warning(f"Requested divert / rejected: {reject_reason}")
+
                 r["status"]="PREALERT"; 
                 r["reasons"]["rejected"]=True; r["reasons"]["reject_reason"]=reject_reason
                 st.warning(f"Requested divert / rejected: {reject_reason}")
