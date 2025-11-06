@@ -1,7 +1,7 @@
 [theme]
 base="dark"                         # force dark mode
-primaryColor="#10b981"              # emerald accents
-backgroundColor="#0b1220"           # deep navy background
+primaryColor="#b91024"              # emerald accents
+backgroundColor="#67738a"           # deep navy background
 secondaryBackgroundColor="#111827"  # cards/side panels
 textColor="#e5e7eb"                 # light text
 font="sans serif"
