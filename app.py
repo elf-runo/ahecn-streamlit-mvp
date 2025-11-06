@@ -1,4 +1,4 @@
-# AHECN – Streamlit MVP v1.7 (Investor Demo)
+# AHECN – Streamlit MVP v1.8 (Investor Demo + UI/UX)
 # Roles: Referrer • Ambulance/EMT • Receiving Hospital • Government • Data/Admin • Facility Admin
 # Region: East Khasi Hills, Meghalaya (synthetic geo + facilities)
 
@@ -8,9 +8,80 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 
-st.set_page_config(page_title="AHECN – Streamlit MVP v1.7", layout="wide")
+st.set_page_config(page_title="AHECN – Streamlit MVP v1.8", layout="wide")
 
-# ---------------------- Geometry & Utilities ----------------------
+# ---------------------- THEME & GLOBAL CSS ----------------------
+st.markdown("""
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ok:#10b981; --warn:#f59e0b; --bad:#ef4444; --muted:#9ca3af; --chip:#1f2937; --card:#0f172a;
+}
+html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+.block-container{ padding-top:1.2rem; padding-bottom:3rem; }
+h1,h2,h3{ letter-spacing:0.2px; }
+.badge{display:inline-block;padding:4px 10px;border-radius:999px;font-size:0.78rem;
+       background:#1f2937;color:#e5e7eb;margin-right:6px;margin-bottom:6px}
+.badge.ok{ background:rgba(16,185,129,.15); color:#34d399; border:1px solid rgba(16,185,129,.35)}
+.badge.warn{background:rgba(245,158,11,.15); color:#fbbf24; border:1px solid rgba(245,158,11,.35)}
+.badge.bad{ background:rgba(239,68,68,.15); color:#f87171; border:1px solid rgba(239,68,68,.35)}
+.pill{display:inline-flex;align-items:center;gap:.5rem;padding:.35rem .7rem;border-radius:999px;
+      font-weight:600; font-size:.85rem}
+.pill.red{ background:rgba(239,68,68,.18); color:#fca5a5; border:1px solid rgba(239,68,68,.35)}
+.pill.yellow{background:rgba(245,158,11,.18); color:#fcd34d; border:1px solid rgba(245,158,11,.35)}
+.pill.green{background:rgba(16,185,129,.18); color:#6ee7b7; border:1px solid rgba(16,185,129,.35)}
+.card{ background:var(--card); border:1px solid #1f2937; border-radius:16px; padding:14px 16px;
+       box-shadow:0 6px 16px rgba(0,0,0,.25); margin-bottom:12px}
+.card h4{ margin:0 0 6px 0; }
+.kpi{ background:#0d1b2a; border:1px solid #1f2937; border-radius:14px; padding:14px; }
+.kpi .label{ color:#9ca3af; font-size:.8rem; }
+.kpi .value{ font-size:1.6rem; font-weight:700; margin-top:4px}
+hr.soft{ border:none; height:1px; background:#1f2937; margin:10px 0 14px }
+.btnline > div > button{ width:100% }
+.small{ color:#9ca3af; font-size:.85rem }
+</style>
+""", unsafe_allow_html=True)
+
+# ---------------------- UI HELPERS ----------------------
+def triage_pill(color:str):
+    c = (color or "").upper()
+    cls = "red" if c=="RED" else "yellow" if c=="YELLOW" else "green"
+    st.markdown(f'<span class="pill {cls}">{c}</span>', unsafe_allow_html=True)
+
+def kpi_tile(label, value, help_text=None):
+    st.markdown(f'<div class="kpi"><div class="label">{label}</div><div class="value">{value}</div></div>',
+                unsafe_allow_html=True)
+    if help_text: st.caption(help_text)
+
+def cap_badges(list_or_csv):
+    if isinstance(list_or_csv, str):
+        items = [x.strip() for x in list_or_csv.split(",") if x.strip() and x.strip()!="—"]
+    else:
+        items = list_or_csv or []
+    if not items:
+        st.markdown('<span class="badge">—</span>', unsafe_allow_html=True); return
+    cols = st.columns(min(4, max(1, len(items))))
+    for i,cap in enumerate(items[:12]):
+        cols[i%len(cols)].markdown(f'<span class="badge">{cap}</span>', unsafe_allow_html=True)
+
+def facility_card(row):
+    with st.container():
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown(f"#### 🏥 {row['name']}  ", unsafe_allow_html=True)
+        sub = f"ETA ~ {row['eta_min']} min • {row['km']} km • ICU open: {row['ICU_open']} • Acceptance: {row['accept']}%"
+        st.markdown(f'<div class="small">{sub}</div>', unsafe_allow_html=True)
+        st.markdown("**Specialties**")
+        cap_badges(row.get("specialties",""))
+        st.markdown("**High-end equipment**")
+        cap_badges(row.get("highend",""))
+        st.markdown('<hr class="soft" />', unsafe_allow_html=True)
+        cta1, cta2 = st.columns(2)
+        pick = cta1.button("Select as destination", key=f"pick_{row['name']}")
+        alt  = cta2.button("Add as alternate", key=f"alt_{row['name']}")
+        st.markdown('</div>', unsafe_allow_html=True)
+        return pick, alt
+
+# ---------------------- GEOMETRY & UTILITIES ----------------------
 def dist_km(lat1, lon1, lat2, lon2):
     R=6371
     dlat=math.radians(lat2-lat1); dlon=math.radians(lon2-lon1)
@@ -18,11 +89,11 @@ def dist_km(lat1, lon1, lat2, lon2):
     return 2*R*math.atan2(math.sqrt(a), math.sqrt(1-a))
 
 def now_ts(): return time.time()
-def minutes(a,b): 
+def minutes(a,b):
     if not a or not b: return None
     return int((b-a)/60)
 
-# ---------------------- Scores (standards-aligned) ----------------------
+# ---------------------- SCORES (standards-aligned) ----------------------
 def news2_scale1_spo2(s): return 3 if s<=91 else 2 if s<=93 else 1 if s<=95 else 0
 def news2_scale2_spo2(s): return 3 if s<=83 else 2 if s<=85 else 1 if s<=86 else 0 if s<=91 else 1
 def calc_NEWS2(rr, spo2, sbp, hr, temp, avpu, o2_device, spo2_scale):
@@ -36,7 +107,7 @@ def calc_NEWS2(rr, spo2, sbp, hr, temp, avpu, o2_device, spo2_scale):
     if avpu!="A": sc+=3
     return sc, (sc>=5), (sc>=7)
 
-def calc_qSOFA(rr, sbp, avpu): 
+def calc_qSOFA(rr, sbp, avpu):
     s = (1 if rr>=22 else 0) + (1 if sbp<=100 else 0) + (1 if avpu!="A" else 0)
     return s, (s>=2)
 
@@ -79,7 +150,7 @@ def tri_color(v):
     if v["complaint"]=="Maternal" and v["rf_pph"]: return "RED"
     return "RED"
 
-# ---------------------- Demo Facilities (East Khasi Hills) ----------------------
+# ---------------------- DEMO FACILITIES (East Khasi Hills) ----------------------
 EH_BASE = dict(lat_min=25.45, lat_max=25.65, lon_min=91.80, lon_max=91.95)
 def rand_geo(rng):
     return (EH_BASE["lat_min"]+rng.random()*(EH_BASE["lat_max"]-EH_BASE["lat_min"]),
@@ -88,40 +159,40 @@ def rand_geo(rng):
 SPECIALTIES = ["Obstetrics","Paediatrics","Cardiology","Neurology","Orthopaedics","General Surgery","Anaesthesia","ICU"]
 INTERVENTIONS = ["CathLab","OBGYN_OT","CT","MRI","Dialysis","Thrombolysis","Ventilator","BloodBank","OR","Neurosurgery"]
 
-def default_facilities():
+def default_facilities(count=15):
     rng = random.Random(17)
-    names = [
+    base_names = [
         "Civil Hospital Shillong","NEIGRIHMS","Nazareth Hospital","Ganesh Das Maternal & Child",
-        "Shillong Polyclinic & Trauma Center","Smit Community Health Centre","Pynursla CHC",
+        "Shillong Polyclinic & Trauma Center","Smit CHC","Pynursla CHC",
         "Mawsynram PHC","Sohra Civil Hospital","Madansynram CHC","Jowai (ref) Hub","Mawlai CHC"
     ]
-    fac = []
-    for n in names:
+    names = (base_names * ((count // len(base_names)) + 1))[:count]
+    fac=[]
+    for idx, n in enumerate(names):
         lat, lon = rand_geo(rng)
         caps = {c:int(rng.random()<0.7) for c in ["ICU","Ventilator","BloodBank","OR","CT","Thrombolysis","OBGYN_OT","CathLab","Dialysis","Neurosurgery"]}
         spec = {s:int(rng.random()<0.6) for s in SPECIALTIES}
         hi   = {i:int(rng.random()<0.5) for i in INTERVENTIONS}
         fac.append(dict(
-            name=n, lat=lat, lon=lon,
-            ICU_open=rng.randint(0,4),
+            name=f"{n} #{idx+1}" if names.count(n)>1 else n,
+            lat=lat, lon=lon, ICU_open=rng.randint(0,4),
             acceptanceRate=round(0.7+rng.random()*0.25,2),
             caps=caps, specialties=spec, highend=hi,
             type=rng.choice(["PHC","CHC","District Hospital","Tertiary"])
         ))
-    return fac  # ← keep this INSIDE the function
+    return fac
 
-# ---- Schema safety helpers (AT COLUMN 0; do NOT indent) ----
+# ---- Schema safety helpers ----
 REQ_CAPS = ["ICU","Ventilator","BloodBank","OR","CT","Thrombolysis","OBGYN_OT","CathLab","Dialysis","Neurosurgery"]
 
 def normalize_facility(f):
-    f = dict(f)  # shallow copy
+    f = dict(f)
     f.setdefault("name", "Unknown Facility")
     f.setdefault("type", "PHC")
     f.setdefault("ICU_open", 0)
     f.setdefault("acceptanceRate", 0.75)
     f.setdefault("lat", 25.58)
     f.setdefault("lon", 91.89)
-    # nested dicts
     caps = f.get("caps", {}) or {}
     f["caps"] = {k: int(bool(caps.get(k, 0))) for k in REQ_CAPS}
     specs = f.get("specialties", {}) or {}
@@ -135,38 +206,59 @@ def facilities_df():
     rows = [{"name": x["name"], "type": x["type"], "ICU_open": x["ICU_open"], "acceptanceRate": x["acceptanceRate"]} for x in fac]
     return pd.DataFrame(rows)
 
+# ---------- Synthetic data seeding ----------
+RESUS = ["Airway positioning","Oxygen","IV fluids","Uterotonics","TXA","Bleeding control","Antibiotics","Nebulization","Immobilization","AED/CPR"]
 
-    rng=random.Random(17)
-    names=[
-        "Civil Hospital Shillong","NEIGRIHMS","Nazareth Hospital","Ganesh Das Maternal & Child",
-        "Shillong Polyclinic & Trauma Center","Smit Community Health Centre","Pynursla CHC",
-        "Mawsynram PHC","Sohra Civil Hospital","Madansynram CHC","Jowai (ref) Hub","Mawlai CHC"
-    ]
-    fac=[]
-    for n in names:
-        lat,lon=rand_geo(rng)
-        caps={c:int(rng.random()<0.7) for c in ["ICU","Ventilator","BloodBank","OR","CT","Thrombolysis","OBGYN_OT","CathLab","Dialysis","Neurosurgery"]}
-        spec={s:int(rng.random()<0.6) for s in SPECIALTIES}
-        hi={i:int(rng.random()<0.5) for i in INTERVENTIONS}
-        fac.append(dict(
-            name=n, lat=lat, lon=lon,
-            ICU_open=rng.randint(0,4),
-            acceptanceRate=round(0.7+rng.random()*0.25,2),
-            caps=caps, specialties=spec, highend=hi,
-            type=rng.choice(["PHC","CHC","District Hospital","Tertiary"])
+def seed_referrals(n=250, rng_seed=42):
+    st.session_state.referrals.clear()
+    rng = random.Random(rng_seed)
+    conds = ["Maternal","Trauma","Stroke","Cardiac","Sepsis","Other"]
+    colors = ["RED","YELLOW","GREEN"]
+    fac_names = [f["name"] for f in st.session_state.facilities]
+    base = time.time() - 5*24*3600  # last 5 days
+    for i in range(n):
+        cond = rng.choices(conds, weights=[0.2,0.25,0.2,0.2,0.1,0.05])[0]
+        col = rng.choices(colors, weights=[0.3,0.5,0.2])[0]
+        ts = base + rng.randint(0, 5*24*3600)
+        amb_avail = (rng.random() > 0.2)
+        t_disp = ts + (rng.randint(2*60, 20*60) if amb_avail else rng.randint(21*60, 60*60))
+        t_arrdest = t_disp + rng.randint(25*60, 120*60)
+        lat, lon = rand_geo(rng)
+        st.session_state.referrals.append(dict(
+            id=f"S{i:04d}",
+            patient=dict(name=f"Pt{i:04d}", age=rng.randint(1,85), sex=("Female" if rng.random()<0.5 else "Male"),
+                         id="", location=dict(lat=lat,lon=lon)),
+            referrer=dict(name="Dr. Demo", facility=rng.choice(["PHC Mawlai","CHC Smit","District Hospital Shillong","Tertiary Shillong Hub"])),
+            provisionalDx=("PPH" if cond=="Maternal" else rng.choice(["—","Sepsis","Head injury","STEMI","Stroke?"])),
+            resuscitation=rng.sample(RESUS, rng.randint(0,3)),
+            triage=dict(complaint=cond, decision=dict(color=col), hr=rng.randint(80,140), sbp=rng.randint(85,140),
+                        rr=rng.randint(14,32), temp=round(36+rng.random()*3,1), spo2=rng.randint(88,98), avpu="A"),
+            clinical=dict(summary="Auto-seeded"),
+            reasons=dict(severity=True, bedOrICUUnavailable=(rng.random()<0.2), specialTest=(rng.random()<0.3), requiredCapabilities=[]),
+            dest=rng.choice(fac_names),
+            times=dict(first_contact_ts=ts, decision_ts=ts+60, dispatch_ts=t_disp, arrive_dest_ts=t_arrdest,
+                       handover_ts=(t_arrdest + rng.randint(5*60,25*60) if rng.random()<0.7 else None)),
+            status="HANDOVER",
+            ambulance_available=amb_avail
         ))
-    return fac
 
-# ---------------------- Session ----------------------
-if "facilities" not in st.session_state: st.session_state.facilities = default_facilities()
-if "referrals"  not in st.session_state: st.session_state.referrals = []
-if "active_fac" not in st.session_state: st.session_state.active_fac = st.session_state.facilities[0]["name"]
-# Normalize after init/import so schema never breaks
+# ---------------------- SESSION ----------------------
+if "facilities" not in st.session_state:
+    st.session_state.facilities = default_facilities(count=15)
+if "referrals" not in st.session_state:
+    st.session_state.referrals = []
+if "active_fac" not in st.session_state:
+    st.session_state.active_fac = st.session_state.facilities[0]["name"]
+
+# normalize schema
 st.session_state.facilities = [normalize_facility(x) for x in st.session_state.facilities]
 
+# auto-seed on first run (ensures ≥100)
+if len(st.session_state.referrals) < 100:
+    seed_referrals(n=250)
 
-# ---------------------- UI ----------------------
-st.title("AHECN – Streamlit MVP v1.7 (East Khasi Hills)")
+# ---------------------- UI TABS ----------------------
+st.title("AHECN – Streamlit MVP v1.8 (East Khasi Hills)")
 
 tabs = st.tabs(["Referrer","Ambulance / EMT","Receiving Hospital","Government","Data / Admin","Facility Admin"])
 
@@ -224,18 +316,25 @@ with tabs[0]:
     else:
         st.caption("PEWS disabled for ≥18y")
 
-    # Resuscitation interventions (performed before referral)
+    # Hero triage banner
+    st.markdown("### Triage decision")
+    vit_for_color = dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu,
+                         rf_sbp=rf_sbp, rf_spo2=rf_spo2, rf_avpu=rf_avpu, rf_seizure=rf_seizure, rf_pph=rf_pph,
+                         complaint=complaint)
+    triage_pill(tri_color(vit_for_color))
+
+    # Resuscitation interventions
     st.subheader("Resuscitation / Stabilization done (tick all applied)")
     cols = st.columns(5)
-    RESUS = ["Airway positioning","Oxygen","IV fluids","Uterotonics","TXA","Bleeding control","Antibiotics","Nebulization","Immobilization","AED/CPR"]
-    resus_done = [r for i,r in enumerate(RESUS) if cols[i%5].checkbox(r, False)]
+    RESUS_LIST = ["Airway positioning","Oxygen","IV fluids","Uterotonics","TXA","Bleeding control","Antibiotics","Nebulization","Immobilization","AED/CPR"]
+    resus_done = [r for i,r in enumerate(RESUS_LIST) if cols[i%5].checkbox(r, False)]
 
     st.subheader("Reason(s) for referral + capabilities needed")
-    
+    c1,c2 = st.columns(2)
     with c1:
         ref_beds  = st.checkbox("No ICU/bed available",False)
         ref_tests = st.checkbox("Special intervention/test required",True)
-        ref_severity = True  # by design when triage RED/YELLOW
+        ref_severity = True
     need_caps=[]
     if ref_tests:
         st.caption("Select required capabilities for this case")
@@ -246,7 +345,8 @@ with tabs[0]:
             if cap_cols[i%5].checkbox(cap, value=pre, key=f"cap_{cap}"):
                 need_caps.append(cap)
 
-    # Facility matching (adds preparedness badges: specialties + high-end)
+    # Facility matching (cards)
+    st.markdown("### Facility matching")
     if st.button("Find matched facilities"):
         rows=[]
         for f in st.session_state.facilities:
@@ -254,62 +354,102 @@ with tabs[0]:
             if not caps_ok: continue
             km = dist_km(p_lat, p_lon, f["lat"], f["lon"])
             ready = (min(f["ICU_open"],3)/3)*0.5 + f["acceptanceRate"]*0.5
-            far = max(0,1-(km/50))
-            score = 0.6*ready + 0.25*far + 0.15*(1 if caps_ok else 0)
+            proximity = max(0, 1-(km/60))
+            score = 0.6*ready + 0.3*proximity + 0.1
             rows.append(dict(
-                name=f["name"], km=round(km,1), ICU_open=f["ICU_open"],
+                name=f["name"], km=round(km,1),
+                eta_min=int(km/0.6) if km>0 else 5,
+                ICU_open=f["ICU_open"],
                 accept=int(round(f["acceptanceRate"]*100,0)),
                 specialties=", ".join([s for s,v in f["specialties"].items() if v]) or "—",
                 highend=", ".join([i for i,v in f["highend"].items() if v]) or "—",
                 score=int(round(score*100,0))
             ))
-        if rows:
-            df=pd.DataFrame(rows).sort_values(["score","km"],ascending=[False,True])
-            st.dataframe(df, use_container_width=True)
-            chosen = st.selectbox("Select destination", [r["name"] for r in rows])
-            if st.button("Create referral"):
-                vit=dict(hr=hr,rr=rr,sbp=sbp,temp=temp,spo2=spo2,avpu=avpu,rf_sbp=rf_sbp,rf_spo2=rf_spo2,
-                         rf_avpu=rf_avpu,rf_seizure=rf_seizure,rf_pph=rf_pph,complaint=complaint)
-                ref = dict(
-                    id="R"+str(int(time.time()))[-6:],
-                    patient=dict(name=p_name,age=int(p_age),sex=p_sex,id=p_id,location=dict(lat=float(p_lat),lon=float(p_lon))),
-                    referrer=dict(name=r_name,facility=r_fac),
-                    provisionalDx=p_dx,
-                    resuscitation=resus_done,
-                    triage=dict(complaint=complaint,decision=dict(color=tri_color(vit)),hr=hr,sbp=sbp,rr=rr,temp=temp,spo2=spo2,avpu=avpu),
-                    clinical=dict(summary=" ".join(ocr.split()[:60])),
-                    reasons=dict(severity=ref_severity,bedOrICUUnavailable=ref_beds,specialTest=ref_tests,requiredCapabilities=need_caps),
-                    dest=chosen,
-                    times=dict(first_contact_ts=now_ts(),decision_ts=now_ts()),
-                    status="PREALERT",
-                    ambulance_available=None
-                )
-                st.session_state.referrals.insert(0,ref)
-                st.success(f"Referral {ref['id']} → {chosen} created")
+        if not rows:
+            st.warning("No capability-fit facilities. Try relaxing requirements.")
+        else:
+            ranked = pd.DataFrame(rows).sort_values(["score","km"], ascending=[False,True]).head(10)
+            st.session_state["_matched_primary"]=None
+            st.session_state["_matched_alts"]=set()
+            st.markdown("### Suggested destinations")
+            for _, r in ranked.iterrows():
+                pick, alt = facility_card(r)
+                if pick: st.session_state["_matched_primary"]=r["name"]
+                if alt:  st.session_state["_matched_alts"].add(r["name"])
+            if not st.session_state["_matched_primary"]:
+                st.session_state["_matched_primary"] = ranked.iloc[0]["name"]
+            st.info(f"Primary: {st.session_state['_matched_primary']} • Alternates: {', '.join(st.session_state['_matched_alts']) or '—'}")
+
+    st.markdown("### Referral details")
+    colA, colB, colC = st.columns(3)
+    with colA:
+        priority = st.selectbox("Transport priority", ["Routine","Urgent","STAT"], index=1)
+    with colB:
+        amb_type = st.selectbox("Ambulance type", ["BLS","ALS","ALS + Vent","Neonatal"], index=1)
+    with colC:
+        consent = st.checkbox("Patient/family consent obtained", value=True)
+
+    primary = st.session_state.get("_matched_primary")
+    alternates = sorted(list(st.session_state.get("_matched_alts", [])))
+
+    def _save_referral(dispatch=False):
+        if not primary:
+            st.error("Select a primary destination from 'Find matched facilities' above.")
+            return
+        vit=dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu,
+                 rf_sbp=rf_sbp, rf_spo2=rf_spo2, rf_avpu=rf_avpu, rf_seizure=rf_seizure, rf_pph=rf_pph, complaint=complaint)
+        ref = dict(
+            id="R"+str(int(time.time()))[-6:],
+            patient=dict(name=p_name, age=int(p_age), sex=p_sex, id=p_id, location=dict(lat=float(p_lat), lon=float(p_lon))),
+            referrer=dict(name=r_name, facility=r_fac),
+            provisionalDx=p_dx,
+            resuscitation=resus_done,
+            triage=dict(complaint=complaint, decision=dict(color=tri_color(vit)), hr=hr, sbp=sbp, rr=rr, temp=temp, spo2=spo2, avpu=avpu),
+            clinical=dict(summary=" ".join(ocr.split()[:60])),
+            reasons=dict(severity=True, bedOrICUUnavailable=ref_beds, specialTest=ref_tests, requiredCapabilities=need_caps),
+            dest=primary,
+            alternates=alternates,
+            transport=dict(priority=priority, ambulance=amb_type, consent=bool(consent)),
+            times=dict(first_contact_ts=now_ts(), decision_ts=now_ts()),
+            status="PREALERT",
+            ambulance_available=None
+        )
+        if dispatch:
+            ref["times"]["dispatch_ts"]=now_ts()
+            ref["status"]="DISPATCHED"
+            ref["ambulance_available"]=True
+        st.session_state.referrals.insert(0, ref)
+        st.success(f"Referral {ref['id']} → {primary} created" + (" and DISPATCHED" if dispatch else ""))
+
+    col1, col2 = st.columns(2)
+    if col1.button("Create referral"):
+        _save_referral(dispatch=False)
+    if col2.button("Create & dispatch now"):
+        _save_referral(dispatch=True)
 
 # ======== Ambulance / EMT ========
 with tabs[1]:
     st.subheader("Active jobs (availability + 5-stage lifecycle)")
-    # EMT availability toggle
     avail = st.radio("Ambulance availability", ["Available","Unavailable"], horizontal=True)
-    # list jobs
     active = [r for r in st.session_state.referrals if r["status"] in ["PREALERT","DISPATCHED","ARRIVE_SCENE","DEPART_SCENE","ARRIVE_DEST"]]
     if not active: st.info("No active jobs")
-    for r in active:
-        st.markdown(f"**{r['patient']['name']}** • {r['triage']['complaint']} • **{r['triage']['decision']['color']}** → **{r['dest']}**")
-        c1,c2,c3,c4,c5 = st.columns(5)
-        if c1.button("Dispatch",key=f"d_{r['id']}"): r["times"]["dispatch_ts"]=now_ts(); r["status"]="DISPATCHED"; r["ambulance_available"]=(avail=="Available")
-        if c2.button("Arrive scene",key=f"a_{r['id']}"): r["times"]["arrive_scene_ts"]=now_ts(); r["status"]="ARRIVE_SCENE"
-        if c3.button("Depart scene",key=f"ds_{r['id']}"): r["times"]["depart_scene_ts"]=now_ts(); r["status"]="DEPART_SCENE"
-        if c4.button("Arrive dest",key=f"ad_{r['id']}"): r["times"]["arrive_dest_ts"]=now_ts(); r["status"]="ARRIVE_DEST"
-        if c5.button("Handover",key=f"h_{r['id']}"): r["times"]["handover_ts"]=now_ts(); r["status"]="HANDOVER"
-        st.caption(f"Stage: {r['status']} • Ambulance available at dispatch: {r.get('ambulance_available')}")
+    else:
+        for r in active:
+            st.markdown(f"**{r['patient']['name']}** • {r['triage']['complaint']} ", unsafe_allow_html=True)
+            triage_pill(r['triage']['decision']['color'])
+            st.write(f"→ **{r['dest']}**")
+            c1,c2,c3,c4,c5 = st.columns(5)
+            if c1.button("Dispatch", key=f"d_{r['id']}"): r["times"]["dispatch_ts"]=now_ts(); r["status"]="DISPATCHED"; r["ambulance_available"]=(avail=="Available")
+            if c2.button("Arrive scene", key=f"a_{r['id']}"): r["times"]["arrive_scene_ts"]=now_ts(); r["status"]="ARRIVE_SCENE"
+            if c3.button("Depart scene", key=f"ds_{r['id']}"): r["times"]["depart_scene_ts"]=now_ts(); r["status"]="DEPART_SCENE"
+            if c4.button("Arrive dest", key=f"ad_{r['id']}"): r["times"]["arrive_dest_ts"]=now_ts(); r["status"]="ARRIVE_DEST"
+            if c5.button("Handover", key=f"h_{r['id']}"): r["times"]["handover_ts"]=now_ts(); r["status"]="HANDOVER"
+            st.caption(f"Stage: {r['status']} • Ambulance available at dispatch: {r.get('ambulance_available')}")
 
 # ======== Receiving Hospital ========
 with tabs[2]:
     st.subheader("Incoming referrals & case actions")
     fac_names = [f["name"] for f in st.session_state.facilities]
-    # keep current selection if valid, else default to first
     current_idx = fac_names.index(st.session_state.active_fac) if st.session_state.active_fac in fac_names else 0
     st.session_state.active_fac = st.selectbox("Facility", fac_names, index=current_idx)
 
@@ -323,10 +463,9 @@ with tabs[2]:
         st.info("No incoming referrals")
     else:
         for r in incoming:
-            st.write(
-                f"**{r['patient']['name']}** — {r['triage']['complaint']} • "
-                f"**{r['triage']['decision']['color']}** | Dx: **{r['provisionalDx']}**"
-            )
+            st.write(f"**{r['patient']['name']}** — {r['triage']['complaint']} ", unsafe_allow_html=True)
+            triage_pill(r['triage']['decision']['color'])
+            st.write(f"| Dx: **{r['provisionalDx']}**")
 
             open_key = f"open_{r['id']}"
             if st.button("Open case", key=open_key):
@@ -341,30 +480,21 @@ Notes: {r['clinical'].get('summary', "—")}
                 st.code(isbar)
 
                 c1, c2, c3 = st.columns(3)
-                # Accept
-                acc_key = f"acc_{r['id']}"
-                if c1.button("Accept", key=acc_key):
+                if c1.button("Accept", key=f"acc_{r['id']}"):
                     r["status"] = "ARRIVE_DEST"
                     r["times"]["arrive_dest_ts"] = now_ts()
                     st.success("Accepted")
 
-                # Reject (divert) with reason
-                rejrs_key = f"rejrs_{r['id']}"
                 reject_reason = c2.selectbox(
                     "Reject reason",
                     ["—", "No ICU bed", "No specialist", "Equipment down", "Over capacity", "Outside scope"],
-                    key=rejrs_key,
+                    key=f"rejrs_{r['id']}",
                 )
-                rej_key = f"rej_{r['id']}"
-                if c3.button("Reject", key=rej_key) and reject_reason != "—":
+                if c3.button("Reject", key=f"rej_{r['id']}") and reject_reason != "—":
                     r["status"] = "PREALERT"
                     r["reasons"]["rejected"] = True
                     r["reasons"]["reject_reason"] = reject_reason
                     st.warning(f"Requested divert / rejected: {reject_reason}")
-
-                r["status"]="PREALERT"; 
-                r["reasons"]["rejected"]=True; r["reasons"]["reject_reason"]=reject_reason
-                st.warning(f"Requested divert / rejected: {reject_reason}")
 
 # ======== Government (KPIs + Heat Map + Patterns) ========
 with tabs[3]:
@@ -375,7 +505,6 @@ with tabs[3]:
     dest_type  = st.selectbox("Receiving type",["All","PHC","CHC","District Hospital","Tertiary"],index=0)
 
     data = st.session_state.referrals.copy()
-    # enrich with types
     fac_by_name = {f["name"]:f for f in st.session_state.facilities}
     for r in data:
         r["dest_type"] = fac_by_name.get(r["dest"],{}).get("type","—")
@@ -395,10 +524,10 @@ with tabs[3]:
     total      = len(data) or 1
 
     k1,k2,k3,k4 = st.columns(4)
-    k1.metric("% RED ≤60m", f"{pct_red_60}%")
-    k2.metric("% Dispatch ≤10m", f"{pct_disp_10}%")
-    k3.metric("Acceptance rate", f"{int(100*accepted/total)}%")
-    k4.metric("Rejection rate", f"{int(100*rejected/total)}%")
+    with k1: kpi_tile("% RED ≤60m", f"{pct_red_60}%")
+    with k2: kpi_tile("% Dispatch ≤10m", f"{pct_disp_10}%")
+    with k3: kpi_tile("Acceptance rate", f"{int(100*accepted/total)}%")
+    with k4: kpi_tile("Rejection rate", f"{int(100*rejected/total)}%")
 
     st.markdown("### Case heat map (locations)")
     if data:
@@ -408,11 +537,9 @@ with tabs[3]:
         st.caption("No data")
 
     st.markdown("### Patterns & Workload")
-    
-    # referral reasons
+    c1,c2 = st.columns(2)
     reasons = pd.Series([("Special test" if r["reasons"].get("specialTest") else "No special test") for r in data]).value_counts()
     c1.bar_chart(reasons, use_container_width=True)
-    # categories
     cats = pd.Series([r["triage"]["complaint"] for r in data]).value_counts()
     c2.bar_chart(cats, use_container_width=True)
 
@@ -442,40 +569,9 @@ with tabs[3]:
 # ======== Data / Admin ========
 with tabs[4]:
     st.subheader("Seed / Import / Export (JSON & CSV)")
-    seed_n = st.slider("Seed referrals (synthetic)", 150, 300, 200, step=25)
+    seed_n = st.slider("Seed referrals (synthetic)", 100, 1000, 300, step=50)
     if st.button("Seed synthetic data"):
-        st.session_state.referrals.clear()
-        rng=random.Random(42)
-        conds=["Maternal","Trauma","Stroke","Cardiac","Sepsis","Other"]
-        colors=["RED","YELLOW","GREEN"]
-        fac_names=[f["name"] for f in st.session_state.facilities]
-        base = time.time() - 5*24*3600  # last 5 days
-        for i in range(seed_n):
-            cond=rng.choices(conds, weights=[0.2,0.25,0.2,0.2,0.1,0.05])[0]
-            col = rng.choices(colors, weights=[0.3,0.5,0.2])[0]
-            ts = base + rng.randint(0,5*24*3600)
-            # EMT availability & timings
-            amb_avail = (rng.random() > 0.2)
-            t_disp = ts + rng.randint(2*60, 20*60) if amb_avail else ts + rng.randint(21*60, 60*60)
-            t_arrdest = t_disp + rng.randint(25*60, 120*60)
-            lat,lon = rand_geo(rng)
-            st.session_state.referrals.append(dict(
-                id=f"S{i:04d}",
-                patient=dict(name=f"Pt{i:04d}", age=rng.randint(1,85), sex=("Female" if rng.random()<0.5 else "Male"),
-                             id="", location=dict(lat=lat,lon=lon)),
-                referrer=dict(name="Dr. Demo", facility=rng.choice(["PHC Mawlai","CHC Smit","District Hospital Shillong","Tertiary Shillong Hub"])),
-                provisionalDx=("PPH" if cond=="Maternal" else rng.choice(["—","Sepsis","Head injury","STEMI","Stroke?"])),
-                resuscitation=rng.sample(RESUS, rng.randint(0,3)),
-                triage=dict(complaint=cond, decision=dict(color=col), hr=rng.randint(80,140), sbp=rng.randint(85,140),
-                            rr=rng.randint(14,32), temp=round(36+rng.random()*3,1), spo2=rng.randint(88,98), avpu="A"),
-                clinical=dict(summary="Auto-seeded"),
-                reasons=dict(severity=True, bedOrICUUnavailable=(rng.random()<0.2), specialTest=(rng.random()<0.3), requiredCapabilities=[]),
-                dest=rng.choice(fac_names),
-                times=dict(first_contact_ts=ts, decision_ts=ts+60, dispatch_ts=t_disp, arrive_dest_ts=t_arrdest,
-                           handover_ts=(t_arrdest + rng.randint(5*60,25*60) if rng.random()<0.7 else None)),
-                status="HANDOVER",
-                ambulance_available=amb_avail
-            ))
+        seed_referrals(n=seed_n)
         st.success(f"Seeded {seed_n} referrals")
 
     st.download_button("Export JSON", data=json.dumps(dict(referrals=st.session_state.referrals, facilities=st.session_state.facilities), indent=2),
@@ -485,30 +581,31 @@ with tabs[4]:
             out=pd.DataFrame(st.session_state.referrals)
             st.download_button("Download CSV", data=out.to_csv(index=False), file_name="ahecn_referrals.csv", mime="text/csv")
 
-upload = st.file_uploader("Import JSON", type=["json"])
-if upload:
-    data = json.load(upload)
-    st.session_state.referrals = data.get("referrals", [])
-    imported_fac = data.get("facilities", st.session_state.facilities)
-    st.session_state.facilities = [normalize_facility(x) for x in imported_fac]
-    st.success("Imported (schema normalized)")
-
-
+    upload = st.file_uploader("Import JSON", type=["json"])
+    if upload:
+        data = json.load(upload)
+        st.session_state.referrals = data.get("referrals", [])
+        imported_fac = data.get("facilities", st.session_state.facilities)
+        st.session_state.facilities = [normalize_facility(x) for x in imported_fac]
+        st.success("Imported (schema normalized)")
 
 # ======== Facility Admin ========
 with tabs[5]:
     st.subheader("Facility capabilities & readiness (edit live)")
 
-    # robust table (uses normalized schema)
+    # generate more demo facilities
+    st.markdown("**Generate more demo facilities**")
+    new_n = st.slider("Number of facilities", 10, 30, len(st.session_state.facilities), step=1)
+    if st.button("Regenerate facilities"):
+        st.session_state.facilities = [normalize_facility(x) for x in default_facilities(count=new_n)]
+        st.success(f"Generated {new_n} facilities")
+
     fac_df = facilities_df()
     st.dataframe(fac_df, use_container_width=True)
 
-    # pick a facility to edit
     target = st.selectbox("Select facility", [f["name"] for f in st.session_state.facilities])
-    # pull the normalized record for editing
     F = next(f for f in st.session_state.facilities if f["name"] == target)
 
-    # editable fields: ICU_open + acceptance rate
     c1, c2 = st.columns(2)
     with c1:
         new_icu = st.number_input("ICU_open", 0, 30, value=int(F["ICU_open"]))
@@ -527,5 +624,3 @@ with tabs[5]:
         F["ICU_open"] = int(new_icu)
         F["acceptanceRate"] = float(new_acc)
         st.success("Facility updated")
-
-
