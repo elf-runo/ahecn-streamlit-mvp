@@ -364,9 +364,17 @@ with tabs[0]:
         st.caption("PEWS disabled for ≥18y")
 
     # Hero triage banner
-    st.markdown("### Triage decision")
-  sev_lbl = {"RED":"Critical","YELLOW":"Moderate","GREEN":"Non-critical"}[tri_color(vit_for_color)]
-st.caption(f"Severity: **{sev_lbl}**")
+    # Hero triage banner
+st.markdown("### Triage decision")
+vit_for_color = dict(
+    hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu,
+    rf_sbp=rf_sbp, rf_spo2=rf_spo2, rf_avpu=rf_avpu, rf_seizure=rf_seizure, rf_pph=rf_pph,
+    complaint=complaint
+)
+color = tri_color(vit_for_color)
+triage_pill(color)
+st.caption(f"Severity: **{'Critical' if color=='RED' else 'Moderate' if color=='YELLOW' else 'Non-critical'}**")
+
 
     vit_for_color = dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu,
                          rf_sbp=rf_sbp, rf_spo2=rf_spo2, rf_avpu=rf_avpu, rf_seizure=rf_seizure, rf_pph=rf_pph,
