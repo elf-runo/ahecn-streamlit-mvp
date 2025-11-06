@@ -1,0 +1,9 @@
+[theme]
+# Optional: uncomment to force dark or light base
+# base="dark"
+
+primaryColor="#10b981"            # Buttons, sliders (emerald)
+backgroundColor="#0b1220"         # Main background (deep navy)
+secondaryBackgroundColor="#111827" # Sidebar/cards background
+textColor="#e5e7eb"               # Text (light gray)
+font="sans serif"
