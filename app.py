@@ -63,6 +63,30 @@ def validate_vitals(hr, rr, sbp, temp, spo2):
     )
 
 # 1) NEWS2 (simplified, consistent with RCP tables incl. O2 device & scale)
+    # Coerce everything to numbers / safe strings
+    rr, spo2, sbp, hr, temp = (_num(rr), _num(spo2), _num(sbp), _num(hr), _num(temp))
+    avpu = "A" if avpu is None else str(avpu).strip().upper()
+    spo2_scale = _int(spo2_scale, 1)
+    o2_device = "Air" if not o2_device else str(o2_device).strip()
+
+def _num(x):
+    """Convert to float or return None if blank/invalid."""
+    if x is None:
+        return None
+    s = str(x).strip()
+    if s == "":
+        return None
+    try:
+        return float(s)
+    except Exception:
+        return None
+
+def _int(x, default=1):
+    try:
+        return int(str(x).strip())
+    except Exception:
+        return default
+
 def calc_NEWS2(rr, spo2, sbp, hr, temp, avpu, o2_device="Air", spo2_scale=1):
     hits = []
     score = 0
@@ -127,6 +151,9 @@ def calc_NEWS2(rr, spo2, sbp, hr, temp, avpu, o2_device="Air", spo2_scale=1):
     return score, hits, (score>=5), (score>=7)  # (score, explainers, review, urgent)
 
 # 2) qSOFA
+    rr, sbp = _num(rr), _num(sbp)
+    avpu = "A" if avpu is None else str(avpu).strip().upper()
+
 def calc_qSOFA(rr, sbp, avpu):
     hits = []
     score = 0
@@ -136,6 +163,8 @@ def calc_qSOFA(rr, sbp, avpu):
     return score, hits, (score>=2)
 
 # 3) MEOWS (very simplified, colour-bands; any RED ⇒ escalate)
+    hr, rr, sbp, temp, spo2 = _num(hr), _num(rr), _num(sbp), _num(temp), _num(spo2)
+
 def calc_MEOWS(hr, rr, sbp, temp, spo2, red_flags=None):
     red = []; yellow = []
     if sbp is not None:
@@ -158,7 +187,9 @@ def calc_MEOWS(hr, rr, sbp, temp, spo2, red_flags=None):
     return dict(red=red, yellow=yellow)
 
 # 4) PEWS (age-banded, simplified 0–6)
-def _band(x, ylo, yhi, rlo, rhi):
+    rr, hr, spo2 = _num(rr), _num(hr), _num(spo2)
+
+  def _band(x, ylo, yhi, rlo, rhi):
     # returns 2 if red range, 1 if yellow, 0 otherwise
     if x is None: return 0
     if x >= rhi or x <= rlo: return 2
@@ -266,13 +297,13 @@ def render_triage_banner(hr, rr, sbp, temp, spo2, avpu,
     flags  = dict(seizure=bool(rf_seizure), pph=bool(rf_pph))
     # Infer context (adjust if you store these differently)
     age = st.session_state.get("patient_age", None) if "patient_age" in st.session_state else None
-    context = dict(
+        context = dict(
         age=age,
-        pregnant=(complaint=="Maternal"),
-        infection=(complaint in ["Sepsis","Other"]),
-        o2_device=st.session_state.get("o2_device","Air") if "o2_device" in st.session_state else "Air",
-        spo2_scale=st.session_state.get("spo2_scale",1) if "spo2_scale" in st.session_state else 1,
-        behavior=st.session_state.get("pews_behavior","Normal") if "pews_behavior" in st.session_state else "Normal"
+        pregnant=(complaint == "Maternal"),
+        infection=(complaint in ["Sepsis", "Other"]),   # tweak to your logic
+        o2_device=st.session_state.get("o2_device", "Air"),
+        spo2_scale=_int(st.session_state.get("spo2_scale", 1), 1),
+        behavior=st.session_state.get("pews_behavior", "Normal")
     )
 
     colour, details = triage_decision(vitals, flags, context)
