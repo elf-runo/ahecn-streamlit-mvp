@@ -305,43 +305,61 @@ def cap_badges(list_or_csv):
     cols = st.columns(min(4, max(1, len(items))))
     for i,cap in enumerate(items[:12]):
         cols[i%len(cols)].markdown(f'<span class="badge">{cap}</span>', unsafe_allow_html=True)
-# ---- TRIAGE BANNER HELPER (uses rule engine) ----
+
+# ---- TRIAGE BANNER HELPER (uses rule engine, hardened) ----
 def render_triage_banner(hr, rr, sbp, temp, spo2, avpu,
                          rf_sbp, rf_spo2, rf_avpu, rf_seizure, rf_pph, complaint):
-    # Build inputs for engine
-    vitals = dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu)
-    flags  = dict(seizure=bool(rf_seizure), pph=bool(rf_pph))
-    # Infer context (adjust if you store these differently)
-    age = st.session_state.get("patient_age", None) if "patient_age" in st.session_state else None
-        context = dict(
+    # Build inputs (coerce to safe types)
+    vitals = dict(
+        hr=_num(hr),
+        rr=_num(rr),
+        sbp=_num(sbp),
+        temp=_num(temp),
+        spo2=_num(spo2),
+        avpu=(str(avpu).strip().upper() if avpu is not None else "A")
+    )
+    flags = dict(seizure=bool(rf_seizure), pph=bool(rf_pph))
+
+    # Pull context safely from session (with defaults)
+    age = _num(st.session_state.get("patient_age", None))
+    o2_device = st.session_state.get("o2_device", "Air")
+    spo2_scale = _int(st.session_state.get("spo2_scale", 1), 1)
+    behavior = st.session_state.get("pews_behavior", "Normal")
+
+    context = dict(
         age=age,
         pregnant=(complaint == "Maternal"),
-        infection=(complaint in ["Sepsis", "Other"]),   # tweak to your logic
-        o2_device=st.session_state.get("o2_device", "Air"),
-        spo2_scale=_int(st.session_state.get("spo2_scale", 1), 1),
-        behavior=st.session_state.get("pews_behavior", "Normal")
+        infection=(complaint in ["Sepsis", "Other"]),
+        o2_device=o2_device,
+        spo2_scale=spo2_scale,
+        behavior=behavior
     )
 
+    # Decide + explain
     colour, details = triage_decision(vitals, flags, context)
 
     st.markdown("### Triage decision")
     triage_pill(colour)
 
-    # Why this colour (guardrails first, then scores)
     why = []
-    if details["reasons"]: 
+    if details["reasons"]:
         why += details["reasons"]
-    if details["NEWS2"]["urgent"]: why.append(f"NEWS2 {details['NEWS2']['score']} (≥7)")
-    elif details["NEWS2"]["review"]: why.append(f"NEWS2 {details['NEWS2']['score']} (≥5)")
-    if details["qSOFA"]["high"]: why.append(f"qSOFA {details['qSOFA']['score']} (≥2)")
-    if context.get("pregnant") and details["MEOWS"]["red"]: why.append("MEOWS red band")
-    if (context.get("age") is not None and context.get("age")<18) and details["PEWS"]["high"]: why.append(f"PEWS {details['PEWS']['score']} (≥6)")
+    if details["NEWS2"]["urgent"]:
+        why.append(f"NEWS2 {details['NEWS2']['score']} (≥7)")
+    elif details["NEWS2"]["review"]:
+        why.append(f"NEWS2 {details['NEWS2']['score']} (≥5)")
+    if details["qSOFA"]["high"]:
+        why.append(f"qSOFA {details['qSOFA']['score']} (≥2)")
+    if context.get("pregnant") and details["MEOWS"]["red"]:
+        why.append("MEOWS red band")
+    if (age is not None and age < 18) and details["PEWS"]["high"]:
+        why.append(f"PEWS {details['PEWS']['score']} (≥6)")
 
     st.caption("Why: " + (", ".join(why) if why else "thresholds not met"))
 
-    # Optional: surface raw scores for audit (collapse if you prefer)
     with st.expander("Score details"):
         st.write(details)
+
 
 def facility_card(row):
     with st.container():
