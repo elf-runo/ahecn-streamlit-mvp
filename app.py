@@ -187,40 +187,56 @@ def calc_MEOWS(hr, rr, sbp, temp, spo2, red_flags=None):
     return dict(red=red, yellow=yellow)
 
 # 4) PEWS (age-banded, simplified 0–6)
-    rr, hr, spo2 = _num(rr), _num(hr), _num(spo2)
-
-  def _band(x, ylo, yhi, rlo, rhi):
-    # returns 2 if red range, 1 if yellow, 0 otherwise
-    if x is None: return 0
-    if x >= rhi or x <= rlo: return 2
-    if x >= yhi or x <= ylo: return 1
+def _band(x, ylo, yhi, rlo, rhi):
+    """Return 2 if in red range, 1 if in yellow range, else 0."""
+    x = _num(x)
+    if x is None:
+        return 0
+    if x >= rhi or x <= rlo:
+        return 2
+    if x >= yhi or x <= ylo:
+        return 1
     return 0
 
 def calc_PEWS(age, rr, hr, behavior="Normal", spo2=None):
-    # default bands by broad age category
-    if age is None: return 0, {"detail":"age missing"}, False, False
-    if age < 1:       # Infant
-        rr_y, rr_r = (40,50), (50,60)
-        hr_y, hr_r = (140,160), (160,200)
-    elif age < 5:     # Toddler
-        rr_y, rr_r = (30,40), (40,60)
-        hr_y, hr_r = (130,150), (150,200)
-    elif age < 12:    # Child
-        rr_y, rr_r = (24,30), (30,60)
-        hr_y, hr_r = (120,140), (140,200)
-    else:             # Adolescent
-        rr_y, rr_r = (20,24), (24,60)
-        hr_y, hr_r = (110,130), (130,200)
+    # Coerce safely
+    age  = _num(age)
+    rr   = _num(rr)
+    hr   = _num(hr)
+    spo2 = _num(spo2)
+
+    if age is None:
+        return 0, {"detail": "age missing"}, False, False
+
+    # Default bands by broad age category
+    if age < 1:         # Infant
+        rr_y, rr_r = (40, 50), (50, 60)
+        hr_y, hr_r = (140, 160), (160, 200)
+    elif age < 5:       # Toddler
+        rr_y, rr_r = (30, 40), (40, 60)
+        hr_y, hr_r = (130, 150), (150, 200)
+    elif age < 12:      # Child
+        rr_y, rr_r = (24, 30), (30, 60)
+        hr_y, hr_r = (120, 140), (140, 200)
+    else:               # Adolescent
+        rr_y, rr_r = (20, 24), (24, 60)
+        hr_y, hr_r = (110, 130), (130, 200)
+
     sc = 0
     sc += _band(rr, rr_y[0], rr_y[1], rr_r[0], rr_r[1])
     sc += _band(hr, hr_y[0], hr_y[1], hr_r[0], hr_r[1])
+
     if spo2 is not None:
         sc += 2 if spo2 < 92 else (1 if spo2 < 95 else 0)
-    if behavior and behavior.lower() == "lethargic":
+
+    beh = str(behavior or "Normal").lower()
+    if beh == "lethargic":
         sc += 2
-    elif behavior and behavior.lower() == "irritable":
+    elif beh == "irritable":
         sc += 1
-    return sc, {"age":age}, (sc>=6), (sc>=4)
+
+    return sc, {"age": age}, (sc >= 6), (sc >= 4)
+
 
 # 5) Master decision with fail-safe bias (explainable)
 def triage_decision(vitals, flags, context):
