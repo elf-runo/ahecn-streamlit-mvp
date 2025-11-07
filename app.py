@@ -63,11 +63,16 @@ def validate_vitals(hr, rr, sbp, temp, spo2):
     )
 
 # 1) NEWS2 (simplified, consistent with RCP tables incl. O2 device & scale)
+def calc_NEWS2(rr, spo2, sbp, hr, temp, avpu, o2_device="Air", spo2_scale=1):
     # Coerce everything to numbers / safe strings
     rr, spo2, sbp, hr, temp = (_num(rr), _num(spo2), _num(sbp), _num(hr), _num(temp))
     avpu = "A" if avpu is None else str(avpu).strip().upper()
     spo2_scale = _int(spo2_scale, 1)
     o2_device = "Air" if not o2_device else str(o2_device).strip()
+
+    hits = []
+    score = 0
+    ...
 
 def _num(x):
     """Convert to float or return None if blank/invalid."""
@@ -149,6 +154,20 @@ def calc_NEWS2(rr, spo2, sbp, hr, temp, avpu, o2_device="Air", spo2_scale=1):
         score += 3; hits.append("NEWS2 AVPU ≠ A =3")
 
     return score, hits, (score>=5), (score>=7)  # (score, explainers, review, urgent)
+
+def safe_calc_NEWS2(rr, spo2, sbp, hr, temp, avpu, o2_device="Air", spo2_scale=1):
+    try:
+        out = calc_NEWS2(rr, spo2, sbp, hr, temp, avpu, o2_device, spo2_scale)
+        if isinstance(out, tuple):
+            if len(out) == 4:
+                return out
+            if len(out) == 3:
+                score, hits, urgent = out
+                review = (score is not None) and (5 <= int(score) < 7)
+                return score, hits, review, urgent
+        return 0, ["NEWS2: malformed return"], False, False
+    except Exception as e:
+        return 0, [f"NEWS2 error: {type(e).__name__}"], False, False
 
 # 2) qSOFA
     rr, sbp = _num(rr), _num(sbp)
