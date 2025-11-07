@@ -61,9 +61,22 @@ def cap_badges(list_or_csv):
         items = list_or_csv or []
     if not items:
         st.markdown('<span class="badge">—</span>', unsafe_allow_html=True); return
+
+
     cols = st.columns(min(4, max(1, len(items))))
     for i,cap in enumerate(items[:12]):
         cols[i%len(cols)].markdown(f'<span class="badge">{cap}</span>', unsafe_allow_html=True)
+# ---- TRIAGE BANNER HELPER ----
+def render_triage_banner(hr, rr, sbp, temp, spo2, avpu,
+                         rf_sbp, rf_spo2, rf_avpu, rf_seizure, rf_pph, complaint):
+    st.markdown("### Triage decision")
+    color = tri_color({
+        "hr": hr, "rr": rr, "sbp": sbp, "temp": temp, "spo2": spo2, "avpu": avpu,
+        "rf_sbp": rf_sbp, "rf_spo2": rf_spo2, "rf_avpu": rf_avpu, "rf_seizure": rf_seizure, "rf_pph": rf_pph,
+        "complaint": complaint
+    })
+    triage_pill(color)
+    st.caption(f"Severity: **{'Critical' if color=='RED' else 'Moderate' if color=='YELLOW' else 'Non-critical'}**")
 
 def facility_card(row):
     with st.container():
@@ -364,19 +377,8 @@ with tabs[0]:
         st.caption("PEWS disabled for ≥18y")
 
     # Hero triage banner
-    st.markdown("### Triage decision")
-    vit_for_color = dict(
-    hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu,
-    rf_sbp=rf_sbp, rf_spo2=rf_spo2, rf_avpu=rf_avpu, rf_seizure=rf_seizure, rf_pph=rf_pph,
-    complaint=complaint
-    )
-   color = tri_color(vit_for_color)
-  triage_pill(color)
-st.caption(f"Severity: **{'Critical' if color=='RED' else 'Moderate' if color=='YELLOW' else 'Non-critical'}**")
-
-
-    
-
+    render_triage_banner(hr, rr, sbp, temp, spo2, avpu, rf_sbp, rf_spo2, rf_avpu, rf_seizure, rf_pph, complaint)
+        
     # Resuscitation interventions
     st.subheader("Resuscitation / Stabilization done (tick all applied)")
     cols = st.columns(5)
