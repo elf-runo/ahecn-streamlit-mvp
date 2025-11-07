@@ -236,6 +236,15 @@ def calc_PEWS(age, rr, hr, behavior="Normal", spo2=None):
         sc += 1
 
     return sc, {"age": age}, (sc >= 6), (sc >= 4)
+def safe_calc_NEWS2(rr, spo2, sbp, hr, temp, avpu, o2_device="Air", spo2_scale=1):
+    """
+    Wrapper that never raises. Coerces inputs and, on any error, returns 0 with an explainer.
+    """
+    try:
+        return calc_NEWS2(rr, spo2, sbp, hr, temp, avpu, o2_device, spo2_scale)
+    except Exception as e:
+        # Make sure we never crash the app due to malformed inputs
+        return 0, [f"NEWS2 error: {type(e).__name__}"], False, False
 
 
 # 5) Master decision with fail-safe bias (explainable)
@@ -250,21 +259,35 @@ def triage_decision(vitals, flags, context):
     avpu = vitals.get("avpu","A")
     reasons = []
 
-    # Red flags (fail-safe)
-    if v["sbp"] is not None and v["sbp"] < 90: reasons.append("SBP<90")
-    if v["spo2"] is not None and v["spo2"] < 90: reasons.append("SpO₂<90%")
-    if str(avpu).upper() != "A": reasons.append("Altered mentation (AVPU)")
-    if flags.get("seizure"): reasons.append("Seizure")
-    if flags.get("pph"): reasons.append("Post-partum haemorrhage")
+        # Red flags (fail-safe)
+    if v["sbp"] is not None and v["sbp"] < 90: 
+        reasons.append("SBP<90")
+    if v["spo2"] is not None and v["spo2"] < 90: 
+        reasons.append("SpO₂<90%")
+    if str(avpu).upper() != "A": 
+        reasons.append("Altered mentation (AVPU)")
+    if flags.get("seizure"): 
+        reasons.append("Seizure")
+    if flags.get("pph"): 
+        reasons.append("Post-partum haemorrhage")
 
     # Scores (gated)
-    news2_score, news2_hits, news2_review, news2_urgent = calc_NEWS2(
+    news2_score, news2_hits, news2_review, news2_urgent = safe_calc_NEWS2(
         v["rr"], v["spo2"], v["sbp"], v["hr"], v["temp"], avpu,
-        context.get("o2_device","Air"), context.get("spo2_scale",1)
+        context.get("o2_device", "Air"), context.get("spo2_scale", 1)
     )
-    q_score, q_hits, q_high = calc_qSOFA(v["rr"], v["sbp"], avpu) if context.get("infection") else (0,[],False)
-    meows = calc_MEOWS(v["hr"], v["rr"], v["sbp"], v["temp"], v["spo2"]) if context.get("pregnant") else dict(red=[],yellow=[])
-    pews_sc, pews_meta, pews_high, pews_watch = calc_PEWS(context.get("age"), v["rr"], v["hr"], context.get("behavior","Normal"), v["spo2"]) if (context.get("age") is not None and context.get("age")<18) else (0,{},False,False)
+    q_score, q_hits, q_high = (
+        calc_qSOFA(v["rr"], v["sbp"], avpu) if context.get("infection") else (0, [], False)
+    )
+    meows = (
+        calc_MEOWS(v["hr"], v["rr"], v["sbp"], v["temp"], v["spo2"])
+        if context.get("pregnant") else dict(red=[], yellow=[])
+    )
+    pews_sc, pews_meta, pews_high, pews_watch = (
+        calc_PEWS(context.get("age"), v["rr"], v["hr"], context.get("behavior","Normal"), v["spo2"])
+        if (context.get("age") is not None and context.get("age") < 18)
+        else (0, {}, False, False)
+    )
 
     # Colour logic
     colour = "GREEN"
@@ -588,6 +611,19 @@ def seed_referrals(n=300, rng_seed=42):
 # ---------------------- SESSION ----------------------
 if "facilities" not in st.session_state:
     st.session_state.facilities = default_facilities(count=15)
+  # ---- Safe defaults to prevent blanks/None in scoring ----
+if "patient_age" not in st.session_state:
+    st.session_state["patient_age"] = None   # or set a demo default like 30
+
+if "o2_device" not in st.session_state:
+    st.session_state["o2_device"] = "Air"     # "Air" means no supplemental oxygen
+
+if "spo2_scale" not in st.session_state:
+    st.session_state["spo2_scale"] = 1        # 1 = normal SpO₂ scale; 2 = COPD scale
+
+if "pews_behavior" not in st.session_state:
+    st.session_state["pews_behavior"] = "Normal"  # options you use: Normal / Irritable / Lethargic
+
 if "referrals" not in st.session_state:
     st.session_state.referrals = []
 if "active_fac" not in st.session_state:
