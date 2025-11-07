@@ -43,6 +43,198 @@ hr.soft{ border:none; height:1px; background:#1f2937; margin:10px 0 14px }
 </style>
 """, unsafe_allow_html=True)
 
+# ---------------------- SCORING ENGINES (rules, MVP-safe) ----------------------
+
+# 0) Basic validation (keeps inputs plausible)
+def _clip(v, lo, hi):
+    try: 
+        x = float(v)
+    except Exception:
+        return None
+    return max(lo, min(hi, x))
+
+def validate_vitals(hr, rr, sbp, temp, spo2):
+    return dict(
+        hr   = _clip(hr,   20, 240),
+        rr   = _clip(rr,    5,  60),
+        sbp  = _clip(sbp,  50, 260),
+        temp = _clip(temp, 32,  42),
+        spo2 = _clip(spo2, 50, 100),
+    )
+
+# 1) NEWS2 (simplified, consistent with RCP tables incl. O2 device & scale)
+def calc_NEWS2(rr, spo2, sbp, hr, temp, avpu, o2_device="Air", spo2_scale=1):
+    hits = []
+    score = 0
+
+    # RR
+    if rr is None: pass
+    elif rr <= 8:     score += 3; hits.append("NEWS2 RR ≤8 =3")
+    elif 9 <= rr <=11:score += 1; hits.append("NEWS2 RR 9–11 =1")
+    elif 12 <= rr <=20:           hits.append("NEWS2 RR 12–20 =0")
+    elif 21 <= rr <=24:score += 2; hits.append("NEWS2 RR 21–24 =2")
+    else:             score += 3; hits.append("NEWS2 RR ≥25 =3")
+
+    # SpO2 scale 1 (default)
+    def spo2_s1(s):
+        if s <= 91: return 3
+        if 92 <= s <= 93: return 2
+        if 94 <= s <= 95: return 1
+        return 0
+    # SpO2 scale 2 (COPD/CRF)
+    def spo2_s2(s):
+        if s <= 83: return 3
+        if 84 <= s <= 85: return 2
+        if 86 <= s <= 90: return 1
+        if 91 <= s <= 92: return 0
+        return 0
+    if spo2 is not None:
+        pts = spo2_s1(spo2) if int(spo2_scale)==1 else spo2_s2(spo2)
+        score += pts; 
+        hits.append(f"NEWS2 SpO₂ (scale {spo2_scale}) +{pts}")
+    if str(o2_device).lower() != "air":
+        score += 2; hits.append("NEWS2 Supplemental O₂ +2")
+
+    # SBP
+    if sbp is not None:
+        if sbp <= 90:       score += 3; hits.append("NEWS2 SBP ≤90 =3")
+        elif 91 <= sbp <=100:score += 2; hits.append("NEWS2 SBP 91–100 =2")
+        elif 101 <= sbp <=110:score += 1; hits.append("NEWS2 SBP 101–110 =1")
+        elif 111 <= sbp <=219:                     hits.append("NEWS2 SBP 111–219 =0")
+        else:               score += 3; hits.append("NEWS2 SBP ≥220 =3")
+
+    # HR
+    if hr is not None:
+        if hr <= 40:        score += 3; hits.append("NEWS2 HR ≤40 =3")
+        elif 41 <= hr <= 50:score += 1; hits.append("NEWS2 HR 41–50 =1")
+        elif 51 <= hr <= 90:                    hits.append("NEWS2 HR 51–90 =0")
+        elif 91 <= hr <=110:score += 1; hits.append("NEWS2 HR 91–110 =1")
+        elif 111 <= hr <=130:score += 2; hits.append("NEWS2 HR 111–130 =2")
+        else:               score += 3; hits.append("NEWS2 HR ≥131 =3")
+
+    # Temp
+    if temp is not None:
+        if temp <= 35.0:        score += 3; hits.append("NEWS2 Temp ≤35.0 =3")
+        elif 35.1 <= temp <= 36.0:score += 1; hits.append("NEWS2 Temp 35.1–36.0 =1")
+        elif 36.1 <= temp <= 38.0:                    hits.append("NEWS2 Temp 36.1–38.0 =0")
+        elif 38.1 <= temp <= 39.0:score += 1; hits.append("NEWS2 Temp 38.1–39.0 =1")
+        else:                    score += 2; hits.append("NEWS2 Temp ≥39.1 =2")
+
+    # AVPU
+    if str(avpu).upper() != "A":
+        score += 3; hits.append("NEWS2 AVPU ≠ A =3")
+
+    return score, hits, (score>=5), (score>=7)  # (score, explainers, review, urgent)
+
+# 2) qSOFA
+def calc_qSOFA(rr, sbp, avpu):
+    hits = []
+    score = 0
+    if rr is not None and rr >= 22: score += 1; hits.append("qSOFA RR ≥22")
+    if sbp is not None and sbp <= 100: score += 1; hits.append("qSOFA SBP ≤100")
+    if str(avpu).upper() != "A": score += 1; hits.append("qSOFA altered mentation")
+    return score, hits, (score>=2)
+
+# 3) MEOWS (very simplified, colour-bands; any RED ⇒ escalate)
+def calc_MEOWS(hr, rr, sbp, temp, spo2, red_flags=None):
+    red = []; yellow = []
+    if sbp is not None:
+        if sbp < 90 or sbp > 160: red.append("SBP critical")
+        elif sbp < 100 or sbp > 150: yellow.append("SBP borderline")
+    if hr is not None:
+        if hr > 120 or hr < 50: red.append("HR critical")
+        elif hr > 100: yellow.append("HR high")
+    if rr is not None:
+        if rr > 30 or rr < 10: red.append("RR critical")
+        elif rr > 21: yellow.append("RR high")
+    if temp is not None:
+        if temp >= 38.0 or temp < 35.0: red.append("Temp critical")
+        elif temp >= 37.6: yellow.append("Temp high")
+    if spo2 is not None:
+        if spo2 < 94: red.append("SpO₂ <94%")
+        elif spo2 < 96: yellow.append("SpO₂ 94–95%")
+    if red_flags:
+        red += red_flags
+    return dict(red=red, yellow=yellow)
+
+# 4) PEWS (age-banded, simplified 0–6)
+def _band(x, ylo, yhi, rlo, rhi):
+    # returns 2 if red range, 1 if yellow, 0 otherwise
+    if x is None: return 0
+    if x >= rhi or x <= rlo: return 2
+    if x >= yhi or x <= ylo: return 1
+    return 0
+
+def calc_PEWS(age, rr, hr, behavior="Normal", spo2=None):
+    # default bands by broad age category
+    if age is None: return 0, {"detail":"age missing"}, False, False
+    if age < 1:       # Infant
+        rr_y, rr_r = (40,50), (50,60)
+        hr_y, hr_r = (140,160), (160,200)
+    elif age < 5:     # Toddler
+        rr_y, rr_r = (30,40), (40,60)
+        hr_y, hr_r = (130,150), (150,200)
+    elif age < 12:    # Child
+        rr_y, rr_r = (24,30), (30,60)
+        hr_y, hr_r = (120,140), (140,200)
+    else:             # Adolescent
+        rr_y, rr_r = (20,24), (24,60)
+        hr_y, hr_r = (110,130), (130,200)
+    sc = 0
+    sc += _band(rr, rr_y[0], rr_y[1], rr_r[0], rr_r[1])
+    sc += _band(hr, hr_y[0], hr_y[1], hr_r[0], hr_r[1])
+    if spo2 is not None:
+        sc += 2 if spo2 < 92 else (1 if spo2 < 95 else 0)
+    if behavior and behavior.lower() == "lethargic":
+        sc += 2
+    elif behavior and behavior.lower() == "irritable":
+        sc += 1
+    return sc, {"age":age}, (sc>=6), (sc>=4)
+
+# 5) Master decision with fail-safe bias (explainable)
+def triage_decision(vitals, flags, context):
+    """
+    vitals: dict(hr, rr, sbp, temp, spo2, avpu)
+    flags : dict(seizure, pph)
+    context: dict(age, pregnant, infection, o2_device, spo2_scale)
+    """
+    v = validate_vitals(vitals.get("hr"), vitals.get("rr"), vitals.get("sbp"),
+                        vitals.get("temp"), vitals.get("spo2"))
+    avpu = vitals.get("avpu","A")
+    reasons = []
+
+    # Red flags (fail-safe)
+    if v["sbp"] is not None and v["sbp"] < 90: reasons.append("SBP<90")
+    if v["spo2"] is not None and v["spo2"] < 90: reasons.append("SpO₂<90%")
+    if str(avpu).upper() != "A": reasons.append("Altered mentation (AVPU)")
+    if flags.get("seizure"): reasons.append("Seizure")
+    if flags.get("pph"): reasons.append("Post-partum haemorrhage")
+
+    # Scores (gated)
+    news2_score, news2_hits, news2_review, news2_urgent = calc_NEWS2(
+        v["rr"], v["spo2"], v["sbp"], v["hr"], v["temp"], avpu,
+        context.get("o2_device","Air"), context.get("spo2_scale",1)
+    )
+    q_score, q_hits, q_high = calc_qSOFA(v["rr"], v["sbp"], avpu) if context.get("infection") else (0,[],False)
+    meows = calc_MEOWS(v["hr"], v["rr"], v["sbp"], v["temp"], v["spo2"]) if context.get("pregnant") else dict(red=[],yellow=[])
+    pews_sc, pews_meta, pews_high, pews_watch = calc_PEWS(context.get("age"), v["rr"], v["hr"], context.get("behavior","Normal"), v["spo2"]) if (context.get("age") is not None and context.get("age")<18) else (0,{},False,False)
+
+    # Colour logic
+    colour = "GREEN"
+    if reasons or news2_urgent or q_high or (len(meows["red"])>0) or pews_high:
+        colour = "RED"
+    elif news2_review or (len(meows["yellow"])>0) or pews_watch:
+        colour = "YELLOW"
+
+    details = {
+        "NEWS2": dict(score=news2_score, hits=news2_hits, review=news2_review, urgent=news2_urgent),
+        "qSOFA": dict(score=q_score, hits=q_hits, high=q_high),
+        "MEOWS": meows,
+        "PEWS": dict(score=pews_sc, high=pews_high, watch=pews_watch),
+        "reasons": reasons
+    }
+    return colour, details
+
 # ---------------------- UI HELPERS ----------------------
 def triage_pill(color:str):
     c = (color or "").upper()
@@ -66,17 +258,43 @@ def cap_badges(list_or_csv):
     cols = st.columns(min(4, max(1, len(items))))
     for i,cap in enumerate(items[:12]):
         cols[i%len(cols)].markdown(f'<span class="badge">{cap}</span>', unsafe_allow_html=True)
-# ---- TRIAGE BANNER HELPER ----
+# ---- TRIAGE BANNER HELPER (uses rule engine) ----
 def render_triage_banner(hr, rr, sbp, temp, spo2, avpu,
                          rf_sbp, rf_spo2, rf_avpu, rf_seizure, rf_pph, complaint):
+    # Build inputs for engine
+    vitals = dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu)
+    flags  = dict(seizure=bool(rf_seizure), pph=bool(rf_pph))
+    # Infer context (adjust if you store these differently)
+    age = st.session_state.get("patient_age", None) if "patient_age" in st.session_state else None
+    context = dict(
+        age=age,
+        pregnant=(complaint=="Maternal"),
+        infection=(complaint in ["Sepsis","Other"]),
+        o2_device=st.session_state.get("o2_device","Air") if "o2_device" in st.session_state else "Air",
+        spo2_scale=st.session_state.get("spo2_scale",1) if "spo2_scale" in st.session_state else 1,
+        behavior=st.session_state.get("pews_behavior","Normal") if "pews_behavior" in st.session_state else "Normal"
+    )
+
+    colour, details = triage_decision(vitals, flags, context)
+
     st.markdown("### Triage decision")
-    color = tri_color({
-        "hr": hr, "rr": rr, "sbp": sbp, "temp": temp, "spo2": spo2, "avpu": avpu,
-        "rf_sbp": rf_sbp, "rf_spo2": rf_spo2, "rf_avpu": rf_avpu, "rf_seizure": rf_seizure, "rf_pph": rf_pph,
-        "complaint": complaint
-    })
-    triage_pill(color)
-    st.caption(f"Severity: **{'Critical' if color=='RED' else 'Moderate' if color=='YELLOW' else 'Non-critical'}**")
+    triage_pill(colour)
+
+    # Why this colour (guardrails first, then scores)
+    why = []
+    if details["reasons"]: 
+        why += details["reasons"]
+    if details["NEWS2"]["urgent"]: why.append(f"NEWS2 {details['NEWS2']['score']} (≥7)")
+    elif details["NEWS2"]["review"]: why.append(f"NEWS2 {details['NEWS2']['score']} (≥5)")
+    if details["qSOFA"]["high"]: why.append(f"qSOFA {details['qSOFA']['score']} (≥2)")
+    if context.get("pregnant") and details["MEOWS"]["red"]: why.append("MEOWS red band")
+    if (context.get("age") is not None and context.get("age")<18) and details["PEWS"]["high"]: why.append(f"PEWS {details['PEWS']['score']} (≥6)")
+
+    st.caption("Why: " + (", ".join(why) if why else "thresholds not met"))
+
+    # Optional: surface raw scores for audit (collapse if you prefer)
+    with st.expander("Score details"):
+        st.write(details)
 
 def facility_card(row):
     with st.container():
