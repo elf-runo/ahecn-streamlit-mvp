@@ -654,116 +654,104 @@ with tabs[0]:
             pre = (cap in ["ICU","BloodBank","OBGYN_OT"]) if complaint=="Maternal" else False
             if cap_cols[i%5].checkbox(cap, value=pre, key=f"cap_{cap}"):
                 need_caps.append(cap)
+    
+    # Facility matching (route + capacity + traffic aware)
+    st.markdown("### Facility matching")
 
-   
-# Facility matching (route + capacity + traffic aware)
-st.markdown("### Facility matching")
-
-# Initialize once so session keys always exist (prevents KeyError later)
-if "_matched_primary" not in st.session_state:
-    st.session_state["_matched_primary"] = None
-if "_matched_alts" not in st.session_state:
-    st.session_state["_matched_alts"] = set()
-
-# Only compute when user clicks
-if st.button("Find matched facilities"):
-
-    traffic_mult = traffic_factor_for_hour(datetime.now().hour)  # quick proxy
-    ranked = rank_facilities_for_case(
-        origin=(p_lat, p_lon),
-        need_caps=need_caps,
-        traffic_mult=traffic_mult,
-        topk=10
-    )
-
-        if not rows:
-        st.warning("No capability-fit facilities. Try relaxing requirements.")
-    else:
-        # Build sorted table from the rows list
-        df = (
-            pd.DataFrame(rows)
-              .sort_values(["score", "km"], ascending=[False, True])
-              .head(10)
-        )
-
-        # Show a compact table first (nice for investors)
-        st.dataframe(
-            df[["name", "km", "eta_min", "ICU_open", "accept", "score"]]
-              .rename(columns={
-                  "name": "Facility",
-                  "km": "km",
-                  "eta_min": "ETA (min)",
-                  "ICU_open": "ICU",
-                  "accept": "Accept %",
-                  "score": "Score",
-              }),
-            use_container_width=True,
-        )
-
-        st.markdown("### Suggested destinations")
+    # Initialise once so session keys always exist
+    if "_matched_primary" not in st.session_state:
         st.session_state["_matched_primary"] = None
+    if "_matched_alts" not in st.session_state:
         st.session_state["_matched_alts"] = set()
 
-        # Cards with Select / Add alternate controls
-        for _, r in df.iterrows():
-            pick, alt = facility_card(r)
-            if pick:
-                st.session_state["_matched_primary"] = r["name"]
-            if alt:
-                st.session_state["_matched_alts"].add(r["name"])
-
-        # Fall back to top ranked if user hasn’t clicked Select
-        if not st.session_state["_matched_primary"]:
-            st.session_state["_matched_primary"] = df.iloc[0]["name"]
-
-        # Optional visualization: origin → best destination + path
-        show_map = st.checkbox("Show routes to suggestions", value=True)
-        if show_map:
-            # simple origin/dest layers + straight path for demo
-            origin_layer = pdk.Layer(
-                "ScatterplotLayer",
-                data=[{"lon": p_lon, "lat": p_lat}],
-                get_position="[lon, lat]",
-                get_radius=200,
-                get_fill_color=[66, 133, 244, 180],
-            )
-
-            # line to the **primary** suggestion
-            dest = df.iloc[0]
-            path = [[p_lat, p_lon],  # start
-                    [p_lat + (dest["km"] / 111.0) * 0.001,  # tiny nudge for visual
-                     p_lon + (dest["km"] / 111.0) * 0.001],
-                    [float(st.session_state.facilities[0]["lat"]), float(st.session_state.facilities[0]["lon"])]]  # replace with real route if you wish
-
-            dest_layer = pdk.Layer(
-                "ScatterplotLayer",
-                data=[{"lon": float(dest_k := float(next(f for f in st.session_state.facilities if f["name"] == dest["name"])["lon"])),
-                       "lat": float(next(f for f in st.session_state.facilities if f["name"] == dest["name"])["lat"])}],
-                get_position="[lon, lat]",
-                get_radius=220,
-                get_fill_color=[239, 68, 68, 200],
-            )
-
-            path_layer = pdk.Layer(
-                "PathLayer",
-                data=[{"path": [[p_lon, p_lat],
-                                [float(next(f for f in st.session_state.facilities if f["name"] == dest["name"])["lon"]),
-                                 float(next(f for f in st.session_state.facilities if f["name"] == dest["name"])["lat"])]]}],
-                get_path="path",
-                get_color=[16, 185, 129, 200],
-                width_scale=6,
-                width_min_pixels=3,
-            )
-
-            v = pdk.ViewState(latitude=p_lat, longitude=p_lon, zoom=9)
-            st.pydeck_chart(pdk.Deck(layers=[origin_layer, dest_layer, path_layer],
-                                     initial_view_state=v,
-                                     map_style="mapbox://styles/mapbox/dark-v10"))
-
-        st.info(
-            f"Primary: {st.session_state['_matched_primary']} • "
-            f"Alternates: {', '.join(st.session_state['_matched_alts']) or '—'}"
+    # Only compute when user clicks
+    if st.button("Find matched facilities"):
+        traffic_mult = traffic_factor_for_hour(datetime.now().hour)  # quick proxy
+        rows = rank_facilities_for_case(
+            origin=(p_lat, p_lon),
+            need_caps=need_caps,
+            traffic_mult=traffic_mult,
+            topk=10
         )
+
+        if not rows:
+            st.warning("No capability-fit facilities. Try relaxing requirements.")
+        else:
+            # Build sorted table
+            df = (
+                pd.DataFrame(rows)
+                .sort_values(["score", "km"], ascending=[False, True])
+                .head(10)
+            )
+
+            # Compact ranked table (investor-friendly)
+            st.dataframe(
+                df[["name", "km", "eta_min", "ICU_open", "accept", "score"]]
+                  .rename(columns={
+                      "name": "Facility",
+                      "km": "km",
+                      "eta_min": "ETA (min)",
+                      "ICU_open": "ICU",
+                      "accept": "Accept %",
+                      "score": "Score",
+                  }),
+                use_container_width=True,
+            )
+
+            st.markdown("### Suggested destinations")
+            st.session_state["_matched_primary"] = None
+            st.session_state["_matched_alts"] = set()
+
+            # Action cards
+            for _, r in df.iterrows():
+                pick, alt = facility_card(r)
+                if pick:
+                    st.session_state["_matched_primary"] = r["name"]
+                if alt:
+                    st.session_state["_matched_alts"].add(r["name"])
+
+            # Default to the top suggestion if none picked
+            if not st.session_state["_matched_primary"]:
+                st.session_state["_matched_primary"] = df.iloc[0]["name"]
+
+            # Optional: draw origin → primary destination line
+            show_map = st.checkbox("Show routes to suggestions", value=True)
+            if show_map:
+                primary_name = st.session_state["_matched_primary"]
+                dest_fac = next(f for f in st.session_state.facilities if f["name"] == primary_name)
+
+                origin_layer = pdk.Layer(
+                    "ScatterplotLayer",
+                    data=[{"lon": p_lon, "lat": p_lat}],
+                    get_position="[lon, lat]",
+                    get_radius=200,
+                    get_fill_color=[66, 133, 244, 180],
+                )
+                dest_layer = pdk.Layer(
+                    "ScatterplotLayer",
+                    data=[{"lon": float(dest_fac["lon"]), "lat": float(dest_fac["lat"])}],
+                    get_position="[lon, lat]",
+                    get_radius=220,
+                    get_fill_color=[239, 68, 68, 200],
+                )
+                path_layer = pdk.Layer(
+                    "PathLayer",
+                    data=[{"path": [[p_lon, p_lat], [float(dest_fac["lon"]), float(dest_fac["lat"])]]}],
+                    get_path="path",
+                    get_color=[16, 185, 129, 200],
+                    width_scale=6,
+                    width_min_pixels=3,
+                )
+                st.pydeck_chart(pdk.Deck(
+                    layers=[origin_layer, dest_layer, path_layer],
+                    initial_view_state=pdk.ViewState(latitude=p_lat, longitude=p_lon, zoom=9),
+                    map_style="mapbox://styles/mapbox/dark-v10",
+                ))
+
+            st.info(
+                f"Primary: {st.session_state['_matched_primary']} • "
+                f"Alternates: {', '.join(sorted(st.session_state['_matched_alts'])) or '—'}"
+            )
 
     st.markdown("### Referral details")
     colA, colB, colC = st.columns(3)
