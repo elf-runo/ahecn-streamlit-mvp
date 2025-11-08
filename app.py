@@ -375,6 +375,50 @@ def dist_km(lat1, lon1, lat2, lon2):
     a=math.sin(dlat/2)**2 + math.cos(math.radians(lat1))*math.cos(math.radians(lat2))*math.sin(dlon/2)**2
     return 2*R*math.atan2(math.sqrt(a), math.sqrt(1-a))
 
+def eta_minutes_for(km, traffic_mult, speed_kmh=36):
+    """Simple ETA model (rural speeds) with traffic multiplier."""
+    if km is None:
+        return None
+    return max(5, int(km / max(speed_kmh, 1e-6) * 60 * float(traffic_mult)))
+
+def score_facility_for_case(f, origin_lat, origin_lon, need_caps, traffic_mult):
+    """Multi-factor score: capability coverage, readiness, proximity, traffic."""
+    km = dist_km(origin_lat, origin_lon, f["lat"], f["lon"])
+    coverage = 1.0 if not need_caps else sum(f["caps"].get(c, 0) for c in need_caps) / len(need_caps)
+    readiness = 0.5 * (min(f["ICU_open"], 3) / 3.0) + 0.5 * float(f["acceptanceRate"])
+    proximity = max(0.0, 1.0 - km / 60.0)  # >60 km fades to 0
+    penalty = 0.0 if f["ICU_open"] > 0 else -0.20
+    traffic_term = 1 - (float(traffic_mult) - 1.0) / 0.5  # Free=1.0, Heavy≈0.0
+    score = 0.55 * coverage + 0.25 * readiness + 0.15 * proximity + 0.05 * traffic_term + penalty
+    score = max(0.0, min(1.0, score))
+
+    eta_min = eta_minutes_for(km, traffic_mult)
+    route = interpolate_route(origin_lat, origin_lon, f["lat"], f["lon"], n=24)
+
+    return dict(
+        name=f["name"],
+        km=round(km, 1),
+        eta_min=int(eta_min),
+        ICU_open=f["ICU_open"],
+        accept=int(round(float(f["acceptanceRate"]) * 100, 0)),
+        specialties=", ".join([s for s, v in f["specialties"].items() if v]) or "—",
+        highend=", ".join([i for i, v in f["highend"].items() if v]) or "—",
+        score=int(round(score * 100, 0)),
+        route=route,
+        lat=f["lat"],
+        lon=f["lon"],
+    )
+
+def rank_facilities_for_case(origin, need_caps, traffic_mult=1.0, topk=10):
+    """Strict capability fit + score, then return best N with routes."""
+    rows = []
+    for f in st.session_state.facilities:
+        if need_caps and not all(f["caps"].get(c, 0) == 1 for c in need_caps):
+            continue
+        rows.append(score_facility_for_case(f, origin[0], origin[1], need_caps, traffic_mult))
+    rows = sorted(rows, key=lambda r: (-r["score"], r["km"]))
+    return rows[:topk]
+
 def now_ts(): return time.time()
 def minutes(a,b):
     if not a or not b: return None
@@ -612,39 +656,56 @@ with tabs[0]:
                 need_caps.append(cap)
 
     # Facility matching (cards)
+    # Facility matching (route + capacity + traffic aware)
     st.markdown("### Facility matching")
     if st.button("Find matched facilities"):
-        rows=[]
-        for f in st.session_state.facilities:
-            caps_ok = all(f["caps"].get(c,0)==1 for c in need_caps)
-            if not caps_ok: continue
-            km = dist_km(p_lat, p_lon, f["lat"], f["lon"])
-            ready = (min(f["ICU_open"],3)/3)*0.5 + f["acceptanceRate"]*0.5
-            proximity = max(0, 1-(km/60))
-            score = 0.6*ready + 0.3*proximity + 0.1
-            rows.append(dict(
-                name=f["name"], km=round(km,1),
-                eta_min=int(km/0.6) if km>0 else 5,
-                ICU_open=f["ICU_open"],
-                accept=int(round(f["acceptanceRate"]*100,0)),
-                specialties=", ".join([s for s,v in f["specialties"].items() if v]) or "—",
-                highend=", ".join([i for i,v in f["highend"].items() if v]) or "—",
-                score=int(round(score*100,0))
-            ))
-        if not rows:
-            st.warning("No capability-fit facilities. Try relaxing requirements.")
-        else:
-            ranked = pd.DataFrame(rows).sort_values(["score","km"], ascending=[False,True]).head(10)
-            st.session_state["_matched_primary"]=None
-            st.session_state["_matched_alts"]=set()
-            st.markdown("### Suggested destinations")
-            for _, r in ranked.iterrows():
-                pick, alt = facility_card(r)
-                if pick: st.session_state["_matched_primary"]=r["name"]
-                if alt:  st.session_state["_matched_alts"].add(r["name"])
-            if not st.session_state["_matched_primary"]:
-                st.session_state["_matched_primary"] = ranked.iloc[0]["name"]
-            st.info(f"Primary: {st.session_state['_matched_primary']} • Alternates: {', '.join(st.session_state['_matched_alts']) or '—'}")
+        traffic_mult = traffic_factor_for_hour(datetime.now().hour)  # quick proxy
+        ranked = rank_facilities_for_case(origin=(p_lat, p_lon), need_caps=need_caps, traffic_mult=traffic_mult, topk=10)
+
+    if not ranked:
+        st.warning("No capability-fit facilities. Try relaxing requirements.")
+    else:
+        df = pd.DataFrame(ranked)
+        st.dataframe(df[["name", "km", "eta_min", "ICU_open", "accept", "score"]]
+                     .rename(columns={"name":"Facility","km":"Km","eta_min":"ETA (min)","ICU_open":"ICU","accept":"Accept %","score":"Score"}),
+                     use_container_width=True)
+
+        # Show cards + let user choose primary/alternates
+        st.session_state["_matched_primary"] = None
+        st.session_state["_matched_alts"] = set()
+        st.markdown("### Suggested destinations")
+        for _, r in df.iterrows():
+            pick, alt = facility_card(r)
+            if pick: st.session_state["_matched_primary"] = r["name"]
+            if alt:  st.session_state["_matched_alts"].add(r["name"])
+        if not st.session_state["_matched_primary"]:
+            st.session_state["_matched_primary"] = df.iloc[0]["name"]
+
+        # Optional visualization: origin + top routes
+        show_map = st.checkbox("Show routes to suggestions", value=True)
+        if show_map:
+            path_data = [dict(path=[[pt[1], pt[0]] for pt in r["route"]]) for r in ranked]
+            origin_layer = pdk.Layer(
+                "ScatterplotLayer",
+                data=[{"lon": p_lon, "lat": p_lat}],
+                get_position="[lon, lat]", get_radius=800, pickable=False
+            )
+            dest_layer = pdk.Layer(
+                "ScatterplotLayer",
+                data=[{"lon": r["lon"], "lat": r["lat"]} for r in ranked],
+                get_position="[lon, lat]", get_radius=600, pickable=True
+            )
+            path_layer = pdk.Layer(
+                "PathLayer", data=path_data, get_path="path",
+                get_color=[16,185,129,200], width_scale=6, width_min_pixels=3
+            )
+            v = pdk.ViewState(latitude=p_lat, longitude=p_lon, zoom=9)
+            st.pydeck_chart(pdk.Deck(layers=[origin_layer, dest_layer, path_layer],
+                                     initial_view_state=v,
+                                     map_style="mapbox://styles/mapbox/dark-v10"))
+
+        st.info(f"Primary: {st.session_state['_matched_primary']} • "
+                f"Alternates: {', '.join(st.session_state['_matched_alts']) or '—'}")
 
     st.markdown("### Referral details")
     colA, colB, colC = st.columns(3)
@@ -793,29 +854,46 @@ Notes: {r['clinical'].get('summary', "—")}
 with tabs[3]:
     st.subheader("Government – Master Dashboard (SLA • Severity • Flow • Supply)")
 
-    tri_filter = st.selectbox("Triage",["All","RED","YELLOW","GREEN"],index=0)
-    sev_filter = st.selectbox("Severity",["All","Critical","Moderate","Non-critical"],index=0)
-    cond_filter= st.selectbox("Condition",["All","Maternal","Trauma","Stroke","Cardiac","Sepsis","Other"],index=0)
+    # Filters
+    tri_filter = st.selectbox("Triage", ["All","RED","YELLOW","GREEN"], index=0)
+    sev_filter = st.selectbox("Severity", ["All","Critical","Moderate","Non-critical"], index=0)
+    cond_filter= st.selectbox("Condition", ["All","Maternal","Trauma","Stroke","Cardiac","Sepsis","Other"], index=0)
 
     data = st.session_state.referrals.copy()
     if tri_filter!="All": data=[r for r in data if r["triage"]["decision"]["color"]==tri_filter]
     if sev_filter!="All": data=[r for r in data if r.get("severity")==sev_filter]
     if cond_filter!="All": data=[r for r in data if r["triage"]["complaint"]==cond_filter]
 
+    def minutes_safe(a, b):
+        return None if not a or not b else int((b-a)/60)
+
+    def pct(vals, p):
+        arr = [v for v in vals if isinstance(v, (int,float)) and v is not None]
+        return int(np.percentile(arr, p)) if arr else None
+
     total = len(data) or 1
     reds  = [r for r in data if r["triage"]["decision"]["color"]=="RED"]
     with_disp=[r for r in data if r["times"].get("dispatch_ts")]
-    pct_red_60 = int(100* len([r for r in reds if r["times"].get("arrive_dest_ts")
-                               and minutes(r["times"]["first_contact_ts"], r["times"]["arrive_dest_ts"])<=60])/(len(reds) or 1))
-    pct_disp_10 = int(100* len([r for r in with_disp if minutes(r["times"]["first_contact_ts"], r["times"]["dispatch_ts"])<=10])/(len(with_disp) or 1))
+
+    # Existing KPIs
+    pct_red_60 = int(100 * len([r for r in reds if r["times"].get("arrive_dest_ts")
+                                and minutes_safe(r["times"]["first_contact_ts"], r["times"]["arrive_dest_ts"])<=60])/(len(reds) or 1))
+    pct_disp_10 = int(100 * len([r for r in with_disp if minutes_safe(r["times"]["first_contact_ts"], r["times"]["dispatch_ts"])<=10])/(len(with_disp) or 1))
     accepted   = len([r for r in data if r["status"] in ["ARRIVE_DEST","HANDOVER"]])
     rejected   = len([r for r in data if r.get("reasons",{}).get("rejected")])
+
+    # New distributions
+    dispatch_delays = [minutes_safe(r["times"].get("decision_ts"), r["times"].get("dispatch_ts")) for r in data]
+    travel_times    = [minutes_safe(r["times"].get("dispatch_ts"), r["times"].get("arrive_dest_ts")) for r in data]
+
+    d_p50, d_p90 = pct(dispatch_delays, 50), pct(dispatch_delays, 90)
+    t_p50, t_p90 = pct(travel_times, 50), pct(travel_times, 90)
 
     k1,k2,k3,k4 = st.columns(4)
     with k1: kpi_tile("% RED ≤60m", f"{pct_red_60}%")
     with k2: kpi_tile("% Dispatch ≤10m", f"{pct_disp_10}%")
-    with k3: kpi_tile("Acceptance rate", f"{int(100*accepted/total)}%")
-    with k4: kpi_tile("Rejection rate", f"{int(100*rejected/total)}%")
+    with k3: kpi_tile("Dispatch P50 / P90", f"{d_p50 or '—'} / {d_p90 or '—'} min")
+    with k4: kpi_tile("Travel P50 / P90", f"{t_p50 or '—'} / {t_p90 or '—'} min")
 
     st.markdown("### Severity mix")
     sev_series = pd.Series([r.get("severity","—") for r in data]).value_counts()
@@ -837,10 +915,21 @@ with tabs[3]:
     if not rej.empty: st.bar_chart(rej, use_container_width=True)
     else: st.caption("No recorded rejections in current filter.")
 
-    st.markdown("### Geo density (cases)")
+    st.markdown("### Case density heat-map (Hexagon)")
     if data:
         mdf = pd.DataFrame([dict(lat=r["patient"]["location"]["lat"], lon=r["patient"]["location"]["lon"]) for r in data])
-        st.map(mdf, use_container_width=True)
+        layer = pdk.Layer(
+            "HexagonLayer",
+            data=mdf,
+            get_position='[lon, lat]',
+            radius=1500, elevation_scale=4,
+            elevation_range=[0, 3000],
+            pickable=True, extruded=True,
+        )
+        v = pdk.ViewState(latitude=mdf["lat"].mean(), longitude=mdf["lon"].mean(), zoom=9)
+        st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=v, map_style="mapbox://styles/mapbox/dark-v10"))
+    else:
+        st.caption("No data for map.")
 
 # ======== Data / Admin ========
 with tabs[4]:
