@@ -1,0 +1,13 @@
+icd_code,label,case_type,age_min,age_max,priority_hint,default_interventions,notes
+O72.1,Postpartum haemorrhage (delayed),Maternal,12,55,time-critical,IV fluids;Uterotonics;TXA;Oxygen;Large-bore IV;Measure blood loss,Stabilize + rapid transfer if ongoing bleed
+O14.2,Severe pre-eclampsia,Maternal,12,55,time-critical,Magnesium sulfate;BP control;Oxygen;IV access,Monitor reflexes & urine output
+I21.3,STEMI (inferior),Cardiac,18,120,time-critical,Aspirin load;Clopidogrel;Oxygen if SpO2<90;IV access;Notify cath lab,Avoid delays to PCI
+I63.9,Ischaemic stroke (unspecified),Stroke,18,120,time-critical,Glucose check;BP control per protocol;Keep NPO;Pre-alert stroke center,"tPA/EV eligibility depends on imaging/time"
+I61.9,Intracerebral haemorrhage,Stroke,18,120,time-critical,BP control;Head elevation;Avoid anticoagulants;Pre-alert neurosurgery,No thrombolysis
+A41.9,Sepsis (unspecified),Sepsis,0,120,time-critical,First-dose antibiotic;IV fluids;Oxygen;Lactate if feasible;Blood cultures if feasible,Escalate if hypotensive/altered
+A41.5,Sepsis due to Gram-negative organism,Sepsis,0,120,time-critical,Broad-spectrum antibiotic;IV fluids;Oxygen;Vasopressor prep,Early antibiotics reduce mortality
+S06.0,Concussion (mild TBI),Trauma,5,120,monitor,Neuro checks;Immobilization if needed;Analgesia,CT head per risk
+S06.5,Traumatic subdural haemorrhage,Trauma,5,120,time-critical,Airway protection if GCS↓;IV access;Oxygen;Neurosurgery pre-alert,Avoid hypotension/hypoxia
+S72.0,Fracture of neck of femur,Trauma,50,120,specialist-dependent,Pain control;Immobilization;IV fluids if needed,Ortho/OR coordination
+J96.0,Acute respiratory failure,Other,0,120,time-critical,Oxygen;Nebulization if bronchospasm;IV access;Consider NIV,Escalate if tiring/hypercapnia
+A41.0,Sepsis due to Staphylococcus aureus,Sepsis,0,120,time-critical,First-dose antibiotic;IV fluids;Oxygen;Source control planning,Document suspected source
