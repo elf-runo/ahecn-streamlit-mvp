@@ -1,14 +1,14 @@
 bundle,icd10,label,default_caps,age_min,age_max
 Maternal,O72.0,Third-stage haemorrhage,ICU;BloodBank;OBGYN_OT;OR;Ventilator,12,55
 Maternal,O72.1,Immediate postpartum haemorrhage,ICU;BloodBank;OBGYN_OT;OR;Ventilator,12,55
-Maternal,O72.2,Delayed/secondary postpartum haemorrhage,ICU;BloodBank;OBGYN_OT,12,55
+Maternal,O72.2,Delayed secondary postpartum haemorrhage,ICU;BloodBank;OBGYN_OT,12,55
 Maternal,O14.1,Severe pre-eclampsia,ICU;OBGYN_OT,12,55
 Maternal,O15.0,Eclampsia in pregnancy,ICU;Ventilator;OBGYN_OT,12,55
-Maternal,O45.9,Placental abruption (unspecified),ICU;BloodBank;OBGYN_OT;OR,12,55
+Maternal,O45.9,Placental abruption unspecified,ICU;BloodBank;OBGYN_OT;OR,12,55
 Maternal,O44.1,Placenta praevia with haemorrhage,ICU;BloodBank;OBGYN_OT;OR,12,55
 Maternal,O85,Puerperal sepsis,ICU,12,55
 Maternal,O88.1,Amniotic fluid embolism,ICU;Ventilator;OBGYN_OT,12,55
-Maternal,O75.1,Shock during/after labour and delivery,ICU;BloodBank;OBGYN_OT,12,55
+Maternal,O75.1,Shock during after labour and delivery,ICU;BloodBank;OBGYN_OT,12,55
 Trauma,S06.0,Concussion,CT,0,120
 Trauma,S06.4,Traumatic epidural haemorrhage,CT;Neurosurgery;ICU;OR,0,120
 Trauma,S06.5,Traumatic subdural haemorrhage,CT;Neurosurgery;ICU;OR,0,120
@@ -18,44 +18,44 @@ Trauma,S36.1,Injury of liver,OR;ICU;BloodBank,0,120
 Trauma,S72.0,Fracture of neck of femur,OR;ICU,0,120
 Trauma,S52.5,Fracture of lower end of radius,OR,0,120
 Trauma,S82.2,Fracture of shaft of tibia,OR;ICU,0,120
-Trauma,T31.0,Burns involving <10% TBSA,ICU;OR,0,120
-Stroke,I63.9,Cerebral infarction, unspecified,CT;Thrombolysis;ICU,18,120
+Trauma,T31.0,Burns involving less than 10 percent TBSA,ICU;OR,0,120
+Stroke,I63.9,Cerebral infarction unspecified,CT;Thrombolysis;ICU,18,120
 Stroke,I63.3,Cerebral infarction due to thrombosis of cerebral arteries,CT;Thrombolysis;ICU,18,120
-Stroke,I61.9,Intracerebral haemorrhage, unspecified,CT;Neurosurgery;ICU,18,120
-Stroke,I60.9,Subarachnoid haemorrhage, unspecified,CT;Neurosurgery;ICU,18,120
+Stroke,I61.9,Intracerebral haemorrhage unspecified,CT;Neurosurgery;ICU,18,120
+Stroke,I60.9,Subarachnoid haemorrhage unspecified,CT;Neurosurgery;ICU,18,120
 Stroke,I62.0,Non-traumatic subdural haemorrhage,CT;Neurosurgery;ICU,18,120
-Stroke,I64,Stroke NOS (unspecified haemorrhage or infarction),CT;Thrombolysis,18,120
-Stroke,I65.2,Occlusion/stenosis of carotid artery,CT;Neurosurgery;ICU,18,120
-Stroke,G45.9,Transient ischaemic attack (TIA),CT,18,120
+Stroke,I64,Stroke not otherwise specified,CT;Thrombolysis,18,120
+Stroke,I65.2,Occlusion stenosis of carotid artery,CT;Neurosurgery;ICU,18,120
+Stroke,G45.9,Transient ischaemic attack TIA,CT,18,120
 Stroke,I67.4,Hypertensive encephalopathy,ICU;CT,18,120
-Stroke,I66.9,Occlusion/stenosis of cerebral arteries (no infarction),CT,18,120
-Cardiac,I21.9,Acute myocardial infarction, unspecified,CathLab;ICU,18,120
+Stroke,I66.9,Occlusion stenosis of cerebral arteries no infarction,CT,18,120
+Cardiac,I21.9,Acute myocardial infarction unspecified,CathLab;ICU,18,120
 Cardiac,I21.0,Acute transmural MI of anterior wall,CathLab;ICU,18,120
 Cardiac,I20.0,Unstable angina,CathLab,18,120
-Cardiac,I24.9,Acute ischaemic heart disease, unspecified,CathLab,18,120
-Cardiac,I46.9,Cardiac arrest, unspecified,ICU;Ventilator,18,120
-Cardiac,I50.9,Heart failure, unspecified (acute decompensation),ICU;Ventilator,18,120
+Cardiac,I24.9,Acute ischaemic heart disease unspecified,CathLab,18,120
+Cardiac,I46.9,Cardiac arrest unspecified,ICU;Ventilator,18,120
+Cardiac,I50.9,Heart failure unspecified acute decompensation,ICU;Ventilator,18,120
 Cardiac,I47.2,Ventricular tachycardia,ICU,18,120
 Cardiac,I44.2,Complete atrioventricular block,ICU;CathLab,18,120
 Cardiac,I48.0,Paroxysmal atrial fibrillation,ICU,18,120
-Cardiac,R07.4,Chest pain, unspecified,CathLab,18,120
-Sepsis,A41.9,Sepsis, unspecified organism,ICU,0,120
+Cardiac,R07.4,Chest pain unspecified,CathLab,18,120
+Sepsis,A41.9,Sepsis unspecified organism,ICU,0,120
 Sepsis,A41.0,Sepsis due to Staphylococcus aureus,ICU,0,120
 Sepsis,A41.1,Sepsis due to other specified staphylococcus,ICU,0,120
 Sepsis,A41.2,Sepsis due to unspecified staphylococcus,ICU,0,120
 Sepsis,A41.5,Sepsis due to other Gram-negative organisms,ICU,0,120
-Sepsis,A40.0,Streptococcal sepsis, group A,ICU,0,120
-Sepsis,A40.1,Streptococcal sepsis, group B,ICU,0,120
+Sepsis,A40.0,Streptococcal sepsis group A,ICU,0,120
+Sepsis,A40.1,Streptococcal sepsis group B,ICU,0,120
 Sepsis,A40.3,Streptococcus pneumoniae sepsis,ICU,0,120
 Sepsis,A02.1,Salmonella septicaemia,ICU,0,120
 Sepsis,B37.7,Candidal sepsis,ICU,0,120
 Other,J96.0,Acute respiratory failure,Ventilator;ICU,0,120
-Other,J18.9,Pneumonia, unspecified organism,ICU,0,120
+Other,J18.9,Pneumonia unspecified organism,ICU,0,120
 Other,J44.1,COPD with acute exacerbation,Ventilator;ICU,0,120
-Other,K92.2,Gastrointestinal haemorrhage, unspecified,BloodBank;OR;ICU,0,120
-Other,K85.9,Acute pancreatitis, unspecified,ICU,0,120
+Other,K92.2,Gastrointestinal haemorrhage unspecified,BloodBank;OR;ICU,0,120
+Other,K85.9,Acute pancreatitis unspecified,ICU,0,120
 Other,E10.1,Type 1 diabetes with ketoacidosis,ICU,0,120
 Other,E11.1,Type 2 diabetes with ketoacidosis,ICU,0,120
-Other,E16.2,Hypoglycaemia, unspecified,ICU,0,120
-Other,N17.9,Acute kidney failure, unspecified,Dialysis;ICU,0,120
-Other,T78.2,Anaphylactic shock, unspecified,Ventilator;ICU,0,120
+Other,E16.2,Hypoglycaemia unspecified,ICU,0,120
+Other,N17.9,Acute kidney failure unspecified,Dialysis;ICU,0,120
+Other,T78.2,Anaphylactic shock unspecified,Ventilator;ICU,0,120
