@@ -10,6 +10,44 @@ import streamlit as st
 import pydeck as pdk
 
 st.set_page_config(page_title="AHECN – Streamlit MVP v1.8", layout="wide")
+# === Step 1 / ICD catalogue (one-time loader) ===
+import os
+
+def load_icd_catalogue():
+    path = os.path.join("data", "icd_catalogue.csv")
+    try:
+        df = pd.read_csv(path)
+        # clean
+        df["case_type"] = df["case_type"].str.strip()
+        df["label"] = df["label"].str.strip()
+        df["icd_code"] = df["icd_code"].str.strip()
+        df["age_min"] = df["age_min"].fillna(0).astype(int)
+        df["age_max"] = df["age_max"].fillna(120).astype(int)
+        return df
+    except Exception as e:
+        st.warning(f"ICD catalogue not found or unreadable: {e}")
+        return pd.DataFrame(columns=["icd_code","label","case_type","age_min","age_max","priority_hint","default_interventions","notes"])
+
+if "icd_df" not in st.session_state:
+    st.session_state.icd_df = load_icd_catalogue()
+
+def icd_options_for(case_type: str, age: int|float|None):
+    df = st.session_state.icd_df
+    if df.empty:
+        return [], pd.DataFrame()
+    q = df.copy()
+    if case_type:
+        q = q[q["case_type"] == str(case_type)]
+    if age is not None:
+        try:
+            age = int(age)
+            q = q[(q["age_min"] <= age) & (age <= q["age_max"])]
+        except:
+            pass
+    # Build display string like "I63.9 — Ischaemic stroke (unspecified)"
+    q = q.assign(display=q["icd_code"] + " — " + q["label"])
+    return q["display"].tolist(), q
+# === end Step 1 loader ===
 
 # ---------------------- THEME & GLOBAL CSS ----------------------
 st.markdown("""
@@ -572,20 +610,50 @@ tabs = st.tabs(["Referrer","Ambulance / EMT","Receiving Hospital","Government","
 # ======== Referrer ========
 with tabs[0]:
     st.subheader("Patient & Referrer")
-    c1,c2,c3 = st.columns(3)
-    with c1:
-        p_name = st.text_input("Patient name","Sita Devi")
-        p_age  = st.number_input("Age",0,120,28)
-        p_sex  = st.selectbox("Sex",["Female","Male","Other"])
-    with c2:
-        p_id   = st.text_input("Patient ID (ABDM/Local)","")
-        r_name = st.text_input("Referrer name","Dr. Rao / ASHA Poonam")
-        r_fac  = st.text_input("Referrer facility","PHC Mawlai")
-    with c3:
-        p_lat  = st.number_input("Lat",value=25.58,format="%.4f")
-        p_lon  = st.number_input("Lon",value=91.89,format="%.4f")
-        p_dx   = st.text_input("Provisional diagnosis","PPH; suspected retained placenta")
-    ocr = st.text_area("Notes / OCR (paste)",height=100)
+    # ... your c1/c2/c3 blocks ...
+    ocr = st.text_area("Notes / OCR (paste)", height=100)
+
+    # === Step 1 / ICD selection replaces the old free-text field ===
+    st.subheader("Provisional Diagnosis (ICD-coded)")
+
+    # Use your existing variables for age and case type:
+    # - p_age (number input for age)
+    # - complaint (selectbox for Chief complaint: Maternal/Trauma/Stroke/Cardiac/Sepsis/Other)
+
+    icd_choices, icd_df_filt = icd_options_for(complaint, p_age)
+
+    if icd_choices:
+        chosen_icd = st.selectbox("Select ICD (filtered by age & case type)", icd_choices, index=0)
+        # row for selected
+        row = icd_df_filt[icd_df_filt["display"] == chosen_icd].iloc[0]
+        default_iv = [x.strip() for x in str(row.get("default_interventions","")).split(";") if x.strip()]
+    else:
+        st.info("No ICD suggestions for this age & case type. You can free-type below.")
+        chosen_icd = None
+        row = None
+        default_iv = []
+
+    # Interventions (auto-suggested if ICD selected)
+    st.caption("Initial interventions (you can edit):")
+    iv_cols = st.columns(3)
+    iv_selected = []
+    for i, item in enumerate(default_iv[:12]):  # keep it compact
+        if iv_cols[i % 3].checkbox(item, value=True, key=f"iv_{i}"):
+            iv_selected.append(item)
+
+    # Free-text (always available)
+    dx_free = st.text_input("Additional diagnosis notes (optional)", "")
+
+    # This “dx_payload” will be stored into the referral later
+    if chosen_icd and row is not None:
+        dx_payload = dict(code=row["icd_code"], label=row["label"], case_type=row["case_type"])
+    else:
+        # if non-doctor roles skip ICD, we keep free text only
+        dx_payload = dict(code="", label=(dx_free or "").strip(), case_type=str(complaint))
+    # === end Step 1 ICD selection ===
+
+    st.subheader("Vitals + Scores")
+    # ... vitals inputs continue ...
 
     st.subheader("Vitals + Scores")
     v1,v2,v3 = st.columns(3)
@@ -775,8 +843,9 @@ with tabs[0]:
             id="R"+str(int(time.time()))[-6:],
             patient=dict(name=p_name, age=int(p_age), sex=p_sex, id=p_id, location=dict(lat=float(p_lat), lon=float(p_lon))),
             referrer=dict(name=r_name, facility=r_fac),
-            provisionalDx=p_dx,
-            resuscitation=resus_done,
+            provisionalDx=dx_payload,          # <-- new structured ICD object
+            interventions=iv_selected + ([dx_free] if dx_free else []),  # <-- list
+
             triage=dict(complaint=complaint, decision=dict(color=tri_color(vit)), hr=hr, sbp=sbp, rr=rr, temp=temp, spo2=spo2, avpu=avpu),
             clinical=dict(summary=" ".join(ocr.split()[:60])),
             reasons=dict(severity=True, bedOrICUUnavailable=ref_beds, specialTest=ref_tests, requiredCapabilities=need_caps),
@@ -865,7 +934,10 @@ with tabs[2]:
         for r in incoming:
             st.write(f"**{r['patient']['name']}** — {r['triage']['complaint']} ", unsafe_allow_html=True)
             triage_pill(r['triage']['decision']['color'])
-            st.write(f"| Dx: **{r['provisionalDx']}**")
+            dx = r.get("provisionalDx", {})
+            dx_txt = (dx.get("code","") + " " + dx.get("label","")).strip()
+            st.write(f"| Dx: **{dx_txt or '—'}**")
+
 
             open_key = f"open_{r['id']}"
             if st.button("Open case", key=open_key):
