@@ -595,6 +595,13 @@ def seed_referrals(n=300, rng_seed=42):
         t_arr  = t_disp + (eta_min*60)
         t_hov  = t_arr + rng.randint(5*60, 20*60)
 
+        # FIX: Ensure provisionalDx is always a dictionary for new data
+        provisional_dx = dict(
+            code="", 
+            label=("PPH" if cond=="Maternal" else rng.choice(["Sepsis","Head injury","STEMI","Stroke?","—"])),
+            case_type=cond
+        )
+
         st.session_state.referrals.append(dict(
             id=f"S{i:04d}",
             patient=dict(name=f"Pt{i:04d}", age=rng.randint(1,85), sex=("Female" if rng.random()<0.5 else "Male"),
@@ -602,7 +609,7 @@ def seed_referrals(n=300, rng_seed=42):
             referrer=dict(name=rng.choice(["Dr. Rai","Dr. Khonglah","ANM Pynsuk"]), facility=rng.choice(
                 ["PHC Mawlai","CHC Smit","CHC Pynursla","District Hospital Shillong","Tertiary Shillong Hub"]
             )),
-            provisionalDx=("PPH" if cond=="Maternal" else rng.choice(["Sepsis","Head injury","STEMI","Stroke?","—"])),
+            provisionalDx=provisional_dx,  # Now always a dictionary
             resuscitation=rng.sample(RESUS, rng.randint(0,3)),
             triage=dict(complaint=cond, decision=dict(color=color), hr=hr, sbp=sbp, rr=rr, temp=temp, spo2=spo2, avpu=avpu),
             clinical=dict(summary="Auto-seeded"),
@@ -1022,14 +1029,28 @@ with tabs[2]:
                 col1, col2 = st.columns([3, 1])
                 with col1:
                     st.write(f"**{r['patient']['name']}** — {r['triage']['complaint']} ")
+                    
+                    # FIX: Handle both string and dictionary provisionalDx formats
                     dx = r.get("provisionalDx", {})
-                    dx_txt = (dx.get("code", "") + " " + dx.get("label", "")).strip()
+                    if isinstance(dx, dict):
+                        dx_txt = (dx.get("code", "") + " " + dx.get("label", "")).strip()
+                    else:
+                        # Handle legacy string format
+                        dx_txt = str(dx)
+                    
                     st.write(f"| Dx: **{dx_txt or '—'}**")
                 with col2:
                     triage_pill(r['triage']['decision']['color'])
 
                 open_key = f"open_{r['id']}"
                 if st.button("Open case", key=open_key):
+                    # FIX: Handle both string and dictionary provisionalDx formats in ISBAR
+                    dx = r.get("provisionalDx", {})
+                    if isinstance(dx, dict):
+                        dx_txt = (dx.get("code", "") + " " + dx.get("label", "")).strip()
+                    else:
+                        dx_txt = str(dx)
+                    
                     isbar = f"""I: {r['patient']['name']}, {r['patient']['age']} {r['patient']['sex']}
     Dx (provisional): {dx_txt}
     S: {r['triage']['complaint']}; triage {r['triage']['decision']['color']}
