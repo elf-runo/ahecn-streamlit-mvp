@@ -161,6 +161,10 @@ def validate_vitals(hr, rr, sbp, temp, spo2):
         spo2 = _clip(spo2, 50, 100),
     )
 
+def now_ts():
+    """Get current timestamp."""
+    return time.time()
+
 # === SCORING ENGINES ===
 def calc_NEWS2(rr, spo2, sbp, hr, temp, avpu, o2_device="Air", spo2_scale=1):
     rr, spo2, sbp, hr, temp = (_num(rr), _num(spo2), _num(sbp), _num(hr), _num(temp))
@@ -514,43 +518,60 @@ def rank_facilities_for_case(origin_coords, required_caps, case_type, triage_col
     """
     ranked_facilities = []
     
+    # Validate inputs
+    if not origin_coords or len(origin_coords) != 2:
+        st.error("Invalid origin coordinates")
+        return []
+    
+    if not hasattr(st.session_state, 'facilities') or not st.session_state.facilities:
+        st.error("No facilities data available")
+        return []
+    
     for facility in st.session_state.facilities:
-        # Calculate distance
-        distance_km = dist_km(
-            origin_coords[0], origin_coords[1],
-            float(facility["lat"]), float(facility["lon"])
-        )
-        
-        # Calculate comprehensive score
-        score, scoring_details = calculate_facility_score(
-            facility, required_caps, distance_km, case_type, triage_color
-        )
-        
-        # Calculate ETA
-        traffic_mult = traffic_factor_for_hour(datetime.now().hour)
-        eta_min = eta_minutes_for(distance_km, traffic_mult)
-        
-        # Generate route
-        route = interpolate_route(
-            origin_coords[0], origin_coords[1],
-            float(facility["lat"]), float(facility["lon"]), n=20
-        )
-        
-        ranked_facilities.append({
-            "name": facility["name"],
-            "type": facility["type"],
-            "score": score,
-            "scoring_details": scoring_details,
-            "km": round(distance_km, 1),
-            "eta_min": eta_min,
-            "ICU_open": facility.get("ICU_open", 0),
-            "accept": int(facility.get("acceptanceRate", 0.75) * 100),
-            "specialties": ", ".join([s for s, v in facility.get("specialties", {}).items() if v]) or "—",
-            "highend": ", ".join([e for e, v in facility.get("highend", {}).items() if v]) or "—",
-            "route": route,
-            "lat": float(facility["lat"]),
-            "lon": float(facility["lon"])
-        })
+        try:
+            # Validate facility data
+            if not facility or 'lat' not in facility or 'lon' not in facility:
+                continue
+                
+            # Calculate distance
+            distance_km = dist_km(
+                origin_coords[0], origin_coords[1],
+                float(facility["lat"]), float(facility["lon"])
+            )
+            
+            # Calculate comprehensive score
+            score, scoring_details = calculate_facility_score(
+                facility, required_caps, distance_km, case_type, triage_color
+            )
+            
+            # Calculate ETA
+            traffic_mult = traffic_factor_for_hour(datetime.now().hour)
+            eta_min = eta_minutes_for(distance_km, traffic_mult)
+            
+            # Generate route
+            route = interpolate_route(
+                origin_coords[0], origin_coords[1],
+                float(facility["lat"]), float(facility["lon"]), n=20
+            )
+            
+            ranked_facilities.append({
+                "name": facility.get("name", "Unknown Facility"),
+                "type": facility.get("type", "Unknown"),
+                "score": score,
+                "scoring_details": scoring_details,
+                "km": round(distance_km, 1),
+                "eta_min": eta_min,
+                "ICU_open": facility.get("ICU_open", 0),
+                "accept": int(facility.get("acceptanceRate", 0.75) * 100),
+                "specialties": ", ".join([s for s, v in facility.get("specialties", {}).items() if v]) or "—",
+                "highend": ", ".join([e for e, v in facility.get("highend", {}).items() if v]) or "—",
+                "route": route,
+                "lat": float(facility["lat"]),
+                "lon": float(facility["lon"])
+            })
+        except Exception as e:
+            st.error(f"Error processing facility {facility.get('name', 'Unknown')}: {str(e)}")
+            continue
     
     # Sort by score (descending) and distance (ascending)
     ranked_facilities.sort(key=lambda x: (-x["score"], x["km"]))
@@ -1163,9 +1184,9 @@ with tabs[0]:
             if st.session_state.triage_override_active and st.session_state.triage_override_color:
                 triage_color = st.session_state.triage_override_color
 
-            # Get ranked facilities
+            # Get ranked facilities - FIXED FUNCTION CALL
             ranked_facilities = rank_facilities_for_case(
-                origin=(p_lat, p_lon),
+                origin_coords=(p_lat, p_lon),  # CORRECTED PARAMETER NAME
                 required_caps=need_caps,
                 case_type=complaint,
                 triage_color=triage_color,
