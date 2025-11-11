@@ -9,47 +9,62 @@ import numpy as np
 import streamlit as st
 import pydeck as pdk
 
-st.set_page_config(page_title="AHECN – Streamlit MVP v1.8", layout="wide")
-# === Step 1 / ICD catalogue (one-time loader) ===
-import os
+# === ICD mini-catalog (very small, demo-safe) ===
+ICD_LUT = [
+    # Trauma (all ages)
+    {"icd_code":"S06.0", "label":"Concussion", "case_type":"Trauma", "age_min":0, "age_max":120,
+     "default_interventions":"Airway positioning;Cervical immobilization;IV fluids"},
+    {"icd_code":"S72.0", "label":"Fracture of neck of femur", "case_type":"Trauma", "age_min":50, "age_max":120,
+     "default_interventions":"Pain control;Immobilization;IV fluids"},
 
-def load_icd_catalogue():
-    path = os.path.join("data", "icd_catalogue.csv")
+    # Maternal
+    {"icd_code":"O72.1", "label":"Postpartum haemorrhage", "case_type":"Maternal", "age_min":12, "age_max":55,
+     "default_interventions":"Uterotonics;TXA;IV fluids;Bleeding control"},
+    {"icd_code":"O15.0", "label":"Eclampsia", "case_type":"Maternal", "age_min":12, "age_max":55,
+     "default_interventions":"Airway positioning;Magnesium sulfate;BP control;Oxygen"},
+
+    # Stroke
+    {"icd_code":"I63.9", "label":"Cerebral infarction, unspecified", "case_type":"Stroke", "age_min":18, "age_max":120,
+     "default_interventions":"Oxygen if hypoxic;IV access;CT brain;Stroke alert"},
+    {"icd_code":"I61.9", "label":"Intracerebral haemorrhage, unspecified", "case_type":"Stroke", "age_min":18, "age_max":120,
+     "default_interventions":"BP control;CT brain;Neurosurgery consult"},
+
+    # Cardiac
+    {"icd_code":"I21.3", "label":"STEMI (acute MI)", "case_type":"Cardiac", "age_min":18, "age_max":120,
+     "default_interventions":"Aspirin;Oxygen if SpO2<90;IV access;CathLab alert"},
+    {"icd_code":"I46.9", "label":"Cardiac arrest, unspecified", "case_type":"Cardiac", "age_min":0, "age_max":120,
+     "default_interventions":"CPR/AED;Airway;Epinephrine;ALS activation"},
+
+    # Sepsis
+    {"icd_code":"A41.9", "label":"Sepsis, unspecified organism", "case_type":"Sepsis", "age_min":0, "age_max":120,
+     "default_interventions":"Oxygen;IV fluids;Broad antibiotics;Lactate;Blood cultures"},
+
+    # Pediatrics (examples)
+    {"icd_code":"J18.9", "label":"Pneumonia, unspecified", "case_type":"Other", "age_min":0, "age_max":17,
+     "default_interventions":"Oxygen if hypoxic;Nebulization if wheeze;Antibiotics"},
+    {"icd_code":"A09",   "label":"Diarrhea and gastroenteritis", "case_type":"Other", "age_min":0, "age_max":12,
+     "default_interventions":"ORS;IV fluids if shock;Zinc"},
+]
+
+def icd_options_for(case_type: str, age_years: float):
+    """Return (choices, filtered_df) for the given case type + age."""
     try:
-        df = pd.read_csv(path)
-        # clean
-        df["case_type"] = df["case_type"].str.strip()
-        df["label"] = df["label"].str.strip()
-        df["icd_code"] = df["icd_code"].str.strip()
-        df["age_min"] = df["age_min"].fillna(0).astype(int)
-        df["age_max"] = df["age_max"].fillna(120).astype(int)
-        return df
-    except Exception as e:
-        st.warning(f"ICD catalogue not found or unreadable: {e}")
-        return pd.DataFrame(columns=["icd_code","label","case_type","age_min","age_max","priority_hint","default_interventions","notes"])
-
-if "icd_df" not in st.session_state:
-    st.session_state.icd_df = load_icd_catalogue()
-
-def icd_options_for(case_type: str, age: int|float|None):
-    df = st.session_state.icd_df
-    if df.empty:
-        return [], pd.DataFrame()
-    q = df.copy()
+        a = float(age_years)
+    except Exception:
+        a = None
+    df = pd.DataFrame(ICD_LUT)
     if case_type:
-        q = q[q["case_type"] == str(case_type)]
-    if age is not None:
-        try:
-            age = int(age)
-            q = q[(q["age_min"] <= age) & (age <= q["age_max"])]
-        except:
-            pass
-    # Build display string like "I63.9 — Ischaemic stroke (unspecified)"
-    q = q.assign(display=q["icd_code"] + " — " + q["label"])
-    return q["display"].tolist(), q
-# === end Step 1 loader ===
+        df = df[df["case_type"].str.lower() == str(case_type).lower()]
+    if a is not None:
+        df = df[(df["age_min"] <= a) & (a <= df["age_max"])]
+    if df.empty:
+        return [], df
+    df = df.copy()
+    df["display"] = df["label"] + "  ·  " + df["icd_code"]
+    return df["display"].tolist(), df
 
 # ---------------------- THEME & GLOBAL CSS ----------------------
+st.set_page_config(page_title="AHECN MVP v1.8", layout="wide", initial_sidebar_state="collapsed")
 st.markdown("""
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
@@ -109,9 +124,7 @@ def validate_vitals(hr, rr, sbp, temp, spo2):
     )
 
 # ---------------------- SCORING ENGINES (hardened) ----------------------
-# 1) NEWS2 – returns (score:int, hits:list[str], review:bool, urgent:bool)
 def calc_NEWS2(rr, spo2, sbp, hr, temp, avpu, o2_device="Air", spo2_scale=1):
-    # Coerce everything
     rr, spo2, sbp, hr, temp = (_num(rr), _num(spo2), _num(sbp), _num(hr), _num(temp))
     avpu = "A" if avpu is None else str(avpu).strip().upper()
     spo2_scale = _int(spo2_scale, 1)
@@ -192,7 +205,6 @@ def safe_calc_NEWS2(rr, spo2, sbp, hr, temp, avpu, o2_device="Air", spo2_scale=1
         return 0, [f"NEWS2 error: {type(e).__name__}"], False, False
     return _to4(raw)
 
-# 2) qSOFA – returns (score:int, hits:list[str], high:bool)
 def calc_qSOFA(rr, sbp, avpu):
     rr, sbp = _num(rr), _num(sbp)
     avpu = "A" if avpu is None else str(avpu).strip().upper()
@@ -202,7 +214,6 @@ def calc_qSOFA(rr, sbp, avpu):
     if avpu != "A": hits.append("Altered mentation"); score += 1
     return score, hits, (score >= 2)
 
-# 3) MEOWS – returns dict(red=[...], yellow=[...])
 def calc_MEOWS(hr, rr, sbp, temp, spo2, red_flags=None):
     hr, rr, sbp, temp, spo2 = _num(hr), _num(rr), _num(sbp), _num(temp), _num(spo2)
     red, yellow = [], []
@@ -224,7 +235,6 @@ def calc_MEOWS(hr, rr, sbp, temp, spo2, red_flags=None):
     if red_flags: red += red_flags
     return dict(red=red, yellow=yellow)
 
-# 4) PEWS – returns (score:int, meta:dict, high6:bool, watch4:bool)
 def _band(x, ylo, yhi, rlo, rhi):
     """Return 2 if in red range, 1 if in yellow range, else 0."""
     x = _num(x)
@@ -253,7 +263,6 @@ def calc_PEWS(age, rr, hr, behavior="Normal", spo2=None):
 
     return sc, {"age": age}, (sc >= 6), (sc >= 4)
 
-# 5) Rule-engine master decision (explainable)
 def triage_decision(vitals, flags, context):
     """
     vitals: dict(hr, rr, sbp, temp, spo2, avpu)
@@ -346,7 +355,6 @@ def cap_badges(list_or_csv):
     for i,cap in enumerate(items[:12]):
         cols[i%len(cols)].markdown(f'<span class="badge">{cap}</span>', unsafe_allow_html=True)
 
-# ---- TRIAGE BANNER HELPER ----
 def render_triage_banner(hr, rr, sbp, temp, spo2, avpu,
                          rf_sbp, rf_spo2, rf_avpu, rf_seizure, rf_pph, complaint):
     vitals = dict(
@@ -421,31 +429,50 @@ def eta_minutes_for(km, traffic_mult, speed_kmh=36):
 
 def score_facility_for_case(f, origin_lat, origin_lon, need_caps, traffic_mult):
     """Multi-factor score: capability coverage, readiness, proximity, traffic."""
-    km = dist_km(origin_lat, origin_lon, f["lat"], f["lon"])
-    coverage = 1.0 if not need_caps else sum(f["caps"].get(c, 0) for c in need_caps) / len(need_caps)
-    readiness = 0.5 * (min(f["ICU_open"], 3) / 3.0) + 0.5 * float(f["acceptanceRate"])
-    proximity = max(0.0, 1.0 - km / 60.0)  # >60 km fades to 0
-    penalty = 0.0 if f["ICU_open"] > 0 else -0.20
-    traffic_term = 1 - (float(traffic_mult) - 1.0) / 0.5  # Free=1.0, Heavy≈0.0
-    score = 0.55 * coverage + 0.25 * readiness + 0.15 * proximity + 0.05 * traffic_term + penalty
-    score = max(0.0, min(1.0, score))
+    try:
+        origin_lat = float(origin_lat)
+        origin_lon = float(origin_lon)
+        traffic_mult = float(traffic_mult)
+        
+        km = dist_km(origin_lat, origin_lon, float(f["lat"]), float(f["lon"]))
+        
+        # Safe capability calculation
+        if not need_caps:
+            coverage = 1.0
+        else:
+            coverage = sum(int(f["caps"].get(c, 0)) for c in need_caps) / len(need_caps)
+        
+        # Safe numeric conversions
+        icu_open = int(f.get("ICU_open", 0))
+        acceptance_rate = float(f.get("acceptanceRate", 0.75))
+        
+        readiness = 0.5 * (min(icu_open, 3) / 3.0) + 0.5 * acceptance_rate
+        proximity = max(0.0, 1.0 - km / 60.0)
+        penalty = 0.0 if icu_open > 0 else -0.20
+        traffic_term = 1 - (traffic_mult - 1.0) / 0.5
+        
+        score = 0.55 * coverage + 0.25 * readiness + 0.15 * proximity + 0.05 * traffic_term + penalty
+        score = max(0.0, min(1.0, score))
 
-    eta_min = eta_minutes_for(km, traffic_mult)
-    route = interpolate_route(origin_lat, origin_lon, f["lat"], f["lon"], n=24)
+        eta_min = eta_minutes_for(km, traffic_mult)
+        route = interpolate_route(origin_lat, origin_lon, float(f["lat"]), float(f["lon"]), n=24)
 
-    return dict(
-        name=f["name"],
-        km=round(km, 1),
-        eta_min=int(eta_min),
-        ICU_open=f["ICU_open"],
-        accept=int(round(float(f["acceptanceRate"]) * 100, 0)),
-        specialties=", ".join([s for s, v in f["specialties"].items() if v]) or "—",
-        highend=", ".join([i for i, v in f["highend"].items() if v]) or "—",
-        score=int(round(score * 100, 0)),
-        route=route,
-        lat=f["lat"],
-        lon=f["lon"],
-    )
+        return dict(
+            name=str(f["name"]),
+            km=round(km, 1),
+            eta_min=int(eta_min) if eta_min else 0,
+            ICU_open=icu_open,
+            accept=int(round(acceptance_rate * 100, 0)),
+            specialties=", ".join([str(s) for s, v in f["specialties"].items() if v]) or "—",
+            highend=", ".join([str(i) for i, v in f["highend"].items() if v]) or "—",
+            score=int(round(score * 100, 0)),
+            route=route,
+            lat=float(f["lat"]),
+            lon=float(f["lon"]),
+        )
+    except Exception as e:
+        st.error(f"Error scoring facility {f.get('name', 'unknown')}: {str(e)}")
+        return None
 
 def rank_facilities_for_case(origin, need_caps, traffic_mult=1.0, topk=10):
     """Strict capability fit + score, then return best N with routes."""
@@ -453,7 +480,13 @@ def rank_facilities_for_case(origin, need_caps, traffic_mult=1.0, topk=10):
     for f in st.session_state.facilities:
         if need_caps and not all(f["caps"].get(c, 0) == 1 for c in need_caps):
             continue
-        rows.append(score_facility_for_case(f, origin[0], origin[1], need_caps, traffic_mult))
+        scored = score_facility_for_case(f, origin[0], origin[1], need_caps, traffic_mult)
+        if scored is not None:
+            rows.append(scored)
+    
+    if not rows:
+        return []
+        
     rows = sorted(rows, key=lambda r: (-r["score"], r["km"]))
     return rows[:topk]
 
@@ -583,18 +616,30 @@ def seed_referrals(n=300, rng_seed=42):
             ambulance_available=amb_avail
         ))
 
-# ---------------------- SESSION ----------------------
+# ---------------------- SESSION STATE INITIALIZATION ----------------------
 if "facilities" not in st.session_state:
     st.session_state.facilities = default_facilities(count=15)
 
-# Safe defaults used by scoring
-if "patient_age" not in st.session_state: st.session_state["patient_age"] = None
-if "o2_device" not in st.session_state:   st.session_state["o2_device"] = "Air"
-if "spo2_scale" not in st.session_state:  st.session_state["spo2_scale"] = 1
-if "pews_behavior" not in st.session_state: st.session_state["pews_behavior"] = "Normal"
+# Initialize session state variables
+if "patient_age" not in st.session_state: 
+    st.session_state.patient_age = 30
+if "o2_device" not in st.session_state: 
+    st.session_state.o2_device = "Air"
+if "spo2_scale" not in st.session_state: 
+    st.session_state.spo2_scale = 1
+if "pews_behavior" not in st.session_state: 
+    st.session_state.pews_behavior = "Normal"
 
-if "referrals" not in st.session_state: st.session_state.referrals = []
-if "active_fac" not in st.session_state: st.session_state.active_fac = st.session_state.facilities[0]["name"]
+if "referrals" not in st.session_state: 
+    st.session_state.referrals = []
+if "active_fac" not in st.session_state: 
+    st.session_state.active_fac = st.session_state.facilities[0]["name"]
+
+# Initialize facility matching session state
+if "matched_primary" not in st.session_state:
+    st.session_state.matched_primary = None
+if "matched_alts" not in st.session_state:
+    st.session_state.matched_alts = set()
 
 # Normalize schema
 st.session_state.facilities = [normalize_facility(x) for x in st.session_state.facilities]
@@ -603,91 +648,73 @@ st.session_state.facilities = [normalize_facility(x) for x in st.session_state.f
 if len(st.session_state.referrals) < 100:
     seed_referrals(n=300)
 
-# ---------------------- UI TABS ----------------------
+# ---------------------- MAIN APP UI ----------------------
 st.title("AHECN – Streamlit MVP v1.8 (East Khasi Hills)")
 tabs = st.tabs(["Referrer","Ambulance / EMT","Receiving Hospital","Government","Data / Admin","Facility Admin"])
 
-# ======== Referrer ========
+# ======== Referrer Tab ========
 with tabs[0]:
     st.subheader("Patient & Referrer")
-    # ... your c1/c2/c3 blocks ...
-    ocr = st.text_area("Notes / OCR (paste)", height=100)
+    
+    # Patient and Referrer Details
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        p_name = st.text_input("Patient name", "John Doe")
+        p_age = st.number_input("Age", 0, 120, 35)
+        p_sex = st.selectbox("Sex", ["Male", "Female", "Other"])
+    with c2:
+        p_id = st.text_input("Patient ID", "PT-001")
+        p_lat = st.number_input("Latitude", value=25.58, format="%.6f")
+        p_lon = st.number_input("Longitude", value=91.89, format="%.6f")
+    with c3:
+        r_name = st.text_input("Referrer name", "Dr. Smith")
+        r_fac = st.text_input("Referrer facility", "PHC Mawlai")
+    
+    ocr = st.text_area("Notes / OCR (paste)", height=100, placeholder="Paste clinical notes, observations, or free-text assessment here...")
 
-    # === Step 1 / ICD selection replaces the old free-text field ===
-    st.subheader("Provisional Diagnosis (ICD-coded)")
-
-    # Use your existing variables for age and case type:
-    # - p_age (number input for age)
-    # - complaint (selectbox for Chief complaint: Maternal/Trauma/Stroke/Cardiac/Sepsis/Other)
-
-    icd_choices, icd_df_filt = icd_options_for(complaint, p_age)
-
-    if icd_choices:
-        chosen_icd = st.selectbox("Select ICD (filtered by age & case type)", icd_choices, index=0)
-        # row for selected
-        row = icd_df_filt[icd_df_filt["display"] == chosen_icd].iloc[0]
-        default_iv = [x.strip() for x in str(row.get("default_interventions","")).split(";") if x.strip()]
-    else:
-        st.info("No ICD suggestions for this age & case type. You can free-type below.")
-        chosen_icd = None
-        row = None
-        default_iv = []
-
-    # Interventions (auto-suggested if ICD selected)
-    st.caption("Initial interventions (you can edit):")
-    iv_cols = st.columns(3)
-    iv_selected = []
-    for i, item in enumerate(default_iv[:12]):  # keep it compact
-        if iv_cols[i % 3].checkbox(item, value=True, key=f"iv_{i}"):
-            iv_selected.append(item)
-
-    # Free-text (always available)
-    dx_free = st.text_input("Additional diagnosis notes (optional)", "")
-
-    # This “dx_payload” will be stored into the referral later
-    if chosen_icd and row is not None:
-        dx_payload = dict(code=row["icd_code"], label=row["label"], case_type=row["case_type"])
-    else:
-        # if non-doctor roles skip ICD, we keep free text only
-        dx_payload = dict(code="", label=(dx_free or "").strip(), case_type=str(complaint))
-    # === end Step 1 ICD selection ===
-
+    # Vitals Section - MUST come before ICD section
     st.subheader("Vitals + Scores")
-    # ... vitals inputs continue ...
-
-    st.subheader("Vitals + Scores")
-    v1,v2,v3 = st.columns(3)
+    v1, v2, v3 = st.columns(3)
     with v1:
-        hr   = st.number_input("HR", 0,250,118)
-        sbp  = st.number_input("SBP",0,300,92)
-        rr   = st.number_input("RR", 0,80,26)
-        temp = st.number_input("Temp °C",30.0,43.0,38.4,step=0.1)
+        hr = st.number_input("HR", 0, 250, 118)
+        sbp = st.number_input("SBP", 0, 300, 92)
+        rr = st.number_input("RR", 0, 80, 26)
+        temp = st.number_input("Temp °C", 30.0, 43.0, 38.4, step=0.1)
     with v2:
-        spo2 = st.number_input("SpO₂ %",50,100,92)
-        avpu = st.selectbox("AVPU",["A","V","P","U"],index=0)
-        complaint = st.selectbox("Chief complaint",["Maternal","Trauma","Stroke","Cardiac","Sepsis","Other"],index=0)
-        rf_sbp = st.checkbox("Red flag: SBP <90",False)
+        spo2 = st.number_input("SpO₂ %", 50, 100, 92)
+        avpu = st.selectbox("AVPU", ["A", "V", "P", "U"], index=0)
+        complaint = st.selectbox("Chief complaint", ["Maternal", "Trauma", "Stroke", "Cardiac", "Sepsis", "Other"], index=0)
+        rf_sbp = st.checkbox("Red flag: SBP <90", False)
     with v3:
-        rf_spo2 = st.checkbox("Red flag: SpO₂ <90%",False)
-        rf_avpu = st.checkbox("Red flag: AVPU ≠ A",False)
-        rf_seizure = st.checkbox("Red flag: Seizure",False)
-        rf_pph = st.checkbox("Red flag: PPH",value=(complaint=="Maternal"))
+        rf_spo2 = st.checkbox("Red flag: SpO₂ <90%", False)
+        rf_avpu = st.checkbox("Red flag: AVPU ≠ A", False)
+        rf_seizure = st.checkbox("Red flag: Seizure", False)
+        rf_pph = st.checkbox("Red flag: PPH", value=(complaint == "Maternal"))
 
-    o2_device = st.selectbox("O₂ device",["Air","O2"])
-    spo2_scale= st.selectbox("SpO₂ scale (NEWS2)",[1,2],index=0)
-    pews_beh  = st.selectbox("PEWS behavior",["Normal","Irritable","Lethargic"],index=0)
+    # Additional scoring parameters
+    o2_col, scale_col, beh_col = st.columns(3)
+    with o2_col:
+        o2_device = st.selectbox("O₂ device", ["Air", "O2"])
+        st.session_state.o2_device = o2_device
+    with scale_col:
+        spo2_scale = st.selectbox("SpO₂ scale (NEWS2)", [1, 2], index=0)
+        st.session_state.spo2_scale = spo2_scale
+    with beh_col:
+        pews_beh = st.selectbox("PEWS behavior", ["Normal", "Irritable", "Lethargic"], index=0)
+        st.session_state.pews_behavior = pews_beh
+        st.session_state.patient_age = p_age
 
-    # Scores (using hardened interfaces)
-    n_score, n_hits, n_review, n_emerg = safe_calc_NEWS2(rr,spo2,sbp,hr,temp,avpu,o2_device,spo2_scale)
+    # Calculate and display scores
+    n_score, n_hits, n_review, n_emerg = safe_calc_NEWS2(rr, spo2, sbp, hr, temp, avpu, o2_device, spo2_scale)
     st.write(f"NEWS2: **{n_score}** {'• EMERGENCY' if n_emerg else '• review' if n_review else ''}")
 
-    q_score, q_hits, q_high = calc_qSOFA(rr,sbp,avpu)
+    q_score, q_hits, q_high = calc_qSOFA(rr, sbp, avpu)
     st.write(f"qSOFA: **{q_score}** {'• ≥2 high risk' if q_high else ''}")
 
     meows = calc_MEOWS(hr, rr, sbp, temp, spo2)
     m_band = "Red" if meows["red"] else ("Yellow" if meows["yellow"] else "Green")
     m_trig = bool(meows["red"] or meows["yellow"])
-    if complaint=="Maternal":
+    if complaint == "Maternal":
         st.write(f"MEOWS: **{m_band}** {'• trigger' if m_trig else ''}")
     else:
         st.caption("MEOWS applies to maternal cases only.")
@@ -698,43 +725,72 @@ with tabs[0]:
     else:
         st.caption("PEWS disabled for ≥18y")
 
-    # Hero triage banner
+    # Triage decision banner
     render_triage_banner(hr, rr, sbp, temp, spo2, avpu, rf_sbp, rf_spo2, rf_avpu, rf_seizure, rf_pph, complaint)
+
+    # ICD Diagnosis Section - NOW complaint is defined
+    st.subheader("Provisional Diagnosis (ICD-coded)")
+    icd_choices, icd_df_filt = icd_options_for(complaint, p_age)
+
+    if icd_choices:
+        chosen_icd = st.selectbox("Select ICD (filtered by age & case type)", icd_choices, index=0)
+        row = icd_df_filt[icd_df_filt["display"] == chosen_icd].iloc[0]
+        default_iv = [x.strip() for x in str(row.get("default_interventions", "")).split(";") if x.strip()]
+    else:
+        st.info("No ICD suggestions for this age & case type. You can free-type below.")
+        chosen_icd = None
+        row = None
+        default_iv = []
+
+    # Interventions
+    st.caption("Initial interventions (you can edit):")
+    iv_cols = st.columns(3)
+    iv_selected = []
+    for i, item in enumerate(default_iv[:12]):
+        if iv_cols[i % 3].checkbox(item, value=True, key=f"iv_{i}"):
+            iv_selected.append(item)
+
+    # Free-text diagnosis
+    dx_free = st.text_input("Additional diagnosis notes (optional)", "")
+
+    # Diagnosis payload
+    if chosen_icd and row is not None:
+        dx_payload = dict(code=row["icd_code"], label=row["label"], case_type=row["case_type"])
+    else:
+        dx_payload = dict(code="", label=(dx_free or "").strip(), case_type=str(complaint))
 
     # Resuscitation interventions
     st.subheader("Resuscitation / Stabilization done (tick all applied)")
+    RESUS_LIST = ["Airway positioning", "Oxygen", "IV fluids", "Uterotonics", "TXA", "Bleeding control", 
+                  "Antibiotics", "Nebulization", "Immobilization", "AED/CPR"]
     cols = st.columns(5)
-    RESUS_LIST = ["Airway positioning","Oxygen","IV fluids","Uterotonics","TXA","Bleeding control","Antibiotics","Nebulization","Immobilization","AED/CPR"]
-    resus_done = [r for i,r in enumerate(RESUS_LIST) if cols[i%5].checkbox(r, False)]
+    resus_done = []
+    for i, item in enumerate(RESUS_LIST):
+        if cols[i % 5].checkbox(item, value=False, key=f"resus_{i}"):
+            resus_done.append(item)
 
+    # Referral reasons and capabilities
     st.subheader("Reason(s) for referral + capabilities needed")
-    c1,c2 = st.columns(2)
+    c1, c2 = st.columns(2)
     with c1:
-        ref_beds  = st.checkbox("No ICU/bed available",False)
-        ref_tests = st.checkbox("Special intervention/test required",True)
+        ref_beds = st.checkbox("No ICU/bed available", False)
+        ref_tests = st.checkbox("Special intervention/test required", True)
         ref_severity = True
-    need_caps=[]
+    need_caps = []
     if ref_tests:
         st.caption("Select required capabilities for this case")
         cap_cols = st.columns(5)
-        CAP_LIST = ["ICU","Ventilator","BloodBank","OR","CT","Thrombolysis","OBGYN_OT","CathLab","Dialysis","Neurosurgery"]
-        for i,cap in enumerate(CAP_LIST):
-            pre = (cap in ["ICU","BloodBank","OBGYN_OT"]) if complaint=="Maternal" else False
-            if cap_cols[i%5].checkbox(cap, value=pre, key=f"cap_{cap}"):
+        CAP_LIST = ["ICU", "Ventilator", "BloodBank", "OR", "CT", "Thrombolysis", "OBGYN_OT", "CathLab", "Dialysis", "Neurosurgery"]
+        for i, cap in enumerate(CAP_LIST):
+            pre = (cap in ["ICU", "BloodBank", "OBGYN_OT"]) if complaint == "Maternal" else False
+            if cap_cols[i % 5].checkbox(cap, value=pre, key=f"cap_{cap}"):
                 need_caps.append(cap)
-    
-    # Facility matching (route + capacity + traffic aware)
+
+    # Facility matching
     st.markdown("### Facility matching")
 
-    # Initialise once so session keys always exist
-    if "_matched_primary" not in st.session_state:
-        st.session_state["_matched_primary"] = None
-    if "_matched_alts" not in st.session_state:
-        st.session_state["_matched_alts"] = set()
-
-    # Only compute when user clicks
     if st.button("Find matched facilities"):
-        traffic_mult = traffic_factor_for_hour(datetime.now().hour)  # quick proxy
+        traffic_mult = traffic_factor_for_hour(datetime.now().hour)
         rows = rank_facilities_for_case(
             origin=(p_lat, p_lon),
             need_caps=need_caps,
@@ -745,107 +801,111 @@ with tabs[0]:
         if not rows:
             st.warning("No capability-fit facilities. Try relaxing requirements.")
         else:
-            # Build sorted table
             df = (
                 pd.DataFrame(rows)
                 .sort_values(["score", "km"], ascending=[False, True])
                 .head(10)
             )
 
-            # Compact ranked table (investor-friendly)
             st.dataframe(
                 df[["name", "km", "eta_min", "ICU_open", "accept", "score"]]
-                  .rename(columns={
-                      "name": "Facility",
-                      "km": "km",
-                      "eta_min": "ETA (min)",
-                      "ICU_open": "ICU",
-                      "accept": "Accept %",
-                      "score": "Score",
-                  }),
+                .rename(columns={
+                    "name": "Facility",
+                    "km": "km",
+                    "eta_min": "ETA (min)",
+                    "ICU_open": "ICU",
+                    "accept": "Accept %",
+                    "score": "Score",
+                }),
                 use_container_width=True,
             )
 
             st.markdown("### Suggested destinations")
-            st.session_state["_matched_primary"] = None
-            st.session_state["_matched_alts"] = set()
+            st.session_state.matched_primary = None
+            st.session_state.matched_alts = set()
 
-            # Action cards
             for _, r in df.iterrows():
                 pick, alt = facility_card(r)
                 if pick:
-                    st.session_state["_matched_primary"] = r["name"]
+                    st.session_state.matched_primary = r["name"]
                 if alt:
-                    st.session_state["_matched_alts"].add(r["name"])
+                    st.session_state.matched_alts.add(r["name"])
 
-            # Default to the top suggestion if none picked
-            if not st.session_state["_matched_primary"]:
-                st.session_state["_matched_primary"] = df.iloc[0]["name"]
+            if not st.session_state.matched_primary:
+                st.session_state.matched_primary = df.iloc[0]["name"]
 
-            # Optional: draw origin → primary destination line
             show_map = st.checkbox("Show routes to suggestions", value=True)
-            if show_map:
-                primary_name = st.session_state["_matched_primary"]
-                dest_fac = next(f for f in st.session_state.facilities if f["name"] == primary_name)
-
-                origin_layer = pdk.Layer(
-                    "ScatterplotLayer",
-                    data=[{"lon": p_lon, "lat": p_lat}],
-                    get_position="[lon, lat]",
-                    get_radius=200,
-                    get_fill_color=[66, 133, 244, 180],
-                )
-                dest_layer = pdk.Layer(
-                    "ScatterplotLayer",
-                    data=[{"lon": float(dest_fac["lon"]), "lat": float(dest_fac["lat"])}],
-                    get_position="[lon, lat]",
-                    get_radius=220,
-                    get_fill_color=[239, 68, 68, 200],
-                )
-                path_layer = pdk.Layer(
-                    "PathLayer",
-                    data=[{"path": [[p_lon, p_lat], [float(dest_fac["lon"]), float(dest_fac["lat"])]]}],
-                    get_path="path",
-                    get_color=[16, 185, 129, 200],
-                    width_scale=6,
-                    width_min_pixels=3,
-                )
-                st.pydeck_chart(pdk.Deck(
-                    layers=[origin_layer, dest_layer, path_layer],
-                    initial_view_state=pdk.ViewState(latitude=p_lat, longitude=p_lon, zoom=9),
-                    map_style="mapbox://styles/mapbox/dark-v10",
-                ))
+            if show_map and st.session_state.matched_primary:
+                try:
+                    primary_name = st.session_state.matched_primary
+                    dest_fac = next((f for f in st.session_state.facilities if f["name"] == primary_name), None)
+                    
+                    if dest_fac and p_lat and p_lon:
+                        origin_layer = pdk.Layer(
+                            "ScatterplotLayer",
+                            data=[{"lon": p_lon, "lat": p_lat}],
+                            get_position="[lon, lat]",
+                            get_radius=200,
+                            get_fill_color=[66, 133, 244, 180],
+                        )
+                        dest_layer = pdk.Layer(
+                            "ScatterplotLayer",
+                            data=[{"lon": float(dest_fac["lon"]), "lat": float(dest_fac["lat"])}],
+                            get_position="[lon, lat]",
+                            get_radius=220,
+                            get_fill_color=[239, 68, 68, 200],
+                        )
+                        path_layer = pdk.Layer(
+                            "PathLayer",
+                            data=[{"path": [[p_lon, p_lat], [float(dest_fac["lon"]), float(dest_fac["lat"])]]}],
+                            get_path="path",
+                            get_color=[16, 185, 129, 200],
+                            width_scale=6,
+                            width_min_pixels=3,
+                        )
+                        st.pydeck_chart(pdk.Deck(
+                            layers=[origin_layer, dest_layer, path_layer],
+                            initial_view_state=pdk.ViewState(latitude=p_lat, longitude=p_lon, zoom=9),
+                            map_style="mapbox://styles/mapbox/dark-v10",
+                        ))
+                    else:
+                        st.warning("Could not render map: missing location data")
+                except Exception as e:
+                    st.error(f"Map rendering error: {str(e)}")
 
             st.info(
-                f"Primary: {st.session_state['_matched_primary']} • "
-                f"Alternates: {', '.join(sorted(st.session_state['_matched_alts'])) or '—'}"
+                f"Primary: {st.session_state.matched_primary} • "
+                f"Alternates: {', '.join(sorted(st.session_state.matched_alts)) or '—'}"
             )
 
+    # Final referral details
     st.markdown("### Referral details")
     colA, colB, colC = st.columns(3)
     with colA:
-        priority = st.selectbox("Transport priority", ["Routine","Urgent","STAT"], index=1)
+        priority = st.selectbox("Transport priority", ["Routine", "Urgent", "STAT"], index=1)
     with colB:
-        amb_type = st.selectbox("Ambulance type", ["BLS","ALS","ALS + Vent","Neonatal"], index=1)
+        amb_type = st.selectbox("Ambulance type", ["BLS", "ALS", "ALS + Vent", "Neonatal"], index=1)
     with colC:
         consent = st.checkbox("Patient/family consent obtained", value=True)
 
-    primary = st.session_state.get("_matched_primary")
-    alternates = sorted(list(st.session_state.get("_matched_alts", [])))
+    primary = st.session_state.get("matched_primary")
+    alternates = sorted(list(st.session_state.get("matched_alts", [])))
 
     def _save_referral(dispatch=False):
         if not primary:
             st.error("Select a primary destination from 'Find matched facilities' above.")
-            return
-        vit=dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu,
-                 rf_sbp=rf_sbp, rf_spo2=rf_spo2, rf_avpu=rf_avpu, rf_seizure=rf_seizure, rf_pph=rf_pph, complaint=complaint)
+            return False
+            
+        vit = dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu,
+                  rf_sbp=rf_sbp, rf_spo2=rf_spo2, rf_avpu=rf_avpu, rf_seizure=rf_seizure, rf_pph=rf_pph, complaint=complaint)
+        
         ref = dict(
-            id="R"+str(int(time.time()))[-6:],
+            id="R" + str(int(time.time()))[-6:],
             patient=dict(name=p_name, age=int(p_age), sex=p_sex, id=p_id, location=dict(lat=float(p_lat), lon=float(p_lon))),
             referrer=dict(name=r_name, facility=r_fac),
-            provisionalDx=dx_payload,          # <-- new structured ICD object
-            interventions=iv_selected + ([dx_free] if dx_free else []),  # <-- list
-
+            provisionalDx=dx_payload,
+            interventions=iv_selected + ([dx_free] if dx_free else []),
+            resuscitation=resus_done,
             triage=dict(complaint=complaint, decision=dict(color=tri_color(vit)), hr=hr, sbp=sbp, rr=rr, temp=temp, spo2=spo2, avpu=avpu),
             clinical=dict(summary=" ".join(ocr.split()[:60])),
             reasons=dict(severity=True, bedOrICUUnavailable=ref_beds, specialTest=ref_tests, requiredCapabilities=need_caps),
@@ -857,23 +917,28 @@ with tabs[0]:
             ambulance_available=None
         )
         if dispatch:
-            ref["times"]["dispatch_ts"]=now_ts()
-            ref["status"]="DISPATCHED"
-            ref["ambulance_available"]=True
+            ref["times"]["dispatch_ts"] = now_ts()
+            ref["status"] = "DISPATCHED"
+            ref["ambulance_available"] = True
+            
         st.session_state.referrals.insert(0, ref)
-        st.success(f"Referral {ref['id']} → {primary} created" + (" and DISPATCHED" if dispatch else ""))
+        return True
 
     col1, col2 = st.columns(2)
-    if col1.button("Create referral"): _save_referral(dispatch=False)
-    if col2.button("Create & dispatch now"): _save_referral(dispatch=True)
+    if col1.button("Create referral"):
+        if _save_referral(dispatch=False):
+            st.success(f"Referral created → {primary}")
+    if col2.button("Create & dispatch now"):
+        if _save_referral(dispatch=True):
+            st.success(f"Referral created and DISPATCHED → {primary}")
 
-# ======== Ambulance / EMT ========
+# ======== Ambulance / EMT Tab ========
 with tabs[1]:
     st.subheader("Active jobs (availability • route • live ETA)")
-    avail = st.radio("Ambulance availability", ["Available","Unavailable"], horizontal=True)
+    avail = st.radio("Ambulance availability", ["Available", "Unavailable"], horizontal=True)
 
     active = [r for r in st.session_state.referrals if r["status"] in
-              ["PREALERT","DISPATCHED","ARRIVE_SCENE","DEPART_SCENE","ARRIVE_DEST"]]
+              ["PREALERT", "DISPATCHED", "ARRIVE_SCENE", "DEPART_SCENE", "ARRIVE_DEST"]]
     if not active:
         st.info("No active jobs")
     else:
@@ -881,41 +946,62 @@ with tabs[1]:
         pick = st.selectbox("Select case", ids, index=0)
         r = active[ids.index(pick)]
 
-        c1,c2,c3,c4,c5 = st.columns(5)
-        if c1.button("Dispatch"):     r["times"]["dispatch_ts"]=now_ts(); r["status"]="DISPATCHED"; r["ambulance_available"]=(avail=="Available")
-        if c2.button("Arrive scene"): r["times"]["arrive_scene_ts"]=now_ts(); r["status"]="ARRIVE_SCENE"
-        if c3.button("Depart scene"): r["times"]["depart_scene_ts"]=now_ts(); r["status"]="DEPART_SCENE"
-        if c4.button("Arrive dest"):  r["times"]["arrive_dest_ts"]=now_ts(); r["status"]="ARRIVE_DEST"
-        if c5.button("Handover"):     r["times"]["handover_ts"]=now_ts();  r["status"]="HANDOVER"
+        c1, c2, c3, c4, c5 = st.columns(5)
+        if c1.button("Dispatch"):     
+            r["times"]["dispatch_ts"] = now_ts()
+            r["status"] = "DISPATCHED"
+            r["ambulance_available"] = (avail == "Available")
+            st.rerun()
+        if c2.button("Arrive scene"): 
+            r["times"]["arrive_scene_ts"] = now_ts()
+            r["status"] = "ARRIVE_SCENE"
+            st.rerun()
+        if c3.button("Depart scene"): 
+            r["times"]["depart_scene_ts"] = now_ts()
+            r["status"] = "DEPART_SCENE"
+            st.rerun()
+        if c4.button("Arrive dest"):  
+            r["times"]["arrive_dest_ts"] = now_ts()
+            r["status"] = "ARRIVE_DEST"
+            st.rerun()
+        if c5.button("Handover"):     
+            r["times"]["handover_ts"] = now_ts()
+            r["status"] = "HANDOVER"
+            st.rerun()
 
         st.markdown("### Route & live traffic")
-        traffic_state = st.radio("Traffic", ["Free","Moderate","Heavy"],
-                                 index=0 if r["transport"].get("traffic",1.0)==1.0 else 1 if r["transport"]["traffic"]<=1.2 else 2,
-                                 horizontal=True)
-        tf = {"Free":1.0,"Moderate":1.2,"Heavy":1.5}[traffic_state]
+        current_traffic = r["transport"].get("traffic", 1.0)
+        traffic_idx = 0 if current_traffic == 1.0 else 1 if current_traffic <= 1.2 else 2
+        traffic_state = st.radio("Traffic", ["Free", "Moderate", "Heavy"], index=traffic_idx, horizontal=True)
+        tf = {"Free": 1.0, "Moderate": 1.2, "Heavy": 1.5}[traffic_state]
         r["transport"]["traffic"] = tf
+        
         if r.get("route"):
             p1, p2 = r["route"][0], r["route"][-1]
-            dkm = dist_km(p1[0],p1[1],p2[0],p2[1])
+            dkm = dist_km(p1[0], p1[1], p2[0], p2[1])
             speed = r["transport"].get("speed_kmh", 36)
             eta_min = max(5, int(dkm / speed * 60 * tf))
             r["transport"]["eta_min"] = eta_min
 
-        left, right = st.columns([1,3])
+        left, right = st.columns([1, 3])
         with left:
-            st.write(f"**ETA:** {r['transport'].get('eta_min','—')} min")
-            st.write(f"**Ambulance:** {r['transport'].get('ambulance','—')}")
-            st.write("**Triage:**"); triage_pill(r['triage']['decision']['color'])
+            st.write(f"**ETA:** {r['transport'].get('eta_min', '—')} min")
+            st.write(f"**Ambulance:** {r['transport'].get('ambulance', '—')}")
+            st.write("**Triage:**")
+            triage_pill(r['triage']['decision']['color'])
 
         if r.get("route"):
-            path = [dict(path=[[pt[1], pt[0]] for pt in r["route"]])]
-            layer = pdk.Layer("PathLayer", data=path, get_path="path", get_color=[16,185,129,200], width_scale=5, width_min_pixels=3)
-            v = pdk.ViewState(latitude=r["route"][0][0], longitude=r["route"][0][1], zoom=10)
-            st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=v, map_style="mapbox://styles/mapbox/dark-v10"))
+            try:
+                path = [dict(path=[[pt[1], pt[0]] for pt in r["route"]])]
+                layer = pdk.Layer("PathLayer", data=path, get_path="path", get_color=[16, 185, 129, 200], width_scale=5, width_min_pixels=3)
+                v = pdk.ViewState(latitude=r["route"][0][0], longitude=r["route"][0][1], zoom=10)
+                st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=v, map_style="mapbox://styles/mapbox/dark-v10"))
+            except Exception as e:
+                st.error(f"Error rendering map: {str(e)}")
         else:
             st.caption("No route saved in this record.")
 
-# ======== Receiving Hospital ========
+# ======== Receiving Hospital Tab ========
 with tabs[2]:
     st.subheader("Incoming referrals & case actions")
     fac_names = [f["name"] for f in st.session_state.facilities]
@@ -932,150 +1018,193 @@ with tabs[2]:
         st.info("No incoming referrals")
     else:
         for r in incoming:
-            st.write(f"**{r['patient']['name']}** — {r['triage']['complaint']} ", unsafe_allow_html=True)
-            triage_pill(r['triage']['decision']['color'])
-            dx = r.get("provisionalDx", {})
-            dx_txt = (dx.get("code","") + " " + dx.get("label","")).strip()
-            st.write(f"| Dx: **{dx_txt or '—'}**")
+            with st.container():
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.write(f"**{r['patient']['name']}** — {r['triage']['complaint']} ")
+                    dx = r.get("provisionalDx", {})
+                    dx_txt = (dx.get("code", "") + " " + dx.get("label", "")).strip()
+                    st.write(f"| Dx: **{dx_txt or '—'}**")
+                with col2:
+                    triage_pill(r['triage']['decision']['color'])
 
+                open_key = f"open_{r['id']}"
+                if st.button("Open case", key=open_key):
+                    isbar = f"""I: {r['patient']['name']}, {r['patient']['age']} {r['patient']['sex']}
+    Dx (provisional): {dx_txt}
+    S: {r['triage']['complaint']}; triage {r['triage']['decision']['color']}
+    B: HR {r['triage']['hr']}, SBP {r['triage']['sbp']}, RR {r['triage']['rr']}, Temp {r['triage']['temp']}, SpO2 {r['triage']['spo2']}, AVPU {r['triage']['avpu']}
+    A: Resus: {", ".join(r.get('resuscitation', [])) or "—"}
+    R: {"Bed/ICU unavailable; " if r['reasons'].get('bedOrICUUnavailable') else ""}{"Special test; " if r['reasons'].get('specialTest') else ""}Severity
+    Notes: {r['clinical'].get('summary', "—")}
+    """
+                    st.code(isbar)
 
-            open_key = f"open_{r['id']}"
-            if st.button("Open case", key=open_key):
-                isbar = f"""I: {r['patient']['name']}, {r['patient']['age']} {r['patient']['sex']}
-Dx (provisional): {r['provisionalDx']}
-S: {r['triage']['complaint']}; triage {r['triage']['decision']['color']}
-B: HR {r['triage']['hr']}, SBP {r['triage']['sbp']}, RR {r['triage']['rr']}, Temp {r['triage']['temp']}, SpO2 {r['triage']['spo2']}, AVPU {r['triage']['avpu']}
-A: Resus: {", ".join(r.get('resuscitation', [])) or "—"}
-R: {"Bed/ICU unavailable; " if r['reasons'].get('bedOrICUUnavailable') else ""}{"Special test; " if r['reasons'].get('specialTest') else ""}Severity
-Notes: {r['clinical'].get('summary', "—")}
-"""
-                st.code(isbar)
+                    c1, c2, c3 = st.columns(3)
+                    if c1.button("Accept", key=f"acc_{r['id']}"):
+                        r["status"] = "ARRIVE_DEST"
+                        r["times"]["arrive_dest_ts"] = now_ts()
+                        st.success("Accepted")
+                        st.rerun()
 
-                c1, c2, c3 = st.columns(3)
-                if c1.button("Accept", key=f"acc_{r['id']}"):
-                    r["status"] = "ARRIVE_DEST"
-                    r["times"]["arrive_dest_ts"] = now_ts()
-                    st.success("Accepted")
+                    reject_reason = c2.selectbox(
+                        "Reject reason",
+                        ["—", "No ICU bed", "No specialist", "Equipment down", "Over capacity", "Outside scope"],
+                        key=f"rejrs_{r['id']}",
+                    )
+                    if c3.button("Reject", key=f"rej_{r['id']}") and reject_reason != "—":
+                        r["status"] = "PREALERT"
+                        r["reasons"]["rejected"] = True
+                        r["reasons"]["reject_reason"] = reject_reason
+                        st.warning(f"Requested divert / rejected: {reject_reason}")
+                        st.rerun()
+                
+                st.markdown("---")
 
-                reject_reason = c2.selectbox(
-                    "Reject reason",
-                    ["—", "No ICU bed", "No specialist", "Equipment down", "Over capacity", "Outside scope"],
-                    key=f"rejrs_{r['id']}",
-                )
-                if c3.button("Reject", key=f"rej_{r['id']}") and reject_reason != "—":
-                    r["status"] = "PREALERT"
-                    r["reasons"]["rejected"] = True
-                    r["reasons"]["reject_reason"] = reject_reason
-                    st.warning(f"Requested divert / rejected: {reject_reason}")
-
-# ======== Government (KPIs + Heat Map + Patterns) ========
+# ======== Government Tab ========
 with tabs[3]:
     st.subheader("Government – Master Dashboard (SLA • Severity • Flow • Supply)")
 
     # Filters
-    tri_filter = st.selectbox("Triage", ["All","RED","YELLOW","GREEN"], index=0)
-    sev_filter = st.selectbox("Severity", ["All","Critical","Moderate","Non-critical"], index=0)
-    cond_filter= st.selectbox("Condition", ["All","Maternal","Trauma","Stroke","Cardiac","Sepsis","Other"], index=0)
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        tri_filter = st.selectbox("Triage", ["All", "RED", "YELLOW", "GREEN"], index=0)
+    with col2:
+        sev_filter = st.selectbox("Severity", ["All", "Critical", "Moderate", "Non-critical"], index=0)
+    with col3:
+        cond_filter = st.selectbox("Condition", ["All", "Maternal", "Trauma", "Stroke", "Cardiac", "Sepsis", "Other"], index=0)
 
     data = st.session_state.referrals.copy()
-    if tri_filter!="All": data=[r for r in data if r["triage"]["decision"]["color"]==tri_filter]
-    if sev_filter!="All": data=[r for r in data if r.get("severity")==sev_filter]
-    if cond_filter!="All": data=[r for r in data if r["triage"]["complaint"]==cond_filter]
+    if tri_filter != "All": 
+        data = [r for r in data if r["triage"]["decision"]["color"] == tri_filter]
+    if sev_filter != "All": 
+        data = [r for r in data if r.get("severity") == sev_filter]
+    if cond_filter != "All": 
+        data = [r for r in data if r["triage"]["complaint"] == cond_filter]
 
     def minutes_safe(a, b):
-        return None if not a or not b else int((b-a)/60)
+        return None if not a or not b else int((b - a) / 60)
 
     def pct(vals, p):
-        arr = [v for v in vals if isinstance(v, (int,float)) and v is not None]
+        arr = [v for v in vals if isinstance(v, (int, float)) and v is not None]
         return int(np.percentile(arr, p)) if arr else None
 
     total = len(data) or 1
-    reds  = [r for r in data if r["triage"]["decision"]["color"]=="RED"]
-    with_disp=[r for r in data if r["times"].get("dispatch_ts")]
+    reds = [r for r in data if r["triage"]["decision"]["color"] == "RED"]
+    with_disp = [r for r in data if r["times"].get("dispatch_ts")]
 
-    # Existing KPIs
+    # KPIs
     pct_red_60 = int(100 * len([r for r in reds if r["times"].get("arrive_dest_ts")
-                                and minutes_safe(r["times"]["first_contact_ts"], r["times"]["arrive_dest_ts"])<=60])/(len(reds) or 1))
-    pct_disp_10 = int(100 * len([r for r in with_disp if minutes_safe(r["times"]["first_contact_ts"], r["times"]["dispatch_ts"])<=10])/(len(with_disp) or 1))
-    accepted   = len([r for r in data if r["status"] in ["ARRIVE_DEST","HANDOVER"]])
-    rejected   = len([r for r in data if r.get("reasons",{}).get("rejected")])
-
-    # New distributions
+                                and minutes_safe(r["times"]["first_contact_ts"], r["times"]["arrive_dest_ts"]) <= 60]) / (len(reds) or 1))
+    pct_disp_10 = int(100 * len([r for r in with_disp if minutes_safe(r["times"]["first_contact_ts"], r["times"]["dispatch_ts"]) <= 10]) / (len(with_disp) or 1))
+    
     dispatch_delays = [minutes_safe(r["times"].get("decision_ts"), r["times"].get("dispatch_ts")) for r in data]
-    travel_times    = [minutes_safe(r["times"].get("dispatch_ts"), r["times"].get("arrive_dest_ts")) for r in data]
+    travel_times = [minutes_safe(r["times"].get("dispatch_ts"), r["times"].get("arrive_dest_ts")) for r in data]
 
     d_p50, d_p90 = pct(dispatch_delays, 50), pct(dispatch_delays, 90)
     t_p50, t_p90 = pct(travel_times, 50), pct(travel_times, 90)
 
-    k1,k2,k3,k4 = st.columns(4)
-    with k1: kpi_tile("% RED ≤60m", f"{pct_red_60}%")
-    with k2: kpi_tile("% Dispatch ≤10m", f"{pct_disp_10}%")
-    with k3: kpi_tile("Dispatch P50 / P90", f"{d_p50 or '—'} / {d_p90 or '—'} min")
-    with k4: kpi_tile("Travel P50 / P90", f"{t_p50 or '—'} / {t_p90 or '—'} min")
+    k1, k2, k3, k4 = st.columns(4)
+    with k1: 
+        kpi_tile("% RED ≤60m", f"{pct_red_60}%", "Critical cases arriving within 60min")
+    with k2: 
+        kpi_tile("% Dispatch ≤10m", f"{pct_disp_10}%", "Cases dispatched within 10min")
+    with k3: 
+        kpi_tile("Dispatch P50 / P90", f"{d_p50 or '—'} / {d_p90 or '—'} min", "Dispatch time percentiles")
+    with k4: 
+        kpi_tile("Travel P50 / P90", f"{t_p50 or '—'} / {t_p90 or '—'} min", "Travel time percentiles")
 
+    # Charts
     st.markdown("### Severity mix")
-    sev_series = pd.Series([r.get("severity","—") for r in data]).value_counts()
+    sev_series = pd.Series([r.get("severity", "—") for r in data]).value_counts()
     st.bar_chart(sev_series, use_container_width=True)
 
     st.markdown("### Referral funnel")
     s1 = len(data)
     s2 = len([r for r in data if r["times"].get("dispatch_ts")])
-    s3 = len([r for r in data if r["status"] in ["ARRIVE_DEST","HANDOVER"]])
-    funnel_df = pd.DataFrame({"stage":["Referrals","Dispatched","Arrived/Handover"],"count":[s1,s2,s3]}).set_index("stage")
+    s3 = len([r for r in data if r["status"] in ["ARRIVE_DEST", "HANDOVER"]])
+    funnel_df = pd.DataFrame({"stage": ["Referrals", "Dispatched", "Arrived/Handover"], "count": [s1, s2, s3]}).set_index("stage")
     st.bar_chart(funnel_df, use_container_width=True)
 
     st.markdown("### Acceptance by receiving facility")
-    by_fac = pd.Series([r["dest"] for r in data if r["status"] in ["ARRIVE_DEST","HANDOVER"]]).value_counts().head(15)
-    st.bar_chart(by_fac, use_container_width=True)
+    by_fac = pd.Series([r["dest"] for r in data if r["status"] in ["ARRIVE_DEST", "HANDOVER"]]).value_counts().head(10)
+    if not by_fac.empty:
+        st.bar_chart(by_fac, use_container_width=True)
+    else:
+        st.caption("No acceptance data in current filter")
 
     st.markdown("### Rejection reasons")
-    rej = pd.Series([r.get("reasons",{}).get("reject_reason","—") for r in data if r.get("reasons",{}).get("rejected")]).value_counts()
-    if not rej.empty: st.bar_chart(rej, use_container_width=True)
-    else: st.caption("No recorded rejections in current filter.")
+    rej = pd.Series([r.get("reasons", {}).get("reject_reason", "—") for r in data if r.get("reasons", {}).get("rejected")]).value_counts()
+    if not rej.empty:
+        st.bar_chart(rej, use_container_width=True)
+    else:
+        st.caption("No recorded rejections in current filter.")
 
     st.markdown("### Case density heat-map (Hexagon)")
     if data:
-        mdf = pd.DataFrame([dict(lat=r["patient"]["location"]["lat"], lon=r["patient"]["location"]["lon"]) for r in data])
-        layer = pdk.Layer(
-            "HexagonLayer",
-            data=mdf,
-            get_position='[lon, lat]',
-            radius=1500, elevation_scale=4,
-            elevation_range=[0, 3000],
-            pickable=True, extruded=True,
-        )
-        v = pdk.ViewState(latitude=mdf["lat"].mean(), longitude=mdf["lon"].mean(), zoom=9)
-        st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=v, map_style="mapbox://styles/mapbox/dark-v10"))
+        try:
+            mdf = pd.DataFrame([dict(lat=r["patient"]["location"]["lat"], lon=r["patient"]["location"]["lon"]) for r in data])
+            layer = pdk.Layer(
+                "HexagonLayer",
+                data=mdf,
+                get_position='[lon, lat]',
+                radius=1500, elevation_scale=4,
+                elevation_range=[0, 3000],
+                pickable=True, extruded=True,
+            )
+            v = pdk.ViewState(latitude=mdf["lat"].mean(), longitude=mdf["lon"].mean(), zoom=9)
+            st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=v, map_style="mapbox://styles/mapbox/dark-v10"))
+        except Exception as e:
+            st.error(f"Map error: {str(e)}")
     else:
         st.caption("No data for map.")
 
-# ======== Data / Admin ========
+# ======== Data / Admin Tab ========
 with tabs[4]:
     st.subheader("Seed / Import / Export (JSON & CSV)")
+    
+    st.markdown("#### Generate Synthetic Data")
     seed_n = st.slider("Seed referrals (synthetic)", 100, 1000, 300, step=50)
     if st.button("Seed synthetic data"):
         seed_referrals(n=seed_n)
         st.success(f"Seeded {seed_n} referrals")
+        st.rerun()
 
-    st.download_button(
-        "Export JSON",
-        data=json.dumps(dict(referrals=st.session_state.referrals, facilities=st.session_state.facilities), indent=2),
-        file_name="ahecn_data.json", mime="application/json"
-    )
-    if st.button("Export referrals (CSV)"):
+    st.markdown("#### Export Data")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.download_button(
+            "Export JSON",
+            data=json.dumps(dict(referrals=st.session_state.referrals, facilities=st.session_state.facilities), indent=2),
+            file_name="ahecn_data.json", 
+            mime="application/json"
+        )
+    
+    with col2:
         if st.session_state.referrals:
-            out=pd.DataFrame(st.session_state.referrals)
-            st.download_button("Download CSV", data=out.to_csv(index=False), file_name="ahecn_referrals.csv", mime="text/csv")
+            csv_data = pd.DataFrame(st.session_state.referrals).to_csv(index=False)
+            st.download_button(
+                "Export referrals (CSV)", 
+                data=csv_data, 
+                file_name="ahecn_referrals.csv", 
+                mime="text/csv"
+            )
 
+    st.markdown("#### Import Data")
     upload = st.file_uploader("Import JSON", type=["json"])
     if upload:
-        data = json.load(upload)
-        st.session_state.referrals = data.get("referrals", [])
-        imported_fac = data.get("facilities", st.session_state.facilities)
-        st.session_state.facilities = [normalize_facility(x) for x in imported_fac]
-        st.success("Imported (schema normalized)")
+        try:
+            data = json.load(upload)
+            st.session_state.referrals = data.get("referrals", [])
+            imported_fac = data.get("facilities", st.session_state.facilities)
+            st.session_state.facilities = [normalize_facility(x) for x in imported_fac]
+            st.success("Imported (schema normalized)")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Import failed: {str(e)}")
 
-# ======== Facility Admin ========
+# ======== Facility Admin Tab ========
 with tabs[5]:
     st.subheader("Facility capabilities & readiness (edit live)")
 
@@ -1084,10 +1213,12 @@ with tabs[5]:
     if st.button("Regenerate facilities"):
         st.session_state.facilities = [normalize_facility(x) for x in default_facilities(count=new_n)]
         st.success(f"Generated {new_n} facilities")
+        st.rerun()
 
     fac_df = facilities_df()
     st.dataframe(fac_df, use_container_width=True)
 
+    st.markdown("**Edit Facility Details**")
     target = st.selectbox("Select facility", [f["name"] for f in st.session_state.facilities])
     F = next(f for f in st.session_state.facilities if f["name"] == target)
 
