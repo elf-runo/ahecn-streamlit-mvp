@@ -9,41 +9,165 @@ import numpy as np
 import streamlit as st
 import pydeck as pdk
 
-# === ICD mini-catalog (very small, demo-safe) ===
+# === EXPANDED ICD CATALOG (10+ per category) ===
 ICD_LUT = [
-    # Trauma (all ages)
-    {"icd_code":"S06.0", "label":"Concussion", "case_type":"Trauma", "age_min":0, "age_max":120,
-     "default_interventions":"Airway positioning;Cervical immobilization;IV fluids"},
-    {"icd_code":"S72.0", "label":"Fracture of neck of femur", "case_type":"Trauma", "age_min":50, "age_max":120,
-     "default_interventions":"Pain control;Immobilization;IV fluids"},
-
-    # Maternal
-    {"icd_code":"O72.1", "label":"Postpartum haemorrhage", "case_type":"Maternal", "age_min":12, "age_max":55,
-     "default_interventions":"Uterotonics;TXA;IV fluids;Bleeding control"},
+    # ========== MATERNAL (12 entries) ==========
+    {"icd_code":"O72.1", "label":"Postpartum haemorrhage (delayed)", "case_type":"Maternal", "age_min":12, "age_max":55,
+     "default_interventions":"IV fluids;Uterotonics;TXA;Oxygen;Large-bore IV;Measure blood loss"},
+    {"icd_code":"O14.2", "label":"Severe pre-eclampsia", "case_type":"Maternal", "age_min":12, "age_max":55,
+     "default_interventions":"Magnesium sulfate;BP control;Oxygen;IV access"},
     {"icd_code":"O15.0", "label":"Eclampsia", "case_type":"Maternal", "age_min":12, "age_max":55,
      "default_interventions":"Airway positioning;Magnesium sulfate;BP control;Oxygen"},
+    {"icd_code":"O60.1", "label":"Preterm labor with delivery", "case_type":"Maternal", "age_min":12, "age_max":55,
+     "default_interventions":"Tocolytics if no contraindication;Steroids if <34w;Monitor contractions"},
+    {"icd_code":"O44.1", "label":"Placenta previa with haemorrhage", "case_type":"Maternal", "age_min":12, "age_max":55,
+     "default_interventions":"IV access;Crossmatch blood;Monitor bleeding;Prepare for OR"},
+    {"icd_code":"O45.0", "label":"Premature separation of placenta", "case_type":"Maternal", "age_min":12, "age_max":55,
+     "default_interventions":"IV fluids;Crossmatch;Monitor fetus;Prepare for emergency C-section"},
+    {"icd_code":"O41.1", "label":"Infection of amniotic sac", "case_type":"Maternal", "age_min":12, "age_max":55,
+     "default_interventions":"Antibiotics;Monitor temp;Fetal monitoring"},
+    {"icd_code":"O26.6", "label":"Liver disorders in pregnancy", "case_type":"Maternal", "age_min":12, "age_max":55,
+     "default_interventions":"LFT monitoring;Coagulation profile;Consult hepatology"},
+    {"icd_code":"O99.0", "label":"Anaemia in pregnancy", "case_type":"Maternal", "age_min":12, "age_max":55,
+     "default_interventions":"Iron supplementation;Blood transfusion if severe;Folate"},
+    {"icd_code":"O24.4", "label":"Gestational diabetes", "case_type":"Maternal", "age_min":12, "age_max":55,
+     "default_interventions":"Blood glucose monitoring;Diet control;Insulin if needed"},
+    {"icd_code":"O23.5", "label":"Infections of genitourinary tract in pregnancy", "case_type":"Maternal", "age_min":12, "age_max":55,
+     "default_interventions":"Antibiotics;Urine culture;Hydration"},
+    {"icd_code":"O62.1", "label":"Secondary uterine inertia", "case_type":"Maternal", "age_min":12, "age_max":55,
+     "default_interventions":"Oxytocin augmentation;Monitor labor progress;Consider C-section"},
 
-    # Stroke
-    {"icd_code":"I63.9", "label":"Cerebral infarction, unspecified", "case_type":"Stroke", "age_min":18, "age_max":120,
-     "default_interventions":"Oxygen if hypoxic;IV access;CT brain;Stroke alert"},
-    {"icd_code":"I61.9", "label":"Intracerebral haemorrhage, unspecified", "case_type":"Stroke", "age_min":18, "age_max":120,
-     "default_interventions":"BP control;CT brain;Neurosurgery consult"},
+    # ========== TRAUMA (12 entries) ==========
+    {"icd_code":"S06.0", "label":"Concussion (mild TBI)", "case_type":"Trauma", "age_min":5, "age_max":120,
+     "default_interventions":"Neuro checks;Immobilization if needed;Analgesia"},
+    {"icd_code":"S06.5", "label":"Traumatic subdural haemorrhage", "case_type":"Trauma", "age_min":5, "age_max":120,
+     "default_interventions":"Airway protection if GCS↓;IV access;Oxygen;Neurosurgery pre-alert"},
+    {"icd_code":"S72.0", "label":"Fracture of neck of femur", "case_type":"Trauma", "age_min":50, "age_max":120,
+     "default_interventions":"Pain control;Immobilization;IV fluids if needed"},
+    {"icd_code":"S22.4", "label":"Multiple rib fractures", "case_type":"Trauma", "age_min":18, "age_max":120,
+     "default_interventions":"Pain control;Oxygen;Monitor for pneumothorax;Incentive spirometry"},
+    {"icd_code":"S36.0", "label":"Traumatic haemoperitoneum", "case_type":"Trauma", "age_min":18, "age_max":120,
+     "default_interventions":"IV access;Crossmatch blood;FAST ultrasound;Surgery consult"},
+    {"icd_code":"S27.0", "label":"Traumatic pneumothorax", "case_type":"Trauma", "age_min":18, "age_max":120,
+     "default_interventions":"Needle decompression if tension;Oxygen;Chest tube preparation"},
+    {"icd_code":"T14.8", "label":"Multiple injuries unspecified", "case_type":"Trauma", "age_min":0, "age_max":120,
+     "default_interventions":"ATLS protocol;IV access;Oxygen;Immobilization"},
+    {"icd_code":"S13.4", "label":"Cervical spine sprain", "case_type":"Trauma", "age_min":18, "age_max":120,
+     "default_interventions":"Cervical collar;Analgesia;X-ray evaluation"},
+    {"icd_code":"S42.2", "label":"Fracture of humerus", "case_type":"Trauma", "age_min":0, "age_max":120,
+     "default_interventions":"Sling immobilization;Pain control;X-ray"},
+    {"icd_code":"S82.5", "label":"Fracture of medial malleolus", "case_type":"Trauma", "age_min":18, "age_max":120,
+     "default_interventions":"Splinting;Elevation;Pain control"},
+    {"icd_code":"S52.5", "label":"Fracture of radius", "case_type":"Trauma", "age_min":0, "age_max":120,
+     "default_interventions":"Splinting;Pain control;X-ray"},
+    {"icd_code":"T75.1", "label":"Drowning and nonfatal submersion", "case_type":"Trauma", "age_min":0, "age_max":120,
+     "default_interventions":"Airway management;Oxygen;CPR if needed;Monitor for ARDS"},
 
-    # Cardiac
-    {"icd_code":"I21.3", "label":"STEMI (acute MI)", "case_type":"Cardiac", "age_min":18, "age_max":120,
-     "default_interventions":"Aspirin;Oxygen if SpO2<90;IV access;CathLab alert"},
+    # ========== STROKE (11 entries) ==========
+    {"icd_code":"I63.9", "label":"Ischaemic stroke (unspecified)", "case_type":"Stroke", "age_min":18, "age_max":120,
+     "default_interventions":"Glucose check;BP control per protocol;Keep NPO;Pre-alert stroke center"},
+    {"icd_code":"I61.9", "label":"Intracerebral haemorrhage", "case_type":"Stroke", "age_min":18, "age_max":120,
+     "default_interventions":"BP control;Head elevation;Avoid anticoagulants;Pre-alert neurosurgery"},
+    {"icd_code":"I63.5", "label":"Cerebral infarction due to carotid occlusion", "case_type":"Stroke", "age_min":18, "age_max":120,
+     "default_interventions":"BP management;Carotid ultrasound;Aspirin;Statins"},
+    {"icd_code":"I64.9", "label":"Stroke not specified as haemorrhage or infarction", "case_type":"Stroke", "age_min":18, "age_max":120,
+     "default_interventions":"CT head;Neurology consult;BP control"},
+    {"icd_code":"I67.2", "label":"Cerebral atherosclerosis", "case_type":"Stroke", "age_min":50, "age_max":120,
+     "default_interventions":"Statins;Antiplatelets;BP control;Lipid profile"},
+    {"icd_code":"I67.4", "label":"Hypertensive encephalopathy", "case_type":"Stroke", "age_min":40, "age_max":120,
+     "default_interventions":"Gradual BP reduction;Monitor neurological status"},
+    {"icd_code":"G45.9", "label":"Transient cerebral ischaemic attack", "case_type":"Stroke", "age_min":18, "age_max":120,
+     "default_interventions":"Aspirin;Carotid imaging;Risk factor modification"},
+    {"icd_code":"I62.0", "label":"Subdural haemorrhage", "case_type":"Stroke", "age_min":18, "age_max":120,
+     "default_interventions":"Neurosurgery consult;BP control;Monitor GCS"},
+    {"icd_code":"I63.0", "label":"Cerebral infarction due to thrombosis", "case_type":"Stroke", "age_min":18, "age_max":120,
+     "default_interventions":"Thrombolysis evaluation;Antiplatelets;BP control"},
+    {"icd_code":"I63.1", "label":"Cerebral infarction due to embolism", "case_type":"Stroke", "age_min":18, "age_max":120,
+     "default_interventions":"Cardiac echo;Anticoagulation evaluation;BP control"},
+    {"icd_code":"I67.1", "label":"Cerebral aneurysm", "case_type":"Stroke", "age_min":18, "age_max":120,
+     "default_interventions":"BP control;CT angiography;Neurosurgery consult"},
+
+    # ========== CARDIAC (12 entries) ==========
+    {"icd_code":"I21.3", "label":"STEMI (inferior)", "case_type":"Cardiac", "age_min":18, "age_max":120,
+     "default_interventions":"Aspirin load;Clopidogrel;Oxygen if SpO2<90;IV access;Notify cath lab"},
+    {"icd_code":"I21.4", "label":"STEMI (anterior)", "case_type":"Cardiac", "age_min":18, "age_max":120,
+     "default_interventions":"Aspirin;Nitroglycerin if BP adequate;Morphine for pain;ECG monitor"},
     {"icd_code":"I46.9", "label":"Cardiac arrest, unspecified", "case_type":"Cardiac", "age_min":0, "age_max":120,
      "default_interventions":"CPR/AED;Airway;Epinephrine;ALS activation"},
+    {"icd_code":"I50.9", "label":"Heart failure, unspecified", "case_type":"Cardiac", "age_min":18, "age_max":120,
+     "default_interventions":"Diuretics;Oxygen;BP control;Fluid restriction"},
+    {"icd_code":"I48.9", "label":"Atrial fibrillation, unspecified", "case_type":"Cardiac", "age_min":18, "age_max":120,
+     "default_interventions":"Rate control;Anticoagulation evaluation;ECG monitor"},
+    {"icd_code":"I10", "label":"Essential hypertension", "case_type":"Cardiac", "age_min":18, "age_max":120,
+     "default_interventions":"BP monitoring;Antihypertensives;Lifestyle counseling"},
+    {"icd_code":"I35.0", "label":"Aortic stenosis", "case_type":"Cardiac", "age_min":50, "age_max":120,
+     "default_interventions":"Echo;Surgical evaluation;Avoid vasodilators"},
+    {"icd_code":"I42.0", "label":"Dilated cardiomyopathy", "case_type":"Cardiac", "age_min":18, "age_max":120,
+     "default_interventions":"ACE inhibitors;Beta-blockers;Diuretics;Salt restriction"},
+    {"icd_code":"I26.9", "label":"Pulmonary embolism", "case_type":"Cardiac", "age_min":18, "age_max":120,
+     "default_interventions":"Oxygen;Anticoagulation;CTPA;Monitor BP"},
+    {"icd_code":"I20.0", "label":"Unstable angina", "case_type":"Cardiac", "age_min":18, "age_max":120,
+     "default_interventions":"Aspirin;Nitroglycerin;Morphine;Cardiac monitor"},
+    {"icd_code":"I45.9", "label":"Conduction disorder, unspecified", "case_type":"Cardiac", "age_min":18, "age_max":120,
+     "default_interventions":"ECG;Cardiology consult;Pacemaker evaluation"},
+    {"icd_code":"I47.1", "label":"Supraventricular tachycardia", "case_type":"Cardiac", "age_min":0, "age_max":120,
+     "default_interventions":"Vagal maneuvers;Adenosine;Cardioversion if unstable"},
 
-    # Sepsis
-    {"icd_code":"A41.9", "label":"Sepsis, unspecified organism", "case_type":"Sepsis", "age_min":0, "age_max":120,
-     "default_interventions":"Oxygen;IV fluids;Broad antibiotics;Lactate;Blood cultures"},
+    # ========== SEPSIS (12 entries) ==========
+    {"icd_code":"A41.9", "label":"Sepsis (unspecified)", "case_type":"Sepsis", "age_min":0, "age_max":120,
+     "default_interventions":"First-dose antibiotic;IV fluids;Oxygen;Lactate if feasible;Blood cultures if feasible"},
+    {"icd_code":"A41.5", "label":"Sepsis due to Gram-negative organism", "case_type":"Sepsis", "age_min":0, "age_max":120,
+     "default_interventions":"Broad-spectrum antibiotic;IV fluids;Oxygen;Vasopressor prep"},
+    {"icd_code":"A41.0", "label":"Sepsis due to Staphylococcus aureus", "case_type":"Sepsis", "age_min":0, "age_max":120,
+     "default_interventions":"First-dose antibiotic;IV fluids;Oxygen;Source control planning"},
+    {"icd_code":"A40.9", "label":"Streptococcal sepsis, unspecified", "case_type":"Sepsis", "age_min":0, "age_max":120,
+     "default_interventions":"Penicillin-based antibiotics;IV fluids;Source identification"},
+    {"icd_code":"A41.1", "label":"Sepsis due to other specified Staphylococcus", "case_type":"Sepsis", "age_min":0, "age_max":120,
+     "default_interventions":"Vancomycin if MRSA suspected;IV fluids;Oxygen"},
+    {"icd_code":"A41.2", "label":"Sepsis due to unspecified Staphylococcus", "case_type":"Sepsis", "age_min":0, "age_max":120,
+     "default_interventions":"Antistaphylococcal antibiotics;Blood cultures;Source control"},
+    {"icd_code":"A41.3", "label":"Sepsis due to Haemophilus influenzae", "case_type":"Sepsis", "age_min":0, "age_max":120,
+     "default_interventions":"Ceftriaxone;IV fluids;Oxygen;Monitor for meningitis"},
+    {"icd_code":"A41.4", "label":"Sepsis due to anaerobic organisms", "case_type":"Sepsis", "age_min":0, "age_max":120,
+     "default_interventions":"Metronidazole + broad-spectrum;Surgical consult for abscess"},
+    {"icd_code":"A41.8", "label":"Other specified sepsis", "case_type":"Sepsis", "age_min":0, "age_max":120,
+     "default_interventions":"Culture-guided antibiotics;IV fluids;Source identification"},
+    {"icd_code":"A39.2", "label":"Acute meningococcaemia", "case_type":"Sepsis", "age_min":0, "age_max":120,
+     "default_interventions":"Ceftriaxone;ICU monitoring;Contact precautions"},
+    {"icd_code":"A32.7", "label":"Listerial sepsis", "case_type":"Sepsis", "age_min":0, "age_max":120,
+     "default_interventions":"Ampicillin + aminoglycoside;Monitor neonates/pregnant"},
+    {"icd_code":"B37.7", "label":"Candidal sepsis", "case_type":"Sepsis", "age_min":0, "age_max":120,
+     "default_interventions":"Antifungals;Remove central lines;Immunocompetence workup"},
 
-    # Pediatrics (examples)
-    {"icd_code":"J18.9", "label":"Pneumonia, unspecified", "case_type":"Other", "age_min":0, "age_max":17,
-     "default_interventions":"Oxygen if hypoxic;Nebulization if wheeze;Antibiotics"},
-    {"icd_code":"A09",   "label":"Diarrhea and gastroenteritis", "case_type":"Other", "age_min":0, "age_max":12,
-     "default_interventions":"ORS;IV fluids if shock;Zinc"},
+    # ========== OTHER/PEDIATRIC (14 entries) ==========
+    {"icd_code":"J96.0", "label":"Acute respiratory failure", "case_type":"Other", "age_min":0, "age_max":120,
+     "default_interventions":"Oxygen;Nebulization if bronchospasm;IV access;Consider NIV"},
+    {"icd_code":"J18.9", "label":"Pneumonia, unspecified", "case_type":"Other", "age_min":0, "age_max":120,
+     "default_interventions":"Oxygen if hypoxic;Antibiotics;Chest X-ray;Hydration"},
+    {"icd_code":"A09", "label":"Diarrhea and gastroenteritis", "case_type":"Other", "age_min":0, "age_max":12,
+     "default_interventions":"ORS;IV fluids if shock;Zinc;Monitor hydration"},
+    {"icd_code":"E86.0", "label":"Dehydration", "case_type":"Other", "age_min":0, "age_max":120,
+     "default_interventions":"IV fluids;Electrolyte correction;Oral rehydration if tolerated"},
+    {"icd_code":"E14.9", "label":"Diabetes mellitus, unspecified", "case_type":"Other", "age_min":0, "age_max":120,
+     "default_interventions":"Blood glucose check;Insulin if hyperglycaemic;IV fluids"},
+    {"icd_code":"N17.9", "label":"Acute kidney failure, unspecified", "case_type":"Other", "age_min":18, "age_max":120,
+     "default_interventions":"Fluid balance;Electrolyte monitoring;Nephrology consult"},
+    {"icd_code":"K85.9", "label":"Acute pancreatitis, unspecified", "case_type":"Other", "age_min":18, "age_max":120,
+     "default_interventions":"NPO;IV fluids;Pain control;Monitor for complications"},
+    {"icd_code":"R57.0", "label":"Cardiogenic shock", "case_type":"Other", "age_min":18, "age_max":120,
+     "default_interventions":"Inotropes;Oxygen;Monitor BP;ICU transfer"},
+    {"icd_code":"R57.1", "label":"Hypovolaemic shock", "case_type":"Other", "age_min":0, "age_max":120,
+     "default_interventions":"IV fluid bolus;Blood transfusion if bleeding;Identify source"},
+    {"icd_code":"R57.8", "label":"Other shock", "case_type":"Other", "age_min":0, "age_max":120,
+     "default_interventions":"IV access;Oxygen;Identify cause;Vasopressors if needed"},
+    {"icd_code":"R50.9", "label":"Fever, unspecified", "case_type":"Other", "age_min":0, "age_max":120,
+     "default_interventions":"Antipyretics;Infection workup;Blood cultures if high risk"},
+    {"icd_code":"J45.9", "label":"Asthma, unspecified", "case_type":"Other", "age_min":0, "age_max":120,
+     "default_interventions":"Bronchodilators;Steroids;Oxygen;Monitor respiratory status"},
+    {"icd_code":"E87.2", "label":"Acidosis", "case_type":"Other", "age_min":0, "age_max":120,
+     "default_interventions":"ABG;Identify cause;Sodium bicarbonate if severe"},
+    {"icd_code":"E87.5", "label":"Hyperkalaemia", "case_type":"Other", "age_min":0, "age_max":120,
+     "default_interventions":"ECG;Calcium gluconate;Insulin+glucose;Kayexalate"},
 ]
 
 def icd_options_for(case_type: str, age_years: float):
@@ -93,6 +217,7 @@ h1,h2,h3{ letter-spacing:0.2px; }
 hr.soft{ border:none; height:1px; background:#1f2937; margin:10px 0 14px }
 .btnline > div > button{ width:100% }
 .small{ color:#9ca3af; font-size:.85rem }
+.required{ color:#ef4444; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -677,9 +802,13 @@ with tabs[0]:
         r_name = st.text_input("Referrer name", "Dr. Smith")
         r_fac = st.text_input("Referrer facility", "PHC Mawlai")
     
-    ocr = st.text_area("Notes / OCR (paste)", height=100, placeholder="Paste clinical notes, observations, or free-text assessment here...")
+    # NEW: Referrer Role Selector
+    st.subheader("Referrer Role & Diagnosis")
+    referrer_role = st.radio("Referrer role", ["Doctor/Physician", "ANM/ASHA/EMT"], horizontal=True)
+    
+    ocr = st.text_area("Clinical Notes / OCR (paste)", height=100, placeholder="Paste clinical notes, observations, or free-text assessment here...")
 
-    # Vitals Section - MUST come before ICD section
+    # Vitals Section
     st.subheader("Vitals + Scores")
     v1, v2, v3 = st.columns(3)
     with v1:
@@ -735,38 +864,109 @@ with tabs[0]:
     # Triage decision banner
     render_triage_banner(hr, rr, sbp, temp, spo2, avpu, rf_sbp, rf_spo2, rf_avpu, rf_seizure, rf_pph, complaint)
 
-    # ICD Diagnosis Section - NOW complaint is defined
-    st.subheader("Provisional Diagnosis (ICD-coded)")
-    icd_choices, icd_df_filt = icd_options_for(complaint, p_age)
+    # ========== STEP 1: ICD-Coded Diagnosis (Role-based) ==========
+    st.subheader("Provisional Diagnosis")
+    
+    if referrer_role == "Doctor/Physician":
+        # Doctor/Physician: Mandatory ICD selection
+        st.markdown("**ICD-coded Diagnosis** <span class='required'>*</span>", unsafe_allow_html=True)
+        
+        # Search and filter functionality
+        search_col, filter_col = st.columns([2, 1])
+        with search_col:
+            icd_search = st.text_input("Search ICD codes", placeholder="Type to search diagnoses...")
+        with filter_col:
+            show_all = st.checkbox("Show all diagnoses", value=False)
+        
+        # Get filtered ICD options
+        icd_choices, icd_df_filt = icd_options_for(complaint if not show_all else None, p_age)
+        
+        # Apply search filter if provided
+        if icd_search:
+            icd_choices = [choice for choice in icd_choices if icd_search.lower() in choice.lower()]
+            icd_df_filt = icd_df_filt[icd_df_filt["display"].str.lower().str.contains(icd_search.lower())]
+        
+        if icd_choices:
+            chosen_icd = st.selectbox("Select ICD diagnosis", icd_choices, index=0, 
+                                    help="Filtered by age and case type. Use search for more options.")
+            row = icd_df_filt[icd_df_filt["display"] == chosen_icd].iloc[0]
+            default_iv = [x.strip() for x in str(row.get("default_interventions", "")).split(";") if x.strip()]
+            
+            # Display ICD details
+            st.info(f"**Selected:** {row['label']} ({row['icd_code']}) • Age range: {row['age_min']}-{row['age_max']} years")
+        else:
+            st.warning("No ICD codes match your search/filters. Try different criteria or check 'Show all diagnoses'.")
+            chosen_icd = None
+            row = None
+            default_iv = []
 
-    if icd_choices:
-        chosen_icd = st.selectbox("Select ICD (filtered by age & case type)", icd_choices, index=0)
-        row = icd_df_filt[icd_df_filt["display"] == chosen_icd].iloc[0]
-        default_iv = [x.strip() for x in str(row.get("default_interventions", "")).split(";") if x.strip()]
+        # Interventions checklist (auto-suggested from ICD)
+        if chosen_icd and default_iv:
+            st.markdown("**Suggested Interventions**")
+            iv_cols = st.columns(3)
+            iv_selected = []
+            for i, item in enumerate(default_iv):
+                if iv_cols[i % 3].checkbox(item, value=True, key=f"iv_{i}"):
+                    iv_selected.append(item)
+        else:
+            iv_selected = []
+
+        # Additional notes (optional for doctors)
+        dx_free = st.text_input("Additional clinical notes (optional)", "")
+        
+        # Diagnosis payload for doctors
+        if chosen_icd and row is not None:
+            dx_payload = dict(code=row["icd_code"], label=row["label"], case_type=row["case_type"])
+        else:
+            st.error("Please select an ICD diagnosis to proceed")
+            dx_payload = None
+
     else:
-        st.info("No ICD suggestions for this age & case type. You can free-type below.")
-        chosen_icd = None
-        row = None
-        default_iv = []
+        # ANM/ASHA/EMT: Optional ICD with prominent free-text
+        st.markdown("**Reason for Referral** <span class='required'>*</span>", unsafe_allow_html=True)
+        
+        # Free-text reason (primary for non-doctors)
+        referral_reason = st.text_area("Describe the reason for referral", 
+                                     placeholder="Describe symptoms, observations, and reason for transfer...",
+                                     height=80)
+        
+        # Optional ICD selection
+        with st.expander("Optional: Select ICD diagnosis (if known)"):
+            icd_choices, icd_df_filt = icd_options_for(complaint, p_age)
+            if icd_choices:
+                chosen_icd = st.selectbox("ICD diagnosis (optional)", [""] + icd_choices, index=0)
+                if chosen_icd:
+                    row = icd_df_filt[icd_df_filt["display"] == chosen_icd].iloc[0]
+                    default_iv = [x.strip() for x in str(row.get("default_interventions", "")).split(";") if x.strip()]
+                    
+                    # Optional interventions
+                    st.markdown("**Suggested interventions**")
+                    for i, item in enumerate(default_iv):
+                        if st.checkbox(item, value=False, key=f"iv_{i}"):
+                            iv_selected.append(item) if 'iv_selected' in locals() else iv_selected.extend([item])
+                else:
+                    row = None
+                    default_iv = []
+                    iv_selected = []
+            else:
+                st.info("No ICD suggestions for this age & case type")
+                chosen_icd = None
+                row = None
+                default_iv = []
+                iv_selected = []
+        
+        # Additional notes
+        dx_free = st.text_input("Additional notes (optional)", "")
+        
+        # Diagnosis payload for non-doctors
+        dx_payload = dict(code=row["icd_code"] if chosen_icd else "", 
+                         label=referral_reason or (row["label"] if chosen_icd else ""), 
+                         case_type=str(complaint))
+        
+        if not referral_reason and not chosen_icd:
+            st.error("Please provide a reason for referral or select an ICD diagnosis")
 
-    # Interventions
-    st.caption("Initial interventions (you can edit):")
-    iv_cols = st.columns(3)
-    iv_selected = []
-    for i, item in enumerate(default_iv[:12]):
-        if iv_cols[i % 3].checkbox(item, value=True, key=f"iv_{i}"):
-            iv_selected.append(item)
-
-    # Free-text diagnosis
-    dx_free = st.text_input("Additional diagnosis notes (optional)", "")
-
-    # Diagnosis payload
-    if chosen_icd and row is not None:
-        dx_payload = dict(code=row["icd_code"], label=row["label"], case_type=row["case_type"])
-    else:
-        dx_payload = dict(code="", label=(dx_free or "").strip(), case_type=str(complaint))
-
-    # Resuscitation interventions
+    # Resuscitation interventions (common to both roles)
     st.subheader("Resuscitation / Stabilization done (tick all applied)")
     RESUS_LIST = ["Airway positioning", "Oxygen", "IV fluids", "Uterotonics", "TXA", "Bleeding control", 
                   "Antibiotics", "Nebulization", "Immobilization", "AED/CPR"]
@@ -797,93 +997,99 @@ with tabs[0]:
     st.markdown("### Facility matching")
 
     if st.button("Find matched facilities"):
-        traffic_mult = traffic_factor_for_hour(datetime.now().hour)
-        rows = rank_facilities_for_case(
-            origin=(p_lat, p_lon),
-            need_caps=need_caps,
-            traffic_mult=traffic_mult,
-            topk=10
-        )
-
-        if not rows:
-            st.warning("No capability-fit facilities. Try relaxing requirements.")
+        # Validate diagnosis before proceeding
+        if referrer_role == "Doctor/Physician" and dx_payload is None:
+            st.error("Please select an ICD diagnosis to find matching facilities")
+        elif referrer_role == "ANM/ASHA/EMT" and not dx_payload.get("label"):
+            st.error("Please provide a reason for referral to find matching facilities")
         else:
-            df = (
-                pd.DataFrame(rows)
-                .sort_values(["score", "km"], ascending=[False, True])
-                .head(10)
+            traffic_mult = traffic_factor_for_hour(datetime.now().hour)
+            rows = rank_facilities_for_case(
+                origin=(p_lat, p_lon),
+                need_caps=need_caps,
+                traffic_mult=traffic_mult,
+                topk=10
             )
 
-            st.dataframe(
-                df[["name", "km", "eta_min", "ICU_open", "accept", "score"]]
-                .rename(columns={
-                    "name": "Facility",
-                    "km": "km",
-                    "eta_min": "ETA (min)",
-                    "ICU_open": "ICU",
-                    "accept": "Accept %",
-                    "score": "Score",
-                }),
-                use_container_width=True,
-            )
+            if not rows:
+                st.warning("No capability-fit facilities. Try relaxing requirements.")
+            else:
+                df = (
+                    pd.DataFrame(rows)
+                    .sort_values(["score", "km"], ascending=[False, True])
+                    .head(10)
+                )
 
-            st.markdown("### Suggested destinations")
-            st.session_state.matched_primary = None
-            st.session_state.matched_alts = set()
+                st.dataframe(
+                    df[["name", "km", "eta_min", "ICU_open", "accept", "score"]]
+                    .rename(columns={
+                        "name": "Facility",
+                        "km": "km",
+                        "eta_min": "ETA (min)",
+                        "ICU_open": "ICU",
+                        "accept": "Accept %",
+                        "score": "Score",
+                    }),
+                    use_container_width=True,
+                )
 
-            for _, r in df.iterrows():
-                pick, alt = facility_card(r)
-                if pick:
-                    st.session_state.matched_primary = r["name"]
-                if alt:
-                    st.session_state.matched_alts.add(r["name"])
+                st.markdown("### Suggested destinations")
+                st.session_state.matched_primary = None
+                st.session_state.matched_alts = set()
 
-            if not st.session_state.matched_primary:
-                st.session_state.matched_primary = df.iloc[0]["name"]
+                for _, r in df.iterrows():
+                    pick, alt = facility_card(r)
+                    if pick:
+                        st.session_state.matched_primary = r["name"]
+                    if alt:
+                        st.session_state.matched_alts.add(r["name"])
 
-            show_map = st.checkbox("Show routes to suggestions", value=True)
-            if show_map and st.session_state.matched_primary:
-                try:
-                    primary_name = st.session_state.matched_primary
-                    dest_fac = next((f for f in st.session_state.facilities if f["name"] == primary_name), None)
-                    
-                    if dest_fac and p_lat and p_lon:
-                        origin_layer = pdk.Layer(
-                            "ScatterplotLayer",
-                            data=[{"lon": p_lon, "lat": p_lat}],
-                            get_position="[lon, lat]",
-                            get_radius=200,
-                            get_fill_color=[66, 133, 244, 180],
-                        )
-                        dest_layer = pdk.Layer(
-                            "ScatterplotLayer",
-                            data=[{"lon": float(dest_fac["lon"]), "lat": float(dest_fac["lat"])}],
-                            get_position="[lon, lat]",
-                            get_radius=220,
-                            get_fill_color=[239, 68, 68, 200],
-                        )
-                        path_layer = pdk.Layer(
-                            "PathLayer",
-                            data=[{"path": [[p_lon, p_lat], [float(dest_fac["lon"]), float(dest_fac["lat"])]]}],
-                            get_path="path",
-                            get_color=[16, 185, 129, 200],
-                            width_scale=6,
-                            width_min_pixels=3,
-                        )
-                        st.pydeck_chart(pdk.Deck(
-                            layers=[origin_layer, dest_layer, path_layer],
-                            initial_view_state=pdk.ViewState(latitude=p_lat, longitude=p_lon, zoom=9),
-                            map_style="mapbox://styles/mapbox/dark-v10",
-                        ))
-                    else:
-                        st.warning("Could not render map: missing location data")
-                except Exception as e:
-                    st.error(f"Map rendering error: {str(e)}")
+                if not st.session_state.matched_primary:
+                    st.session_state.matched_primary = df.iloc[0]["name"]
 
-            st.info(
-                f"Primary: {st.session_state.matched_primary} • "
-                f"Alternates: {', '.join(sorted(st.session_state.matched_alts)) or '—'}"
-            )
+                show_map = st.checkbox("Show routes to suggestions", value=True)
+                if show_map and st.session_state.matched_primary:
+                    try:
+                        primary_name = st.session_state.matched_primary
+                        dest_fac = next((f for f in st.session_state.facilities if f["name"] == primary_name), None)
+                        
+                        if dest_fac and p_lat and p_lon:
+                            origin_layer = pdk.Layer(
+                                "ScatterplotLayer",
+                                data=[{"lon": p_lon, "lat": p_lat}],
+                                get_position="[lon, lat]",
+                                get_radius=200,
+                                get_fill_color=[66, 133, 244, 180],
+                            )
+                            dest_layer = pdk.Layer(
+                                "ScatterplotLayer",
+                                data=[{"lon": float(dest_fac["lon"]), "lat": float(dest_fac["lat"])}],
+                                get_position="[lon, lat]",
+                                get_radius=220,
+                                get_fill_color=[239, 68, 68, 200],
+                            )
+                            path_layer = pdk.Layer(
+                                "PathLayer",
+                                data=[{"path": [[p_lon, p_lat], [float(dest_fac["lon"]), float(dest_fac["lat"])]]}],
+                                get_path="path",
+                                get_color=[16, 185, 129, 200],
+                                width_scale=6,
+                                width_min_pixels=3,
+                            )
+                            st.pydeck_chart(pdk.Deck(
+                                layers=[origin_layer, dest_layer, path_layer],
+                                initial_view_state=pdk.ViewState(latitude=p_lat, longitude=p_lon, zoom=9),
+                                map_style="mapbox://styles/mapbox/dark-v10",
+                            ))
+                        else:
+                            st.warning("Could not render map: missing location data")
+                    except Exception as e:
+                        st.error(f"Map rendering error: {str(e)}")
+
+                st.info(
+                    f"Primary: {st.session_state.matched_primary} • "
+                    f"Alternates: {', '.join(sorted(st.session_state.matched_alts)) or '—'}"
+                )
 
     # Final referral details
     st.markdown("### Referral details")
@@ -899,6 +1105,14 @@ with tabs[0]:
     alternates = sorted(list(st.session_state.get("matched_alts", [])))
 
     def _save_referral(dispatch=False):
+        # Validate based on role
+        if referrer_role == "Doctor/Physician" and dx_payload is None:
+            st.error("Please select an ICD diagnosis to create referral")
+            return False
+        elif referrer_role == "ANM/ASHA/EMT" and not dx_payload.get("label"):
+            st.error("Please provide a reason for referral")
+            return False
+            
         if not primary:
             st.error("Select a primary destination from 'Find matched facilities' above.")
             return False
@@ -906,12 +1120,15 @@ with tabs[0]:
         vit = dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu,
                   rf_sbp=rf_sbp, rf_spo2=rf_spo2, rf_avpu=rf_avpu, rf_seizure=rf_seizure, rf_pph=rf_pph, complaint=complaint)
         
+        # Combine interventions
+        all_interventions = (iv_selected if 'iv_selected' in locals() else []) + ([dx_free] if dx_free else [])
+        
         ref = dict(
             id="R" + str(int(time.time()))[-6:],
             patient=dict(name=p_name, age=int(p_age), sex=p_sex, id=p_id, location=dict(lat=float(p_lat), lon=float(p_lon))),
-            referrer=dict(name=r_name, facility=r_fac),
+            referrer=dict(name=r_name, facility=r_fac, role=referrer_role),
             provisionalDx=dx_payload,
-            interventions=iv_selected + ([dx_free] if dx_free else []),
+            interventions=all_interventions,
             resuscitation=resus_done,
             triage=dict(complaint=complaint, decision=dict(color=tri_color(vit)), hr=hr, sbp=sbp, rr=rr, temp=temp, spo2=spo2, avpu=avpu),
             clinical=dict(summary=" ".join(ocr.split()[:60])),
@@ -1030,7 +1247,7 @@ with tabs[2]:
                 with col1:
                     st.write(f"**{r['patient']['name']}** — {r['triage']['complaint']} ")
                     
-                    # FIX: Handle both string and dictionary provisionalDx formats
+                    # Handle both string and dictionary provisionalDx formats
                     dx = r.get("provisionalDx", {})
                     if isinstance(dx, dict):
                         dx_txt = (dx.get("code", "") + " " + dx.get("label", "")).strip()
@@ -1039,12 +1256,18 @@ with tabs[2]:
                         dx_txt = str(dx)
                     
                     st.write(f"| Dx: **{dx_txt or '—'}**")
+                    
+                    # Show referrer role if available
+                    referrer_info = r.get('referrer', {})
+                    if referrer_info.get('role'):
+                        st.caption(f"Referrer: {referrer_info.get('name', '')} ({referrer_info.get('role', '')})")
+                    
                 with col2:
                     triage_pill(r['triage']['decision']['color'])
 
                 open_key = f"open_{r['id']}"
                 if st.button("Open case", key=open_key):
-                    # FIX: Handle both string and dictionary provisionalDx formats in ISBAR
+                    # Handle both string and dictionary provisionalDx formats in ISBAR
                     dx = r.get("provisionalDx", {})
                     if isinstance(dx, dict):
                         dx_txt = (dx.get("code", "") + " " + dx.get("label", "")).strip()
