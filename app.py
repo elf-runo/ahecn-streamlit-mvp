@@ -1,4 +1,4 @@
-# AHECN – Streamlit MVP v1.8 (Investor Demo + UI/UX)
+# AHECN – Streamlit MVP v1.8 (Score-Only + Clinician Override)
 import math
 import json
 import time
@@ -21,13 +21,9 @@ st.set_page_config(
 def load_icd_catalogue():
     """Load ICD catalog from CSV file with robust error handling."""
     try:
-        # Try to read from CSV file with specific encoding and error handling
         df = pd.read_csv('icd_catalogue.csv', encoding='utf-8')
-        
-        # Convert to the format expected by the app
         icd_lut = []
         for _, row in df.iterrows():
-            # Handle potential missing values
             default_caps = []
             if 'default_caps' in df.columns and pd.notna(row.get('default_caps')):
                 default_caps = [cap.strip() for cap in str(row['default_caps']).split(';') if cap.strip()]
@@ -38,13 +34,12 @@ def load_icd_catalogue():
                 "case_type": row['bundle'],
                 "age_min": int(row['age_min']),
                 "age_max": int(row['age_max']),
-                "default_interventions": "",  # Can be extended later
+                "default_interventions": "",
                 "default_caps": default_caps
             })
         return icd_lut
     except Exception as e:
         st.error(f"Error loading ICD catalog: {str(e)}")
-        # Fallback to a basic catalog
         return get_fallback_icd_catalog()
 
 def get_fallback_icd_catalog():
@@ -131,6 +126,8 @@ hr.soft{ border:none; height:1px; background:#1f2937; margin:10px 0 14px }
 .btnline > div > button{ width:100% }
 .small{ color:#9ca3af; font-size:.85rem }
 .required{ color:#ef4444; }
+.override-badge { background: rgba(139, 92, 246, 0.15); color: #a78bfa; border: 1px solid rgba(139, 92, 246, 0.35); }
+.audit-log { background: #1e293b; padding: 8px 12px; border-radius: 8px; border-left: 4px solid #8b5cf6; margin: 4px 0; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -252,7 +249,7 @@ def calc_qSOFA(rr, sbp, avpu):
     if avpu != "A": hits.append("Altered mentation"); score += 1
     return score, hits, (score >= 2)
 
-def calc_MEOWS(hr, rr, sbp, temp, spo2, red_flags=None):
+def calc_MEOWS(hr, rr, sbp, temp, spo2):
     hr, rr, sbp, temp, spo2 = _num(hr), _num(rr), _num(sbp), _num(temp), _num(spo2)
     red, yellow = [], []
     if sbp is not None:
@@ -270,7 +267,6 @@ def calc_MEOWS(hr, rr, sbp, temp, spo2, red_flags=None):
     if spo2 is not None:
         if spo2 < 94: red.append("SpO₂ <94%")
         elif spo2 < 96: yellow.append("SpO₂ 94–95%")
-    if red_flags: red += red_flags
     return dict(red=red, yellow=yellow)
 
 def _band(x, ylo, yhi, rlo, rhi):
@@ -301,10 +297,10 @@ def calc_PEWS(age, rr, hr, behavior="Normal", spo2=None):
 
     return sc, {"age": age}, (sc >= 6), (sc >= 4)
 
-def triage_decision(vitals, flags, context):
+def triage_decision(vitals, context):
     """
+    NEW: Score-only triage decision without ad-hoc flags
     vitals: dict(hr, rr, sbp, temp, spo2, avpu)
-    flags : dict(seizure, pph)
     context: dict(age, pregnant, infection, o2_device, spo2_scale, behavior)
     """
     v = validate_vitals(vitals.get("hr"), vitals.get("rr"), vitals.get("sbp"),
@@ -312,14 +308,7 @@ def triage_decision(vitals, flags, context):
     avpu = vitals.get("avpu","A")
     reasons = []
 
-    # Fail-safe red flags
-    if v["sbp"] is not None and v["sbp"] < 90: reasons.append("SBP<90")
-    if v["spo2"] is not None and v["spo2"] < 90: reasons.append("SpO₂<90%")
-    if str(avpu).upper() != "A": reasons.append("Altered mentation (AVPU)")
-    if flags.get("seizure"): reasons.append("Seizure")
-    if flags.get("pph"): reasons.append("Post-partum haemorrhage")
-
-    # Scores
+    # Scores only - no ad-hoc flags
     news2_score, news2_hits, news2_review, news2_urgent = _to4(
         safe_calc_NEWS2(
             v["rr"], v["spo2"], v["sbp"], v["hr"], v["temp"], avpu,
@@ -339,12 +328,31 @@ def triage_decision(vitals, flags, context):
         else (0, {}, False, False)
     )
 
-    # Colour
+    # Colour determination based purely on scores
     colour = "GREEN"
-    if reasons or news2_urgent or q_high or (len(meows["red"])>0) or pews_high:
+    
+    # RED criteria
+    if (news2_urgent or 
+        q_high or 
+        (context.get("pregnant") and len(meows["red"]) > 0) or 
+        (context.get("age") is not None and context.get("age") < 18 and pews_high)):
         colour = "RED"
-    elif news2_review or (len(meows["yellow"])>0) or pews_watch:
+    
+    # YELLOW criteria (only if not RED)
+    elif colour == "GREEN" and (
+        news2_review or 
+        (context.get("pregnant") and len(meows["yellow"]) > 0) or 
+        (context.get("age") is not None and context.get("age") < 18 and pews_watch)):
         colour = "YELLOW"
+
+    # Build reasons for display
+    if news2_urgent: reasons.append(f"NEWS2 {news2_score} (≥7)")
+    elif news2_review: reasons.append(f"NEWS2 {news2_score} (≥5)")
+    if q_high: reasons.append(f"qSOFA {q_score} (≥2)")
+    if context.get("pregnant") and meows["red"]: reasons.append("MEOWS red band")
+    if context.get("pregnant") and meows["yellow"] and colour == "YELLOW": reasons.append("MEOWS yellow band")
+    if (context.get("age") is not None and context.get("age") < 18 and pews_high): reasons.append(f"PEWS {pews_sc} (≥6)")
+    if (context.get("age") is not None and context.get("age") < 18 and pews_watch and colour == "YELLOW"): reasons.append(f"PEWS {pews_sc} (≥4)")
 
     details = {
         "NEWS2": dict(score=news2_score, hits=news2_hits, review=news2_review, urgent=news2_urgent),
@@ -361,21 +369,23 @@ def tri_color(vit):
         hr=vit.get("hr"), rr=vit.get("rr"), sbp=vit.get("sbp"),
         temp=vit.get("temp"), spo2=vit.get("spo2"), avpu=vit.get("avpu","A")
     )
-    flags = dict(seizure=bool(vit.get("rf_seizure")), pph=bool(vit.get("rf_pph")))
     context = dict(
         age=30,
         pregnant=(vit.get("complaint") == "Maternal"),
         infection=(vit.get("complaint") in ["Sepsis","Other"]),
         o2_device="Air", spo2_scale=1, behavior="Normal"
     )
-    colour, _ = triage_decision(v, flags, context)
+    colour, _ = triage_decision(v, context)
     return colour
 
 # === UI HELPERS ===
-def triage_pill(color:str):
+def triage_pill(color:str, overridden=False):
     c = (color or "").upper()
     cls = "red" if c=="RED" else "yellow" if c=="YELLOW" else "green"
-    st.markdown(f'<span class="pill {cls}">{c}</span>', unsafe_allow_html=True)
+    if overridden:
+        st.markdown(f'<span class="pill {cls} override-badge">{c} (OVERRIDDEN)</span>', unsafe_allow_html=True)
+    else:
+        st.markdown(f'<span class="pill {cls}">{c}</span>', unsafe_allow_html=True)
 
 def kpi_tile(label, value, help_text=None):
     st.markdown(f'<div class="kpi"><div class="label">{label}</div><div class="value">{value}</div></div>',
@@ -393,13 +403,11 @@ def cap_badges(list_or_csv):
     for i,cap in enumerate(items[:12]):
         cols[i%len(cols)].markdown(f'<span class="badge">{cap}</span>', unsafe_allow_html=True)
 
-def render_triage_banner(hr, rr, sbp, temp, spo2, avpu,
-                         rf_sbp, rf_spo2, rf_avpu, rf_seizure, rf_pph, complaint):
+def render_triage_banner(hr, rr, sbp, temp, spo2, avpu, complaint, override_applied=False):
     vitals = dict(
         hr=_num(hr), rr=_num(rr), sbp=_num(sbp), temp=_num(temp), spo2=_num(spo2),
         avpu=(str(avpu).strip().upper() if avpu is not None else "A")
     )
-    flags = dict(seizure=bool(rf_seizure), pph=bool(rf_pph))
     age = _num(st.session_state.get("patient_age", None))
     o2_device = st.session_state.get("o2_device", "Air")
     spo2_scale = _int(st.session_state.get("spo2_scale", 1), 1)
@@ -412,19 +420,27 @@ def render_triage_banner(hr, rr, sbp, temp, spo2, avpu,
         spo2_scale=spo2_scale,
         behavior=behavior
     )
-    colour, details = triage_decision(vitals, flags, context)
+    
+    # Calculate base color from scores
+    base_colour, details = triage_decision(vitals, context)
+    
+    # Apply override if present
+    final_colour = base_colour
+    override_reason = ""
+    if override_applied and st.session_state.get("triage_override_active", False):
+        final_colour = st.session_state.get("triage_override_color", base_colour)
+        override_reason = st.session_state.get("triage_override_reason", "")
 
     st.markdown("### Triage decision")
-    triage_pill(colour)
+    triage_pill(final_colour, overridden=(final_colour != base_colour))
 
-    why = []
-    if details["reasons"]: why += details["reasons"]
-    if details["NEWS2"]["urgent"]:  why.append(f"NEWS2 {details['NEWS2']['score']} (≥7)")
-    elif details["NEWS2"]["review"]: why.append(f"NEWS2 {details['NEWS2']['score']} (≥5)")
-    if details["qSOFA"]["high"]:    why.append(f"qSOFA {details['qSOFA']['score']} (≥2)")
-    if context.get("pregnant") and details["MEOWS"]["red"]: why.append("MEOWS red band")
-    if (age is not None and age < 18) and details["PEWS"]["high"]:  why.append(f"PEWS {details['PEWS']['score']} (≥6)")
-    st.caption("Why: " + (", ".join(why) if why else "thresholds not met"))
+    # Show override info if applied
+    if final_colour != base_colour:
+        st.warning(f"**Override applied**: {override_reason}")
+        st.info(f"Original score-based triage: **{base_colour}**")
+
+    why = details["reasons"]
+    st.caption("Why: " + (", ".join(why) if why else "All scores within normal thresholds"))
 
     with st.expander("Score details"):
         st.write(details)
@@ -607,13 +623,7 @@ def seed_referrals(n=300, rng_seed=42):
         spo2 = rng.randint(88, 98)
         temp = round(36 + rng.random()*3, 1)
         avpu = "A"
-        rf   = dict(
-            rf_sbp   = (sbp < 90 and rng.random() < 0.6),
-            rf_spo2  = (spo2 < 90 and rng.random() < 0.6),
-            rf_avpu  = False, rf_seizure=False,
-            rf_pph   = (cond=="Maternal" and rng.random()<0.35)
-        )
-        vit = dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu, complaint=cond, **rf)
+        vit = dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu, complaint=cond)
         color = tri_color(vit)
         severity = {"RED":"Critical", "YELLOW":"Moderate", "GREEN":"Non-critical"}[color]
 
@@ -658,7 +668,8 @@ def seed_referrals(n=300, rng_seed=42):
             route=route,
             times=dict(first_contact_ts=ts_first, decision_ts=t_dec, dispatch_ts=t_disp, arrive_dest_ts=t_arr, handover_ts=t_hov),
             status=rng.choice(["HANDOVER","ARRIVE_DEST","DEPART_SCENE"]),
-            ambulance_available=amb_avail
+            ambulance_available=amb_avail,
+            audit_log=[]
         ))
 
 # === SESSION STATE INITIALIZATION ===
@@ -674,6 +685,14 @@ if "spo2_scale" not in st.session_state:
     st.session_state.spo2_scale = 1
 if "pews_behavior" not in st.session_state: 
     st.session_state.pews_behavior = "Normal"
+
+# Triage override state
+if "triage_override_active" not in st.session_state:
+    st.session_state.triage_override_active = False
+if "triage_override_color" not in st.session_state:
+    st.session_state.triage_override_color = None
+if "triage_override_reason" not in st.session_state:
+    st.session_state.triage_override_reason = ""
 
 if "referrals" not in st.session_state: 
     st.session_state.referrals = []
@@ -694,7 +713,7 @@ if len(st.session_state.referrals) < 100:
     seed_referrals(n=300)
 
 # === MAIN APP UI ===
-st.title("AHECN – Streamlit MVP v1.8 (East Khasi Hills)")
+st.title("AHECN – Streamlit MVP v1.8 (Score-Only Triage + Clinician Override)")
 tabs = st.tabs(["Referrer","Ambulance / EMT","Receiving Hospital","Government","Data / Admin","Facility Admin"])
 
 # ======== Referrer Tab ========
@@ -721,7 +740,7 @@ with tabs[0]:
     
     ocr = st.text_area("Clinical Notes / OCR (paste)", height=100, placeholder="Paste clinical notes, observations, or free-text assessment here...")
 
-    # Vitals Section
+    # Vitals Section - REMOVED AD-HOC RED FLAGS
     st.subheader("Vitals + Scores")
     v1, v2, v3 = st.columns(3)
     with v1:
@@ -733,12 +752,9 @@ with tabs[0]:
         spo2 = st.number_input("SpO₂ %", 50, 100, 92)
         avpu = st.selectbox("AVPU", ["A", "V", "P", "U"], index=0)
         complaint = st.selectbox("Chief complaint", ["Maternal", "Trauma", "Stroke", "Cardiac", "Sepsis", "Other"], index=0)
-        rf_sbp = st.checkbox("Red flag: SBP <90", False)
     with v3:
-        rf_spo2 = st.checkbox("Red flag: SpO₂ <90%", False)
-        rf_avpu = st.checkbox("Red flag: AVPU ≠ A", False)
-        rf_seizure = st.checkbox("Red flag: Seizure", False)
-        rf_pph = st.checkbox("Red flag: PPH", value=(complaint == "Maternal"))
+        # REMOVED: rf_sbp, rf_spo2, rf_avpu, rf_seizure, rf_pph checkboxes
+        st.info("**Score-based triage**\n\nTriage color determined by NEWS2/MEOWS/PEWS thresholds only")
 
     # Additional scoring parameters
     o2_col, scale_col, beh_col = st.columns(3)
@@ -758,7 +774,10 @@ with tabs[0]:
     st.write(f"NEWS2: **{n_score}** {'• EMERGENCY' if n_emerg else '• review' if n_review else ''}")
 
     q_score, q_hits, q_high = calc_qSOFA(rr, sbp, avpu)
-    st.write(f"qSOFA: **{q_score}** {'• ≥2 high risk' if q_high else ''}")
+    if complaint in ["Sepsis", "Other"]:
+        st.write(f"qSOFA: **{q_score}** {'• ≥2 high risk' if q_high else ''}")
+    else:
+        st.caption("qSOFA applies to sepsis/infection context")
 
     meows = calc_MEOWS(hr, rr, sbp, temp, spo2)
     m_band = "Red" if meows["red"] else ("Yellow" if meows["yellow"] else "Green")
@@ -766,7 +785,7 @@ with tabs[0]:
     if complaint == "Maternal":
         st.write(f"MEOWS: **{m_band}** {'• trigger' if m_trig else ''}")
     else:
-        st.caption("MEOWS applies to maternal cases only.")
+        st.caption("MEOWS applies to maternal cases only")
 
     if p_age < 18:
         pews_sc, pews_meta, pews_high, pews_watch = calc_PEWS(p_age, rr, hr, pews_beh, spo2)
@@ -775,7 +794,41 @@ with tabs[0]:
         st.caption("PEWS disabled for ≥18y")
 
     # Triage decision banner
-    render_triage_banner(hr, rr, sbp, temp, spo2, avpu, rf_sbp, rf_spo2, rf_avpu, rf_seizure, rf_pph, complaint)
+    render_triage_banner(hr, rr, sbp, temp, spo2, avpu, complaint)
+
+    # === CLINICIAN OVERRIDE CONTROL ===
+    st.subheader("Clinician Triage Override")
+    
+    override_col1, override_col2 = st.columns([1, 2])
+    with override_col1:
+        override_active = st.checkbox("Override triage decision", 
+                                    value=st.session_state.triage_override_active,
+                                    help="Override the score-based triage decision")
+        
+        if override_active:
+            override_color = st.selectbox("Override to", 
+                                        ["RED", "YELLOW", "GREEN"],
+                                        index=0)
+            st.session_state.triage_override_color = override_color
+        else:
+            st.session_state.triage_override_color = None
+            
+    with override_col2:
+        if override_active:
+            override_reason = st.text_area("Override reason (required)", 
+                                         value=st.session_state.triage_override_reason,
+                                         placeholder="Document clinical justification for override...",
+                                         height=80)
+            st.session_state.triage_override_reason = override_reason
+            
+            if not override_reason.strip():
+                st.error("Please provide a reason for the triage override")
+            else:
+                st.success("Override will be logged in referral audit trail")
+        else:
+            st.info("Check to override score-based triage decision")
+    
+    st.session_state.triage_override_active = override_active
 
     # ========== STEP 1: ICD-Coded Diagnosis (Role-based) ==========
     st.subheader("Provisional Diagnosis")
@@ -1030,9 +1083,44 @@ with tabs[0]:
             st.error("Select a primary destination from 'Find matched facilities' above.")
             return False
             
-        vit = dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu,
-                  rf_sbp=rf_sbp, rf_spo2=rf_spo2, rf_avpu=rf_avpu, rf_seizure=rf_seizure, rf_pph=rf_pph, complaint=complaint)
+        vit = dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu, complaint=complaint)
         
+        # Calculate base triage color
+        age = _num(p_age)
+        context = dict(
+            age=age,
+            pregnant=(complaint == "Maternal"),
+            infection=(complaint in ["Sepsis", "Other"]),
+            o2_device=st.session_state.o2_device,
+            spo2_scale=st.session_state.spo2_scale,
+            behavior=st.session_state.pews_behavior
+        )
+        base_colour, score_details = triage_decision(vit, context)
+        
+        # Apply override if active
+        final_colour = base_colour
+        audit_log = []
+        
+        if st.session_state.triage_override_active and st.session_state.triage_override_color:
+            final_colour = st.session_state.triage_override_color
+            audit_entry = {
+                "timestamp": datetime.now().isoformat(),
+                "action": "TRIAGE_OVERRIDE",
+                "user": r_name,
+                "details": {
+                    "from": base_colour,
+                    "to": final_colour,
+                    "reason": st.session_state.triage_override_reason,
+                    "scores": {
+                        "NEWS2": score_details["NEWS2"]["score"],
+                        "qSOFA": score_details["qSOFA"]["score"],
+                        "MEOWS_red": len(score_details["MEOWS"]["red"]),
+                        "PEWS": score_details["PEWS"]["score"]
+                    }
+                }
+            }
+            audit_log.append(audit_entry)
+
         # Combine interventions
         all_interventions = (iv_selected if 'iv_selected' in locals() else []) + ([dx_free] if dx_free else [])
         
@@ -1043,7 +1131,16 @@ with tabs[0]:
             provisionalDx=dx_payload,
             interventions=all_interventions,
             resuscitation=resus_done,
-            triage=dict(complaint=complaint, decision=dict(color=tri_color(vit)), hr=hr, sbp=sbp, rr=rr, temp=temp, spo2=spo2, avpu=avpu),
+            triage=dict(
+                complaint=complaint, 
+                decision=dict(
+                    color=final_colour,
+                    base_color=base_colour,
+                    overridden=(final_colour != base_colour)
+                ), 
+                hr=hr, sbp=sbp, rr=rr, temp=temp, spo2=spo2, avpu=avpu,
+                scores=score_details
+            ),
             clinical=dict(summary=" ".join(ocr.split()[:60])),
             reasons=dict(severity=True, bedOrICUUnavailable=ref_beds, specialTest=ref_tests, requiredCapabilities=need_caps),
             dest=primary,
@@ -1051,7 +1148,8 @@ with tabs[0]:
             transport=dict(priority=priority, ambulance=amb_type, consent=bool(consent)),
             times=dict(first_contact_ts=now_ts(), decision_ts=now_ts()),
             status="PREALERT",
-            ambulance_available=None
+            ambulance_available=None,
+            audit_log=audit_log
         )
         if dispatch:
             ref["times"]["dispatch_ts"] = now_ts()
@@ -1065,9 +1163,17 @@ with tabs[0]:
     if col1.button("Create referral"):
         if _save_referral(dispatch=False):
             st.success(f"Referral created → {primary}")
+            # Reset override after successful referral
+            st.session_state.triage_override_active = False
+            st.session_state.triage_override_color = None
+            st.session_state.triage_override_reason = ""
     if col2.button("Create & dispatch now"):
         if _save_referral(dispatch=True):
             st.success(f"Referral created and DISPATCHED → {primary}")
+            # Reset override after successful referral
+            st.session_state.triage_override_active = False
+            st.session_state.triage_override_color = None
+            st.session_state.triage_override_reason = ""
 
 # ======== Ambulance / EMT Tab ========
 with tabs[1]:
@@ -1125,7 +1231,12 @@ with tabs[1]:
             st.write(f"**ETA:** {r['transport'].get('eta_min', '—')} min")
             st.write(f"**Ambulance:** {r['transport'].get('ambulance', '—')}")
             st.write("**Triage:**")
-            triage_pill(r['triage']['decision']['color'])
+            decision = r['triage']['decision']
+            if decision.get('overridden'):
+                st.markdown(f'<span class="pill {decision["color"].lower()} override-badge">{decision["color"]} (OVERRIDDEN)</span>', unsafe_allow_html=True)
+                st.caption(f"Original: {decision.get('base_color', 'Unknown')}")
+            else:
+                triage_pill(decision['color'])
 
         if r.get("route"):
             try:
@@ -1176,7 +1287,11 @@ with tabs[2]:
                         st.caption(f"Referrer: {referrer_info.get('name', '')} ({referrer_info.get('role', '')})")
                     
                 with col2:
-                    triage_pill(r['triage']['decision']['color'])
+                    decision = r['triage']['decision']
+                    if decision.get('overridden'):
+                        st.markdown(f'<span class="pill {decision["color"].lower()} override-badge">{decision["color"]} (OVERRIDDEN)</span>', unsafe_allow_html=True)
+                    else:
+                        triage_pill(decision['color'])
 
                 open_key = f"open_{r['id']}"
                 if st.button("Open case", key=open_key):
@@ -1186,6 +1301,20 @@ with tabs[2]:
                         dx_txt = (dx.get("code", "") + " " + dx.get("label", "")).strip()
                     else:
                         dx_txt = str(dx)
+                    
+                    # Show audit log if exists
+                    if r.get('audit_log'):
+                        st.markdown("#### Audit Trail")
+                        for audit in r['audit_log']:
+                            if audit['action'] == 'TRIAGE_OVERRIDE':
+                                st.markdown(f"""
+                                <div class="audit-log">
+                                    <strong>🔧 Triage Override</strong><br>
+                                    <small>{audit['timestamp']} by {audit['user']}</small><br>
+                                    {audit['details']['from']} → {audit['details']['to']}<br>
+                                    <em>Reason: {audit['details']['reason']}</em>
+                                </div>
+                                """, unsafe_allow_html=True)
                     
                     isbar = f"""I: {r['patient']['name']}, {r['patient']['age']} {r['patient']['sex']}
     Dx (provisional): {dx_txt}
@@ -1250,6 +1379,10 @@ with tabs[3]:
     reds = [r for r in data if r["triage"]["decision"]["color"] == "RED"]
     with_disp = [r for r in data if r["times"].get("dispatch_ts")]
 
+    # NEW: Override statistics
+    overrides = [r for r in data if r["triage"]["decision"].get("overridden")]
+    override_rate = len(overrides) / total * 100 if total > 0 else 0
+
     # KPIs
     pct_red_60 = int(100 * len([r for r in reds if r["times"].get("arrive_dest_ts")
                                 and minutes_safe(r["times"]["first_contact_ts"], r["times"]["arrive_dest_ts"]) <= 60]) / (len(reds) or 1))
@@ -1267,7 +1400,7 @@ with tabs[3]:
     with k2: 
         kpi_tile("% Dispatch ≤10m", f"{pct_disp_10}%", "Cases dispatched within 10min")
     with k3: 
-        kpi_tile("Dispatch P50 / P90", f"{d_p50 or '—'} / {d_p90 or '—'} min", "Dispatch time percentiles")
+        kpi_tile("Override Rate", f"{override_rate:.1f}%", "Triage decisions overridden")
     with k4: 
         kpi_tile("Travel P50 / P90", f"{t_p50 or '—'} / {t_p90 or '—'} min", "Travel time percentiles")
 
@@ -1276,26 +1409,23 @@ with tabs[3]:
     sev_series = pd.Series([r.get("severity", "—") for r in data]).value_counts()
     st.bar_chart(sev_series, use_container_width=True)
 
+    st.markdown("### Triage Override Analysis")
+    override_df = pd.DataFrame([{
+        'Original': r['triage']['decision'].get('base_color', r['triage']['decision']['color']),
+        'Final': r['triage']['decision']['color'],
+        'Overridden': r['triage']['decision'].get('overridden', False)
+    } for r in data])
+    
+    if not override_df.empty:
+        override_counts = override_df['Overridden'].value_counts()
+        st.bar_chart(override_counts, use_container_width=True)
+
     st.markdown("### Referral funnel")
     s1 = len(data)
     s2 = len([r for r in data if r["times"].get("dispatch_ts")])
     s3 = len([r for r in data if r["status"] in ["ARRIVE_DEST", "HANDOVER"]])
     funnel_df = pd.DataFrame({"stage": ["Referrals", "Dispatched", "Arrived/Handover"], "count": [s1, s2, s3]}).set_index("stage")
     st.bar_chart(funnel_df, use_container_width=True)
-
-    st.markdown("### Acceptance by receiving facility")
-    by_fac = pd.Series([r["dest"] for r in data if r["status"] in ["ARRIVE_DEST", "HANDOVER"]]).value_counts().head(10)
-    if not by_fac.empty:
-        st.bar_chart(by_fac, use_container_width=True)
-    else:
-        st.caption("No acceptance data in current filter")
-
-    st.markdown("### Rejection reasons")
-    rej = pd.Series([r.get("reasons", {}).get("reject_reason", "—") for r in data if r.get("reasons", {}).get("rejected")]).value_counts()
-    if not rej.empty:
-        st.bar_chart(rej, use_container_width=True)
-    else:
-        st.caption("No recorded rejections in current filter.")
 
     st.markdown("### Case density heat-map (Hexagon)")
     if data:
@@ -1396,5 +1526,4 @@ with tabs[5]:
     if st.button("Update facility"):
         F["ICU_open"] = int(new_icu)
         F["acceptanceRate"] = float(new_acc)
-        st.success("Facility updated")
         st.success("Facility updated")
