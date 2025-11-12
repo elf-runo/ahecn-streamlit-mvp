@@ -2907,6 +2907,7 @@ with tabs[3]:
 
     # Generate enhanced analytics data
     time_series_df = create_enhanced_time_series(referrals_data)
+    sla_df = create_sla_analysis(referrals_data)
     rejection_rates_df = calculate_rejection_rates(referrals_data)
     referral_reasons = analyze_referral_reasons(referrals_data)
     specialty_data, case_type_breakdown = analyze_medical_specialties(referrals_data)
