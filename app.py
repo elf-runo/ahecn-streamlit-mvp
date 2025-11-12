@@ -445,14 +445,6 @@ def create_ambulance_usage_analysis(referrals):
     
     return pd.DataFrame(usage_data) if usage_data else pd.DataFrame()
 
-def safe_altair_chart(chart, use_container_width=True):
-    """Safely render Altair chart with error handling"""
-    try:
-        st.altair_chart(chart, use_container_width=use_container_width)
-    except Exception as e:
-        st.error(f"Chart rendering error: {str(e)}")
-        st.info("Try refreshing the data or check the data format")
-
 # === SCORING ENGINES ===
 def calc_NEWS2(rr, spo2, sbp, hr, temp, avpu, o2_device="Air", spo2_scale=1):
     rr, spo2, sbp, hr, temp = (_num(rr), _num(spo2), _num(sbp), _num(hr), _num(temp))
@@ -2540,14 +2532,107 @@ with tabs[3]:
                                              value_vars=['referral', 'dispatched', 'arrived'],
                                              var_name='metric', value_name='value')
                 
-                chart = alt.Chart(hourly_long).mark_line(point=True).encode(
-                    x=alt.X('hour:Q', title='Hour of Day', scale=alt.Scale(zero=False)),
-                    y=alt.Y('value:Q', title='Count', scale=alt.Scale(zero=True)),
-                    color=alt.Color('metric:N', title='Metric'),
-                    tooltip=['hour', 'metric', 'value']
-                ).properties(height=300, title='Referral Activity by Hour')
-                
-                safe_altair_chart(chart)
+                    # Time Series Analysis
+    st.markdown("### ⏰ Time Series Analysis")
+    if not time_series_df.empty:
+        tab1, tab2, tab3 = st.tabs(["By Hour", "By Day", "By Day of Week"])
+        
+        with tab1:
+            hourly_data = time_series_df.groupby('hour').agg({
+                'referral': 'sum',
+                'dispatched': 'sum',
+                'arrived': 'sum'
+            }).reset_index()
+            
+            if not hourly_data.empty and len(hourly_data) > 0:
+                try:
+                    # Convert to long format for Altair
+                    hourly_long = hourly_data.melt(id_vars=['hour'], 
+                                                 value_vars=['referral', 'dispatched', 'arrived'],
+                                                 var_name='metric', value_name='value')
+                    
+                    # Ensure data types are correct
+                    hourly_long['hour'] = pd.to_numeric(hourly_long['hour'], errors='coerce')
+                    hourly_long['value'] = pd.to_numeric(hourly_long['value'], errors='coerce')
+                    hourly_long = hourly_long.dropna()
+                    
+                    if not hourly_long.empty:
+                        chart = alt.Chart(hourly_long).mark_line(point=True).encode(
+                            x=alt.X('hour:Q', title='Hour of Day', scale=alt.Scale(zero=False)),
+                            y=alt.Y('value:Q', title='Count', scale=alt.Scale(zero=True)),
+                            color=alt.Color('metric:N', title='Metric'),
+                            tooltip=['hour', 'metric', 'value']
+                        ).properties(height=300, title='Referral Activity by Hour')
+                        
+                        st.altair_chart(chart, use_container_width=True)
+                    else:
+                        st.info("No valid data available for hourly chart")
+                except Exception as e:
+                    st.error(f"Error creating hourly chart: {str(e)}")
+                    st.info("Try generating more synthetic data or check data format")
+            else:
+                st.info("No hourly data available")
+        
+        with tab2:
+            daily_data = time_series_df.groupby('date').agg({
+                'referral': 'sum',
+                'dispatched': 'sum',
+                'arrived': 'sum'
+            }).reset_index()
+            
+            if not daily_data.empty and len(daily_data) > 0:
+                try:
+                    daily_long = daily_data.melt(id_vars=['date'], 
+                                               value_vars=['referral', 'dispatched', 'arrived'],
+                                               var_name='metric', value_name='value')
+                    
+                    # Ensure date is proper datetime
+                    daily_long['date'] = pd.to_datetime(daily_long['date'])
+                    daily_long['value'] = pd.to_numeric(daily_long['value'], errors='coerce')
+                    daily_long = daily_long.dropna()
+                    
+                    if not daily_long.empty:
+                        chart = alt.Chart(daily_long).mark_line(point=True).encode(
+                            x=alt.X('date:T', title='Date'),
+                            y=alt.Y('value:Q', title='Count', scale=alt.Scale(zero=True)),
+                            color=alt.Color('metric:N', title='Metric'),
+                            tooltip=['date', 'metric', 'value']
+                        ).properties(height=300, title='Referral Activity by Day')
+                        
+                        st.altair_chart(chart, use_container_width=True)
+                    else:
+                        st.info("No valid data available for daily chart")
+                except Exception as e:
+                    st.error(f"Error creating daily chart: {str(e)}")
+            else:
+                st.info("No daily data available")
+        
+        with tab3:
+            dow_data = time_series_df.groupby('day_of_week').agg({
+                'referral': 'sum'
+            }).reset_index()
+            
+            if not dow_data.empty and len(dow_data) > 0:
+                try:
+                    # Define day order for proper sorting
+                    day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+                    dow_data['day_of_week'] = pd.Categorical(dow_data['day_of_week'], categories=day_order, ordered=True)
+                    dow_data = dow_data.sort_values('day_of_week')
+                    
+                    chart = alt.Chart(dow_data).mark_bar().encode(
+                        x=alt.X('day_of_week:N', title='Day of Week', sort=day_order),
+                        y=alt.Y('referral:Q', title='Referrals'),
+                        color=alt.Color('day_of_week:N', legend=None),
+                        tooltip=['day_of_week', 'referral']
+                    ).properties(height=300, title='Referrals by Day of Week')
+                    
+                    st.altair_chart(chart, use_container_width=True)
+                except Exception as e:
+                    st.error(f"Error creating day-of-week chart: {str(e)}")
+            else:
+                st.info("No day-of-week data available")
+    else:
+        st.info("No time series data available")
             else:
                 st.info("No hourly data available")
         
@@ -2570,7 +2655,7 @@ with tabs[3]:
                     tooltip=['date', 'metric', 'value']
                 ).properties(height=300, title='Referral Activity by Day')
                 
-                safe_altair_chart(chart)
+                st.altair_chart(chart, use_container_width=True)
             else:
                 st.info("No daily data available")
         
@@ -2592,7 +2677,7 @@ with tabs[3]:
                     tooltip=['day_of_week', 'referral']
                 ).properties(height=300, title='Referrals by Day of Week')
                 
-                safe_altair_chart(chart)
+                st.altair_chart(chart, use_container_width=True)
             else:
                 st.info("No day-of-week data available")
     else:
@@ -2617,7 +2702,7 @@ with tabs[3]:
                 tooltip=['Stage', 'Count', 'Conversion Rate']
             ).properties(height=300, title='Referral Funnel')
             
-            safe_altair_chart(chart)
+            st.altair_chart(chart, use_container_width=True)
         
         with col2:
             st.dataframe(funnel_df, use_container_width=True)
@@ -2660,7 +2745,7 @@ with tabs[3]:
                     tooltip=['Metric', 'Percentile', 'Minutes']
                 ).properties(height=300, width=150)
                 
-                safe_altair_chart(chart)
+                st.altair_chart(chart, use_container_width=True)
             
             with col2:
                 st.dataframe(percentile_df.round(1), use_container_width=True)
@@ -2685,7 +2770,7 @@ with tabs[3]:
                     tooltip=['facility', 'triage_color', 'count']
                 ).properties(height=400, title='Triage Distribution by Facility')
                 
-                safe_altair_chart(chart)
+                st.altair_chart(chart, use_container_width=True)
             else:
                 st.info("No facility mix data available")
         
@@ -2700,7 +2785,7 @@ with tabs[3]:
                     tooltip=['case_type', 'triage_color', 'count']
                 ).properties(height=400, title='Triage Distribution by Case Type')
                 
-                safe_altair_chart(chart)
+                st.altair_chart(chart, use_container_width=True)
             else:
                 st.info("No case mix data available")
     else:
@@ -2779,7 +2864,7 @@ with tabs[3]:
                     tooltip=['triage_color', 'avoidable_pct']
                 ).properties(height=300, title='Avoidable Ambulance Use by Triage Color')
                 
-                safe_altair_chart(chart)
+                st.altair_chart(chart, use_container_width=True)
             else:
                 st.info("No avoidable usage data by triage color")
         
@@ -2795,7 +2880,7 @@ with tabs[3]:
                     tooltip=['triage_color', 'ambulance_usage_pct']
                 ).properties(height=300, title='Ambulance Usage by Triage Color')
                 
-                safe_altair_chart(chart)
+                st.altair_chart(chart, use_container_width=True)
             else:
                 st.info("No ambulance usage data by triage color")
     else:
@@ -2807,10 +2892,22 @@ with tabs[4]:
     
     st.markdown("#### Generate Synthetic Data")
     seed_n = st.slider("Seed referrals (synthetic)", 100, 1000, 500, step=50)
-    if st.button("Seed synthetic data"):
-        seed_referrals(n=seed_n)
-        st.success(f"Seeded {seed_n} referrals")
-        st.rerun()
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Seed synthetic data"):
+            seed_referrals(n=seed_n)
+            st.success(f"Seeded {seed_n} referrals")
+            st.rerun()
+    
+    with col2:
+        if st.button("Validate Data Quality"):
+            # Check if we have valid data for analytics
+            time_series_df = create_time_series_analysis(st.session_state.referrals)
+            if time_series_df.empty:
+                st.error("No valid time series data. Try seeding more data.")
+            else:
+                st.success(f"Data validation passed: {len(time_series_df)} time series records available")
 
     st.markdown("#### Export Data")
     col1, col2 = st.columns(2)
