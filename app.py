@@ -1748,7 +1748,7 @@ with tabs[0]:
             row = None
             default_iv = []
 
-    # ========== INTERVENTIONS BY DIAGNOSIS ==========
+        # ========== INTERVENTIONS BY DIAGNOSIS ==========
     st.subheader("Interventions by Diagnosis")
     
     if referrer_role == "Doctor/Physician" and chosen_icd and row is not None:
@@ -1807,7 +1807,7 @@ with tabs[0]:
                         "timestamp": now_ts(),
                         "performed_by": "referrer",
                         "status": "completed"
-                    })    
+                    })   
         # Additional notes (optional for doctors)
         dx_free = st.text_input("Additional clinical notes (optional)", "")
         
