@@ -1748,36 +1748,36 @@ with tabs[0]:
             row = None
             default_iv = []
 
-        # ========== INTERVENTIONS BY DIAGNOSIS ==========
-        st.subheader("Interventions by Diagnosis")
+    # ========== INTERVENTIONS BY DIAGNOSIS ==========
+    st.subheader("Interventions by Diagnosis")
     
-        if referrer_role == "Doctor/Physician" and chosen_icd and row is not None:
-            # Show default interventions from ICD as checkboxes
-            default_iv = row.get("default_interventions", [])
-            if default_iv:
-                st.markdown("**Diagnosis-Specific Interventions**")
-                st.caption(f"Default interventions for {row['label']}:")
+    if referrer_role == "Doctor/Physician" and chosen_icd and row is not None:
+        # Show default interventions from ICD as checkboxes
+        default_iv = row.get("default_interventions", [])
+        if default_iv:
+            st.markdown("**Diagnosis-Specific Interventions**")
+            st.caption(f"Default interventions for {row['label']}:")
             
-                iv_cols = st.columns(2)
-                iv_selected = []
-                for i, item in enumerate(default_iv):
-                    col_idx = i % 2
-                    if iv_cols[col_idx].checkbox(item, value=True, key=f"iv_{i}"):
-                        iv_selected.append({
-                            "name": item,
-                            "type": "diagnosis_default",
-                            "timestamp": now_ts(),
-                            "performed_by": "referrer",
-                            "status": "completed"
+            iv_cols = st.columns(2)
+            iv_selected = []
+            for i, item in enumerate(default_iv):
+                col_idx = i % 2
+                if iv_cols[col_idx].checkbox(item, value=True, key=f"iv_{i}"):
+                    iv_selected.append({
+                        "name": item,
+                        "type": "diagnosis_default",
+                        "timestamp": now_ts(),
+                        "performed_by": "referrer",
+                        "status": "completed"
                     })
             
-                # Additional custom interventions
-                st.markdown("**Additional Interventions**")
-                custom_iv = st.text_area("Add custom interventions (one per line)", 
+            # Additional custom interventions
+            st.markdown("**Additional Interventions**")
+            custom_iv = st.text_area("Add custom interventions (one per line)", 
                                    placeholder="Enter any additional interventions performed...",
                                    height=60)
-                if custom_iv:
-                    for line in custom_iv.split('\n'):
+            if custom_iv:
+                for line in custom_iv.split('\n'):
                     line = line.strip()
                     if line:
                         iv_selected.append({
@@ -1807,8 +1807,7 @@ with tabs[0]:
                         "timestamp": now_ts(),
                         "performed_by": "referrer",
                         "status": "completed"
-                    })
-
+                    })    
         # Additional notes (optional for doctors)
         dx_free = st.text_input("Additional clinical notes (optional)", "")
         
