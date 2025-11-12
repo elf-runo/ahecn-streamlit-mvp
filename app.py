@@ -178,19 +178,22 @@ def create_time_series_analysis(referrals):
         if 'times' in ref:
             ts = ref['times'].get('first_contact_ts')
             if ts:
-                dt = datetime.fromtimestamp(ts)
-                df_data.append({
-                    'datetime': dt,
-                    'date': dt.date(),
-                    'hour': dt.hour,
-                    'day_of_week': dt.strftime('%A'),
-                    'referral': 1,
-                    'dispatched': 1 if ref['times'].get('dispatch_ts') else 0,
-                    'arrived': 1 if ref['times'].get('arrive_dest_ts') else 0,
-                    'triage_color': ref['triage']['decision']['color'],
-                    'case_type': ref['triage']['complaint'],
-                    'facility': ref.get('dest', 'Unknown')
-                })
+                try:
+                    dt = datetime.fromtimestamp(ts)
+                    df_data.append({
+                        'datetime': dt,
+                        'date': dt.date(),
+                        'hour': dt.hour,
+                        'day_of_week': dt.strftime('%A'),
+                        'referral': 1,
+                        'dispatched': 1 if ref['times'].get('dispatch_ts') else 0,
+                        'arrived': 1 if ref['times'].get('arrive_dest_ts') else 0,
+                        'triage_color': ref['triage']['decision']['color'],
+                        'case_type': ref['triage']['complaint'],
+                        'facility': ref.get('dest', 'Unknown')
+                    })
+                except (ValueError, TypeError):
+                    continue
     
     if not df_data:
         return pd.DataFrame()
@@ -200,6 +203,9 @@ def create_time_series_analysis(referrals):
 
 def create_funnel_analysis(referrals):
     """Create funnel analysis from referral to handover"""
+    if not referrals:
+        return {}
+    
     stages = {
         'Referrals': len(referrals),
         'Dispatched': len([r for r in referrals if r['times'].get('dispatch_ts')]),
@@ -213,87 +219,107 @@ def create_sla_analysis(referrals):
     sla_data = []
     
     for ref in referrals:
-        times = ref.get('times', {})
-        
-        # Decision to Dispatch
-        if times.get('decision_ts') and times.get('dispatch_ts'):
-            decision_dispatch = (times['dispatch_ts'] - times['decision_ts']) / 60  # minutes
-        else:
-            decision_dispatch = None
+        try:
+            times = ref.get('times', {})
             
-        # Dispatch to Arrival
-        if times.get('dispatch_ts') and times.get('arrive_dest_ts'):
-            dispatch_arrival = (times['arrive_dest_ts'] - times['dispatch_ts']) / 60
-        else:
-            dispatch_arrival = None
-            
-        # Arrival to Handover
-        if times.get('arrive_dest_ts') and times.get('handover_ts'):
-            arrival_handover = (times['handover_ts'] - times['arrive_dest_ts']) / 60
-        else:
-            arrival_handover = None
-            
-        if any([decision_dispatch, dispatch_arrival, arrival_handover]):
-            sla_data.append({
-                'case_id': ref['id'],
-                'triage_color': ref['triage']['decision']['color'],
-                'decision_dispatch': decision_dispatch,
-                'dispatch_arrival': dispatch_arrival,
-                'arrival_handover': arrival_handover
-            })
+            # Decision to Dispatch
+            if times.get('decision_ts') and times.get('dispatch_ts'):
+                decision_dispatch = (times['dispatch_ts'] - times['decision_ts']) / 60  # minutes
+            else:
+                decision_dispatch = None
+                
+            # Dispatch to Arrival
+            if times.get('dispatch_ts') and times.get('arrive_dest_ts'):
+                dispatch_arrival = (times['arrive_dest_ts'] - times['dispatch_ts']) / 60
+            else:
+                dispatch_arrival = None
+                
+            # Arrival to Handover
+            if times.get('arrive_dest_ts') and times.get('handover_ts'):
+                arrival_handover = (times['handover_ts'] - times['arrive_dest_ts']) / 60
+            else:
+                arrival_handover = None
+                
+            if any([decision_dispatch, dispatch_arrival, arrival_handover]):
+                sla_data.append({
+                    'case_id': ref['id'],
+                    'triage_color': ref['triage']['decision']['color'],
+                    'decision_dispatch': decision_dispatch,
+                    'dispatch_arrival': dispatch_arrival,
+                    'arrival_handover': arrival_handover
+                })
+        except (KeyError, TypeError, ValueError):
+            continue
     
-    return pd.DataFrame(sla_data)
+    return pd.DataFrame(sla_data) if sla_data else pd.DataFrame()
 
 def create_triage_mix_analysis(referrals):
     """Analyze triage mix by facility and case type"""
     mix_data = []
     
     for ref in referrals:
-        mix_data.append({
-            'facility': ref.get('dest', 'Unknown'),
-            'case_type': ref['triage']['complaint'],
-            'triage_color': ref['triage']['decision']['color'],
-            'used_ambulance': ref.get('transport', {}).get('ambulance') in ['BLS', 'ALS', 'ALS + Vent']
-        })
+        try:
+            mix_data.append({
+                'facility': ref.get('dest', 'Unknown'),
+                'case_type': ref['triage']['complaint'],
+                'triage_color': ref['triage']['decision']['color'],
+                'used_ambulance': ref.get('transport', {}).get('ambulance') in ['BLS', 'ALS', 'ALS + Vent']
+            })
+        except (KeyError, TypeError):
+            continue
     
-    return pd.DataFrame(mix_data)
+    return pd.DataFrame(mix_data) if mix_data else pd.DataFrame()
 
 def create_geo_analysis(referrals):
     """Create geographic analysis for heatmaps"""
     geo_data = []
     
     for ref in referrals:
-        patient = ref.get('patient', {})
-        location = patient.get('location', {})
-        if location.get('lat') and location.get('lon'):
-            geo_data.append({
-                'lat': location['lat'],
-                'lon': location['lon'],
-                'triage_color': ref['triage']['decision']['color'],
-                'case_type': ref['triage']['complaint'],
-                'facility': ref.get('dest', 'Unknown'),
-                'timestamp': ref['times'].get('first_contact_ts')
-            })
+        try:
+            patient = ref.get('patient', {})
+            location = patient.get('location', {})
+            if location.get('lat') and location.get('lon'):
+                geo_data.append({
+                    'lat': float(location['lat']),
+                    'lon': float(location['lon']),
+                    'triage_color': ref['triage']['decision']['color'],
+                    'case_type': ref['triage']['complaint'],
+                    'facility': ref.get('dest', 'Unknown'),
+                    'timestamp': ref['times'].get('first_contact_ts')
+                })
+        except (KeyError, TypeError, ValueError):
+            continue
     
-    return pd.DataFrame(geo_data)
+    return pd.DataFrame(geo_data) if geo_data else pd.DataFrame()
 
 def create_ambulance_usage_analysis(referrals):
     """Analyze avoidable ambulance usage"""
     usage_data = []
     
     for ref in referrals:
-        transport = ref.get('transport', {})
-        used_ambulance = transport.get('ambulance') in ['BLS', 'ALS', 'ALS + Vent']
-        triage_color = ref['triage']['decision']['color']
-        
-        usage_data.append({
-            'triage_color': triage_color,
-            'used_ambulance': used_ambulance,
-            'case_type': ref['triage']['complaint'],
-            'avoidable': used_ambulance and triage_color in ['GREEN', 'YELLOW']
-        })
+        try:
+            transport = ref.get('transport', {})
+            used_ambulance = transport.get('ambulance') in ['BLS', 'ALS', 'ALS + Vent']
+            triage_color = ref['triage']['decision']['color']
+            
+            usage_data.append({
+                'triage_color': triage_color,
+                'used_ambulance': used_ambulance,
+                'case_type': ref['triage']['complaint'],
+                'avoidable': used_ambulance and triage_color in ['GREEN', 'YELLOW']
+            })
+        except (KeyError, TypeError):
+            continue
     
-    return pd.DataFrame(usage_data)
+    return pd.DataFrame(usage_data) if usage_data else pd.DataFrame()
+
+def safe_altair_chart(chart, use_container_width=True):
+    """Safely render Altair chart with error handling"""
+    try:
+        st.altair_chart(chart, use_container_width=use_container_width)
+    except Exception as e:
+        st.error(f"Chart rendering error: {str(e)}")
+        st.info("Try refreshing the data or check the data format")
 
 # === SCORING ENGINES ===
 def calc_NEWS2(rr, spo2, sbp, hr, temp, avpu, o2_device="Air", spo2_scale=1):
@@ -1819,7 +1845,7 @@ with tabs[3]:
         st.metric("Critical Cases", red_cases)
     
     with col3:
-        if sla_df is not None and not sla_df.empty:
+        if sla_df is not None and not sla_df.empty and 'decision_dispatch' in sla_df.columns:
             avg_dispatch = sla_df['decision_dispatch'].mean()
             st.metric("Avg Dispatch Time", f"{avg_dispatch:.1f} min")
         else:
@@ -1844,16 +1870,22 @@ with tabs[3]:
                 'arrived': 'sum'
             }).reset_index()
             
-            chart = alt.Chart(hourly_data).transform_fold(
-                ['referral', 'dispatched', 'arrived'],
-                as_=['metric', 'value']
-            ).mark_line(point=True).encode(
-                x=alt.X('hour:Q', title='Hour of Day'),
-                y=alt.Y('value:Q', title='Count'),
-                color=alt.Color('metric:N', title='Metric'),
-                tooltip=['hour', 'metric', 'value']
-            ).properties(height=300)
-            st.altair_chart(chart, use_container_width=True)
+            if not hourly_data.empty:
+                # Convert to long format for Altair
+                hourly_long = hourly_data.melt(id_vars=['hour'], 
+                                             value_vars=['referral', 'dispatched', 'arrived'],
+                                             var_name='metric', value_name='value')
+                
+                chart = alt.Chart(hourly_long).mark_line(point=True).encode(
+                    x=alt.X('hour:Q', title='Hour of Day', scale=alt.Scale(zero=False)),
+                    y=alt.Y('value:Q', title='Count', scale=alt.Scale(zero=True)),
+                    color=alt.Color('metric:N', title='Metric'),
+                    tooltip=['hour', 'metric', 'value']
+                ).properties(height=300, title='Referral Activity by Hour')
+                
+                safe_altair_chart(chart)
+            else:
+                st.info("No hourly data available")
         
         with tab2:
             daily_data = time_series_df.groupby('date').agg({
@@ -1862,34 +1894,43 @@ with tabs[3]:
                 'arrived': 'sum'
             }).reset_index()
             
-            chart = alt.Chart(daily_data).transform_fold(
-                ['referral', 'dispatched', 'arrived'],
-                as_=['metric', 'value']
-            ).mark_line(point=True).encode(
-                x=alt.X('date:T', title='Date'),
-                y=alt.Y('value:Q', title='Count'),
-                color=alt.Color('metric:N', title='Metric'),
-                tooltip=['date', 'metric', 'value']
-            ).properties(height=300)
-            st.altair_chart(chart, use_container_width=True)
+            if not daily_data.empty:
+                daily_long = daily_data.melt(id_vars=['date'], 
+                                           value_vars=['referral', 'dispatched', 'arrived'],
+                                           var_name='metric', value_name='value')
+                
+                chart = alt.Chart(daily_long).mark_line(point=True).encode(
+                    x=alt.X('date:T', title='Date'),
+                    y=alt.Y('value:Q', title='Count', scale=alt.Scale(zero=True)),
+                    color=alt.Color('metric:N', title='Metric'),
+                    tooltip=['date', 'metric', 'value']
+                ).properties(height=300, title='Referral Activity by Day')
+                
+                safe_altair_chart(chart)
+            else:
+                st.info("No daily data available")
         
         with tab3:
             dow_data = time_series_df.groupby('day_of_week').agg({
                 'referral': 'sum'
             }).reset_index()
             
-            # Define day order for proper sorting
-            day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-            dow_data['day_of_week'] = pd.Categorical(dow_data['day_of_week'], categories=day_order, ordered=True)
-            dow_data = dow_data.sort_values('day_of_week')
-            
-            chart = alt.Chart(dow_data).mark_bar().encode(
-                x=alt.X('day_of_week:N', title='Day of Week', sort=day_order),
-                y=alt.Y('referral:Q', title='Referrals'),
-                color=alt.Color('day_of_week:N', legend=None),
-                tooltip=['day_of_week', 'referral']
-            ).properties(height=300)
-            st.altair_chart(chart, use_container_width=True)
+            if not dow_data.empty:
+                # Define day order for proper sorting
+                day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+                dow_data['day_of_week'] = pd.Categorical(dow_data['day_of_week'], categories=day_order, ordered=True)
+                dow_data = dow_data.sort_values('day_of_week')
+                
+                chart = alt.Chart(dow_data).mark_bar().encode(
+                    x=alt.X('day_of_week:N', title='Day of Week', sort=day_order),
+                    y=alt.Y('referral:Q', title='Referrals'),
+                    color=alt.Color('day_of_week:N', legend=None),
+                    tooltip=['day_of_week', 'referral']
+                ).properties(height=300, title='Referrals by Day of Week')
+                
+                safe_altair_chart(chart)
+            else:
+                st.info("No day-of-week data available")
     else:
         st.info("No time series data available")
     
@@ -1906,15 +1947,18 @@ with tabs[3]:
         col1, col2 = st.columns([2, 1])
         with col1:
             chart = alt.Chart(funnel_df).mark_bar().encode(
-                x=alt.X('Stage:N', sort=None),
-                y=alt.Y('Count:Q'),
+                x=alt.X('Stage:N', sort=None, title='Stage'),
+                y=alt.Y('Count:Q', title='Count'),
                 color=alt.Color('Stage:N', legend=None),
                 tooltip=['Stage', 'Count', 'Conversion Rate']
-            ).properties(height=300)
-            st.altair_chart(chart, use_container_width=True)
+            ).properties(height=300, title='Referral Funnel')
+            
+            safe_altair_chart(chart)
         
         with col2:
             st.dataframe(funnel_df, use_container_width=True)
+    else:
+        st.info("No funnel data available")
     
     # SLA Distributions
     st.markdown("### ⏱️ Service Level Agreement (SLA) Distributions")
@@ -1924,14 +1968,16 @@ with tabs[3]:
         percentile_data = []
         
         for metric in sla_metrics:
-            if metric in sla_df.columns:
-                p50 = sla_df[metric].quantile(0.5)
-                p90 = sla_df[metric].quantile(0.9)
-                percentile_data.append({
-                    'Metric': metric.replace('_', ' → ').title(),
-                    'P50': p50,
-                    'P90': p90
-                })
+            if metric in sla_df.columns and sla_df[metric].notna().any():
+                valid_data = sla_df[metric].dropna()
+                if len(valid_data) > 0:
+                    p50 = valid_data.quantile(0.5)
+                    p90 = valid_data.quantile(0.9)
+                    percentile_data.append({
+                        'Metric': metric.replace('_', ' → ').title(),
+                        'P50': p50,
+                        'P90': p90
+                    })
         
         if percentile_data:
             percentile_df = pd.DataFrame(percentile_data)
@@ -1943,16 +1989,21 @@ with tabs[3]:
                                            var_name='Percentile', value_name='Minutes')
                 
                 chart = alt.Chart(melt_df).mark_bar().encode(
-                    x=alt.X('Metric:N', title='Time Interval'),
+                    x=alt.X('Metric:N', title='Time Interval', axis=alt.Axis(labelAngle=0)),
                     y=alt.Y('Minutes:Q', title='Minutes'),
                     color=alt.Color('Percentile:N', title='Percentile'),
                     column=alt.Column('Percentile:N'),
                     tooltip=['Metric', 'Percentile', 'Minutes']
                 ).properties(height=300, width=150)
-                st.altair_chart(chart)
+                
+                safe_altair_chart(chart)
             
             with col2:
                 st.dataframe(percentile_df.round(1), use_container_width=True)
+        else:
+            st.info("No SLA data available for percentiles")
+    else:
+        st.info("No SLA data available")
     
     # Triage Mix by Facility & Case Type
     st.markdown("### 🎨 Triage Mix Analysis")
@@ -1962,63 +2013,80 @@ with tabs[3]:
         with tab1:
             facility_mix = triage_mix_df.groupby(['facility', 'triage_color']).size().reset_index(name='count')
             
-            chart = alt.Chart(facility_mix).mark_bar().encode(
-                x=alt.X('facility:N', title='Facility'),
-                y=alt.Y('count:Q', title='Count'),
-                color=alt.Color('triage_color:N', title='Triage Color'),
-                tooltip=['facility', 'triage_color', 'count']
-            ).properties(height=400)
-            st.altair_chart(chart, use_container_width=True)
+            if not facility_mix.empty:
+                chart = alt.Chart(facility_mix).mark_bar().encode(
+                    x=alt.X('facility:N', title='Facility', axis=alt.Axis(labelAngle=45)),
+                    y=alt.Y('count:Q', title='Count'),
+                    color=alt.Color('triage_color:N', title='Triage Color'),
+                    tooltip=['facility', 'triage_color', 'count']
+                ).properties(height=400, title='Triage Distribution by Facility')
+                
+                safe_altair_chart(chart)
+            else:
+                st.info("No facility mix data available")
         
         with tab2:
             case_mix = triage_mix_df.groupby(['case_type', 'triage_color']).size().reset_index(name='count')
             
-            chart = alt.Chart(case_mix).mark_bar().encode(
-                x=alt.X('case_type:N', title='Case Type'),
-                y=alt.Y('count:Q', title='Count'),
-                color=alt.Color('triage_color:N', title='Triage Color'),
-                tooltip=['case_type', 'triage_color', 'count']
-            ).properties(height=400)
-            st.altair_chart(chart, use_container_width=True)
+            if not case_mix.empty:
+                chart = alt.Chart(case_mix).mark_bar().encode(
+                    x=alt.X('case_type:N', title='Case Type'),
+                    y=alt.Y('count:Q', title='Count'),
+                    color=alt.Color('triage_color:N', title='Triage Color'),
+                    tooltip=['case_type', 'triage_color', 'count']
+                ).properties(height=400, title='Triage Distribution by Case Type')
+                
+                safe_altair_chart(chart)
+            else:
+                st.info("No case mix data available")
+    else:
+        st.info("No triage mix data available")
     
     # Geographic Heatmap
     st.markdown("### 🗺️ Case Origin Heatmap")
     if not geo_df.empty:
-        # PyDeck Hexagon Layer
-        layer = pdk.Layer(
-            "HexagonLayer",
-            data=geo_df,
-            get_position=['lon', 'lat'],
-            radius=1000,
-            elevation_scale=50,
-            elevation_range=[0, 1000],
-            extruded=True,
-            coverage=1,
-            pickable=True
-        )
-        
-        view_state = pdk.ViewState(
-            longitude=geo_df['lon'].mean(),
-            latitude=geo_df['lat'].mean(),
-            zoom=10,
-            pitch=50
-        )
-        
-        st.pydeck_chart(pdk.Deck(
-            layers=[layer],
-            initial_view_state=view_state,
-            map_style="mapbox://styles/mapbox/dark-v10"
-        ))
-        
-        # Triage distribution in heatmap
-        col1, col2 = st.columns(2)
-        with col1:
-            triage_dist = geo_df['triage_color'].value_counts()
-            st.bar_chart(triage_dist)
-        
-        with col2:
-            case_dist = geo_df['case_type'].value_counts()
-            st.bar_chart(case_dist)
+        try:
+            # PyDeck Hexagon Layer
+            layer = pdk.Layer(
+                "HexagonLayer",
+                data=geo_df,
+                get_position=['lon', 'lat'],
+                radius=1000,
+                elevation_scale=50,
+                elevation_range=[0, 1000],
+                extruded=True,
+                coverage=1,
+                pickable=True
+            )
+            
+            view_state = pdk.ViewState(
+                longitude=geo_df['lon'].mean(),
+                latitude=geo_df['lat'].mean(),
+                zoom=10,
+                pitch=50
+            )
+            
+            st.pydeck_chart(pdk.Deck(
+                layers=[layer],
+                initial_view_state=view_state,
+                map_style="mapbox://styles/mapbox/dark-v10"
+            ))
+            
+            # Triage distribution in heatmap
+            col1, col2 = st.columns(2)
+            with col1:
+                triage_dist = geo_df['triage_color'].value_counts()
+                st.bar_chart(triage_dist)
+            
+            with col2:
+                case_dist = geo_df['case_type'].value_counts()
+                st.bar_chart(case_dist)
+                
+        except Exception as e:
+            st.error(f"Map rendering error: {str(e)}")
+            st.info("Try checking the geographic data format")
+    else:
+        st.info("No geographic data available")
     
     # Avoidable Ambulance Usage
     st.markdown("### 🚑 Ambulance Usage Analysis")
@@ -2036,28 +2104,38 @@ with tabs[3]:
         col1, col2 = st.columns(2)
         
         with col1:
-            st.metric("Total Avoidable Ambulance Use", 
-                     f"{(ambulance_usage_df['avoidable'].sum() / len(ambulance_usage_df) * 100):.1f}%")
+            total_avoidable = (ambulance_usage_df['avoidable'].sum() / len(ambulance_usage_df) * 100) if len(ambulance_usage_df) > 0 else 0
+            st.metric("Total Avoidable Ambulance Use", f"{total_avoidable:.1f}%")
             
-            chart = alt.Chart(avoidable_by_triage).mark_bar().encode(
-                x=alt.X('triage_color:N', title='Triage Color'),
-                y=alt.Y('avoidable_pct:Q', title='Avoidable Usage (%)'),
-                color=alt.Color('triage_color:N', legend=None),
-                tooltip=['triage_color', 'avoidable_pct']
-            ).properties(height=300, title='Avoidable Ambulance Use by Triage Color')
-            st.altair_chart(chart, use_container_width=True)
+            if not avoidable_by_triage.empty:
+                chart = alt.Chart(avoidable_by_triage).mark_bar().encode(
+                    x=alt.X('triage_color:N', title='Triage Color'),
+                    y=alt.Y('avoidable_pct:Q', title='Avoidable Usage (%)'),
+                    color=alt.Color('triage_color:N', legend=None),
+                    tooltip=['triage_color', 'avoidable_pct']
+                ).properties(height=300, title='Avoidable Ambulance Use by Triage Color')
+                
+                safe_altair_chart(chart)
+            else:
+                st.info("No avoidable usage data by triage color")
         
         with col2:
-            st.metric("Overall Ambulance Usage", 
-                     f"{(ambulance_usage_df['used_ambulance'].sum() / len(ambulance_usage_df) * 100):.1f}%")
+            total_usage = (ambulance_usage_df['used_ambulance'].sum() / len(ambulance_usage_df) * 100) if len(ambulance_usage_df) > 0 else 0
+            st.metric("Overall Ambulance Usage", f"{total_usage:.1f}%")
             
-            chart = alt.Chart(avoidable_by_triage).mark_bar().encode(
-                x=alt.X('triage_color:N', title='Triage Color'),
-                y=alt.Y('ambulance_usage_pct:Q', title='Ambulance Usage (%)'),
-                color=alt.Color('triage_color:N', legend=None),
-                tooltip=['triage_color', 'ambulance_usage_pct']
-            ).properties(height=300, title='Ambulance Usage by Triage Color')
-            st.altair_chart(chart, use_container_width=True)
+            if not avoidable_by_triage.empty:
+                chart = alt.Chart(avoidable_by_triage).mark_bar().encode(
+                    x=alt.X('triage_color:N', title='Triage Color'),
+                    y=alt.Y('ambulance_usage_pct:Q', title='Ambulance Usage (%)'),
+                    color=alt.Color('triage_color:N', legend=None),
+                    tooltip=['triage_color', 'ambulance_usage_pct']
+                ).properties(height=300, title='Ambulance Usage by Triage Color')
+                
+                safe_altair_chart(chart)
+            else:
+                st.info("No ambulance usage data by triage color")
+    else:
+        st.info("No ambulance usage data available")
 
 # ======== Data / Admin Tab ========
 with tabs[4]:
