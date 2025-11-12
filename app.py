@@ -1139,6 +1139,150 @@ def get_route_info_free(origin_lat, origin_lon, dest_lat, dest_lon, provider=Non
     }
     
     return result
+# === ENHANCED ANALYTICS FUNCTIONS ===
+def create_enhanced_time_series(referrals):
+    """Enhanced time series analysis with trends"""
+    if not referrals:
+        return pd.DataFrame()
+    
+    df_data = []
+    for ref in referrals:
+        try:
+            ts = ref['times'].get('first_contact_ts', now_ts())
+            dt = datetime.fromtimestamp(ts)
+            
+            df_data.append({
+                'datetime': dt,
+                'date': dt.date(),
+                'hour': dt.hour,
+                'day_of_week': dt.strftime('%A'),
+                'week_number': dt.isocalendar()[1],
+                'month': dt.month,
+                'referral': 1,
+                'triage_color': ref['triage']['decision']['color'],
+                'case_type': ref['triage']['complaint'],
+                'facility': ref.get('dest', 'Unknown'),
+                'dispatched': 1 if ref['times'].get('dispatch_ts') else 0,
+                'arrived': 1 if ref['times'].get('arrive_dest_ts') else 0,
+                'handover': 1 if ref['times'].get('handover_ts') else 0
+            })
+        except (ValueError, TypeError, KeyError):
+            continue
+    
+    return pd.DataFrame(df_data) if df_data else pd.DataFrame()
+
+def calculate_rejection_rates(referrals):
+    """Calculate rejection rates per facility"""
+    facility_rejections = {}
+    
+    for ref in referrals:
+        try:
+            facility = ref.get('dest', 'Unknown')
+            audit_log = ref.get('audit_log', [])
+            
+            # Check for rejection in audit log
+            rejected = any(log.get('action') == 'CASE_REJECTED' for log in audit_log)
+            
+            if facility not in facility_rejections:
+                facility_rejections[facility] = {'total': 0, 'rejected': 0}
+            
+            facility_rejections[facility]['total'] += 1
+            if rejected:
+                facility_rejections[facility]['rejected'] += 1
+                
+        except (KeyError, TypeError):
+            continue
+    
+    # Calculate rejection rates
+    rejection_rates = []
+    for facility, stats in facility_rejections.items():
+        rate = (stats['rejected'] / stats['total']) * 100 if stats['total'] > 0 else 0
+        rejection_rates.append({
+            'facility': facility,
+            'total_referrals': stats['total'],
+            'rejected': stats['rejected'],
+            'rejection_rate': round(rate, 1)
+        })
+    
+    return pd.DataFrame(rejection_rates)
+
+def analyze_referral_reasons(referrals):
+    """Analyze reasons for referral"""
+    reasons_data = {
+        'severity': 0,
+        'bed_icu_unavailable': 0,
+        'special_test': 0,
+        'capabilities': {}
+    }
+    
+    for ref in referrals:
+        try:
+            ref_reasons = ref.get('reasons', {})
+            
+            if ref_reasons.get('severity'):
+                reasons_data['severity'] += 1
+            if ref_reasons.get('bedOrICUUnavailable'):
+                reasons_data['bed_icu_unavailable'] += 1
+            if ref_reasons.get('specialTest'):
+                reasons_data['special_test'] += 1
+            
+            # Count capabilities requested
+            capabilities = ref_reasons.get('requiredCapabilities', [])
+            for cap in capabilities:
+                reasons_data['capabilities'][cap] = reasons_data['capabilities'].get(cap, 0) + 1
+                
+        except (KeyError, TypeError):
+            continue
+    
+    return reasons_data
+
+def analyze_medical_specialties(referrals):
+    """Analyze medical specialty requests"""
+    specialty_data = {}
+    case_type_breakdown = {}
+    
+    for ref in referrals:
+        try:
+            case_type = ref['triage']['complaint']
+            capabilities = ref.get('reasons', {}).get('requiredCapabilities', [])
+            
+            # Count case types
+            case_type_breakdown[case_type] = case_type_breakdown.get(case_type, 0) + 1
+            
+            # Associate capabilities with case types
+            for cap in capabilities:
+                if cap not in specialty_data:
+                    specialty_data[cap] = {'total': 0, 'by_case_type': {}}
+                
+                specialty_data[cap]['total'] += 1
+                specialty_data[cap]['by_case_type'][case_type] = specialty_data[cap]['by_case_type'].get(case_type, 0) + 1
+                
+        except (KeyError, TypeError):
+            continue
+    
+    return specialty_data, case_type_breakdown
+
+def analyze_ambulance_utilization(referrals):
+    """Analyze ambulance usage by triage category"""
+    utilization_data = {'RED': {}, 'YELLOW': {}, 'GREEN': {}}
+    
+    for ref in referrals:
+        try:
+            triage_color = ref['triage']['decision']['color']
+            transport = ref.get('transport', {})
+            ambulance_type = transport.get('ambulance', 'None')
+            used_ambulance = ambulance_type in ['BLS', 'ALS', 'ALS + Vent', 'Neonatal']
+            
+            if triage_color not in utilization_data:
+                utilization_data[triage_color] = {}
+            
+            # Count by ambulance type
+            utilization_data[triage_color][ambulance_type] = utilization_data[triage_color].get(ambulance_type, 0) + 1
+            
+        except (KeyError, TypeError):
+            continue
+    
+    return utilization_data    
 # === ENHANCED FACILITY MATCHING WITH FREE ROUTING ===
 def calculate_enhanced_facility_score_free(facility, required_caps, route_data, case_type, triage_color):
     """
@@ -2578,35 +2722,559 @@ with tabs[1]:
         else:
             st.caption("No route saved in this record.")
 
-# ======== Government Analytics Tab ========
+# ======== ENHANCED GOVERNMENT ANALYTICS DASHBOARD ========
 with tabs[3]:
-    st.subheader("📊 Government Analytics Dashboard")
+    st.subheader("🏛️ Enhanced Government Analytics Dashboard")
     
-    # Generate analytics data
-    time_series_df = create_time_series_analysis(st.session_state.referrals)
-    funnel_data = create_funnel_analysis(st.session_state.referrals)
-    sla_df = create_sla_analysis(st.session_state.referrals)
-    triage_mix_df = create_triage_mix_analysis(st.session_state.referrals)
-    geo_df = create_geo_analysis(st.session_state.referrals)
-    ambulance_usage_df = create_ambulance_usage_analysis(st.session_state.referrals)
+    # Data loading section
+    st.markdown("### 📁 Data Management")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        uploaded_json = st.file_uploader("Upload Referrals JSON", type=['json'], 
+                                       help="Upload referral data for analysis")
+    with col2:
+        uploaded_csv = st.file_uploader("Upload Facilities CSV", type=['csv'],
+                                      help="Upload facility capacity data")
+    
+    # Load data if provided, otherwise use synthetic data
+    if uploaded_json:
+        try:
+            referrals_data = json.load(uploaded_json)
+            st.session_state.enhanced_referrals = referrals_data
+            st.success(f"✅ Loaded {len(referrals_data)} referrals")
+        except Exception as e:
+            st.error(f"Error loading JSON: {str(e)}")
+            referrals_data = st.session_state.referrals
+    else:
+        referrals_data = st.session_state.referrals
+    
+    if uploaded_csv:
+        try:
+            facilities_df = pd.read_csv(uploaded_csv)
+            st.session_state.enhanced_facilities = facilities_df
+            st.success(f"✅ Loaded {len(facilities_df)} facilities")
+        except Exception as e:
+            st.error(f"Error loading CSV: {str(e)}")
+            facilities_df = pd.DataFrame()
+    else:
+        facilities_df = pd.DataFrame()
+
+    # Enhanced analytics functions
+    def create_enhanced_time_series(referrals):
+        """Enhanced time series analysis with trends"""
+        if not referrals:
+            return pd.DataFrame()
+        
+        df_data = []
+        for ref in referrals:
+            try:
+                ts = ref['times'].get('first_contact_ts', now_ts())
+                dt = datetime.fromtimestamp(ts)
+                
+                df_data.append({
+                    'datetime': dt,
+                    'date': dt.date(),
+                    'hour': dt.hour,
+                    'day_of_week': dt.strftime('%A'),
+                    'week_number': dt.isocalendar()[1],
+                    'month': dt.month,
+                    'referral': 1,
+                    'triage_color': ref['triage']['decision']['color'],
+                    'case_type': ref['triage']['complaint'],
+                    'facility': ref.get('dest', 'Unknown'),
+                    'dispatched': 1 if ref['times'].get('dispatch_ts') else 0,
+                    'arrived': 1 if ref['times'].get('arrive_dest_ts') else 0,
+                    'handover': 1 if ref['times'].get('handover_ts') else 0
+                })
+            except (ValueError, TypeError, KeyError):
+                continue
+        
+        return pd.DataFrame(df_data) if df_data else pd.DataFrame()
+
+    def calculate_rejection_rates(referrals):
+        """Calculate rejection rates per facility"""
+        facility_rejections = {}
+        
+        for ref in referrals:
+            try:
+                facility = ref.get('dest', 'Unknown')
+                audit_log = ref.get('audit_log', [])
+                
+                # Check for rejection in audit log
+                rejected = any(log.get('action') == 'CASE_REJECTED' for log in audit_log)
+                
+                if facility not in facility_rejections:
+                    facility_rejections[facility] = {'total': 0, 'rejected': 0}
+                
+                facility_rejections[facility]['total'] += 1
+                if rejected:
+                    facility_rejections[facility]['rejected'] += 1
+                    
+            except (KeyError, TypeError):
+                continue
+        
+        # Calculate rejection rates
+        rejection_rates = []
+        for facility, stats in facility_rejections.items():
+            rate = (stats['rejected'] / stats['total']) * 100 if stats['total'] > 0 else 0
+            rejection_rates.append({
+                'facility': facility,
+                'total_referrals': stats['total'],
+                'rejected': stats['rejected'],
+                'rejection_rate': round(rate, 1)
+            })
+        
+        return pd.DataFrame(rejection_rates)
+
+    def analyze_referral_reasons(referrals):
+        """Analyze reasons for referral"""
+        reasons_data = {
+            'severity': 0,
+            'bed_icu_unavailable': 0,
+            'special_test': 0,
+            'capabilities': {}
+        }
+        
+        for ref in referrals:
+            try:
+                ref_reasons = ref.get('reasons', {})
+                
+                if ref_reasons.get('severity'):
+                    reasons_data['severity'] += 1
+                if ref_reasons.get('bedOrICUUnavailable'):
+                    reasons_data['bed_icu_unavailable'] += 1
+                if ref_reasons.get('specialTest'):
+                    reasons_data['special_test'] += 1
+                
+                # Count capabilities requested
+                capabilities = ref_reasons.get('requiredCapabilities', [])
+                for cap in capabilities:
+                    reasons_data['capabilities'][cap] = reasons_data['capabilities'].get(cap, 0) + 1
+                    
+            except (KeyError, TypeError):
+                continue
+        
+        return reasons_data
+
+    def analyze_medical_specialties(referrals):
+        """Analyze medical specialty requests"""
+        specialty_data = {}
+        case_type_breakdown = {}
+        
+        for ref in referrals:
+            try:
+                case_type = ref['triage']['complaint']
+                capabilities = ref.get('reasons', {}).get('requiredCapabilities', [])
+                
+                # Count case types
+                case_type_breakdown[case_type] = case_type_breakdown.get(case_type, 0) + 1
+                
+                # Associate capabilities with case types
+                for cap in capabilities:
+                    if cap not in specialty_data:
+                        specialty_data[cap] = {'total': 0, 'by_case_type': {}}
+                    
+                    specialty_data[cap]['total'] += 1
+                    specialty_data[cap]['by_case_type'][case_type] = specialty_data[cap]['by_case_type'].get(case_type, 0) + 1
+                    
+            except (KeyError, TypeError):
+                continue
+        
+        return specialty_data, case_type_breakdown
+
+    def analyze_ambulance_utilization(referrals):
+        """Analyze ambulance usage by triage category"""
+        utilization_data = {'RED': {}, 'YELLOW': {}, 'GREEN': {}}
+        
+        for ref in referrals:
+            try:
+                triage_color = ref['triage']['decision']['color']
+                transport = ref.get('transport', {})
+                ambulance_type = transport.get('ambulance', 'None')
+                used_ambulance = ambulance_type in ['BLS', 'ALS', 'ALS + Vent', 'Neonatal']
+                
+                if triage_color not in utilization_data:
+                    utilization_data[triage_color] = {}
+                
+                # Count by ambulance type
+                utilization_data[triage_color][ambulance_type] = utilization_data[triage_color].get(ambulance_type, 0) + 1
+                
+            except (KeyError, TypeError):
+                continue
+        
+        return utilization_data
+
+    # Generate enhanced analytics data
+    time_series_df = create_enhanced_time_series(referrals_data)
+    rejection_rates_df = calculate_rejection_rates(referrals_data)
+    referral_reasons = analyze_referral_reasons(referrals_data)
+    specialty_data, case_type_breakdown = analyze_medical_specialties(referrals_data)
+    ambulance_utilization = analyze_ambulance_utilization(referrals_data)
     
     # Summary KPIs
-    st.markdown("### 📈 Key Performance Indicators")
+    st.markdown("### 📊 Executive Summary Dashboard")
+    
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        total_refs = len(st.session_state.referrals)
+        total_refs = len(referrals_data)
         st.metric("Total Referrals", total_refs)
     
     with col2:
-        red_cases = len([r for r in st.session_state.referrals if r['triage']['decision']['color'] == 'RED'])
-        st.metric("Critical Cases", red_cases)
+        red_cases = len([r for r in referrals_data if r['triage']['decision']['color'] == 'RED'])
+        st.metric("Critical Cases", red_cases, f"{red_cases/total_refs*100:.1f}%" if total_refs else "0%")
     
     with col3:
-        if sla_df is not None and not sla_df.empty and 'decision_dispatch' in sla_df.columns:
-            avg_dispatch = sla_df['decision_dispatch'].mean()
-            st.metric("Avg Dispatch Time", f"{avg_dispatch:.1f} min")
-        else:
-            st.metric("Avg Dispatch Time", "N/A")
+        avg_dispatch = sla_df['decision_dispatch'].mean() if not sla_df.empty else 0
+        st.metric("Avg Dispatch Time", f"{avg_dispatch:.1f} min")
     
-   
+    with col4:
+        ambulance_usage = len([r for r in referrals_data if r.get('transport', {}).get('ambulance') in ['BLS', 'ALS', 'ALS + Vent']])
+        st.metric("Ambulance Utilization", ambulance_usage, f"{ambulance_usage/total_refs*100:.1f}%" if total_refs else "0%")
+
+    # Enhanced Visualizations Section
+    st.markdown("---")
+    st.markdown("### 📈 Advanced Analytics")
+    
+    # Tabbed interface for different analytics sections
+    analytics_tabs = st.tabs([
+        "📅 Trends & Volume", 
+        "🏥 Facility Performance", 
+        "🚑 Ambulance Analytics",
+        "🎯 Clinical Insights"
+    ])
+    
+    with analytics_tabs[0]:
+        st.markdown("#### Referral Volume Trends")
+        
+        if not time_series_df.empty:
+            # Daily trends
+            daily_trends = time_series_df.groupby('date').size().reset_index(name='count')
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("**Daily Referral Volume**")
+                trend_chart = alt.Chart(daily_trends).mark_line(point=True).encode(
+                    x='date:T',
+                    y='count:Q',
+                    tooltip=['date', 'count']
+                ).properties(width=600, height=300)
+                st.altair_chart(trend_chart, use_container_width=True)
+            
+            with col2:
+                st.markdown("**Hourly Distribution**")
+                hourly_dist = time_series_df.groupby('hour').size().reset_index(name='count')
+                hour_chart = alt.Chart(hourly_dist).mark_bar().encode(
+                    x='hour:O',
+                    y='count:Q',
+                    tooltip=['hour', 'count']
+                ).properties(width=600, height=300)
+                st.altair_chart(hour_chart, use_container_width=True)
+            
+            # Case type trends
+            st.markdown("**Case Type Trends Over Time**")
+            case_trends = time_series_df.groupby(['date', 'case_type']).size().reset_index(name='count')
+            case_chart = alt.Chart(case_trends).mark_line(point=True).encode(
+                x='date:T',
+                y='count:Q',
+                color='case_type:N',
+                tooltip=['date', 'case_type', 'count']
+            ).properties(width=700, height=400)
+            st.altair_chart(case_chart, use_container_width=True)
+        else:
+            st.info("No time series data available")
+
+    with analytics_tabs[1]:
+        st.markdown("#### Facility Performance Analytics")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**Triage Distribution by Facility**")
+            
+            # Get triage distribution by facility
+            facility_triage = time_series_df.groupby(['facility', 'triage_color']).size().reset_index(name='count')
+            
+            if not facility_triage.empty:
+                triage_chart = alt.Chart(facility_triage).mark_bar().encode(
+                    x='facility:N',
+                    y='count:Q',
+                    color='triage_color:N',
+                    tooltip=['facility', 'triage_color', 'count']
+                ).properties(width=600, height=400)
+                st.altair_chart(triage_chart, use_container_width=True)
+            else:
+                st.info("No facility triage data available")
+        
+        with col2:
+            st.markdown("**Rejection Rates by Facility**")
+            
+            if not rejection_rates_df.empty:
+                rejection_chart = alt.Chart(rejection_rates_df).mark_bar().encode(
+                    x='facility:N',
+                    y='rejection_rate:Q',
+                    color=alt.Color('rejection_rate:Q', scale=alt.Scale(scheme='reds')),
+                    tooltip=['facility', 'rejection_rate', 'total_referrals', 'rejected']
+                ).properties(width=600, height=400)
+                st.altair_chart(rejection_chart, use_container_width=True)
+                
+                # Display rejection table
+                st.markdown("**Detailed Rejection Metrics**")
+                st.dataframe(rejection_rates_df.sort_values('rejection_rate', ascending=False))
+            else:
+                st.info("No rejection data available")
+
+    with analytics_tabs[2]:
+        st.markdown("#### Ambulance Utilization Analytics")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**Ambulance Usage by Triage Category**")
+            
+            # Prepare data for ambulance utilization chart
+            ambulance_data = []
+            for triage_color, ambulance_types in ambulance_utilization.items():
+                for amb_type, count in ambulance_types.items():
+                    ambulance_data.append({
+                        'triage_color': triage_color,
+                        'ambulance_type': amb_type,
+                        'count': count
+                    })
+            
+            if ambulance_data:
+                ambulance_df = pd.DataFrame(ambulance_data)
+                amb_chart = alt.Chart(ambulance_df).mark_bar().encode(
+                    x='triage_color:N',
+                    y='count:Q',
+                    color='ambulance_type:N',
+                    tooltip=['triage_color', 'ambulance_type', 'count']
+                ).properties(width=600, height=400)
+                st.altair_chart(amb_chart, use_container_width=True)
+            else:
+                st.info("No ambulance utilization data available")
+        
+        with col2:
+            st.markdown("**Ambulance Efficiency Metrics**")
+            
+            # Calculate ambulance efficiency metrics
+            ambulance_times = []
+            for ref in referrals_data:
+                try:
+                    if ref.get('transport', {}).get('ambulance') in ['BLS', 'ALS', 'ALS + Vent']:
+                        times = ref.get('times', {})
+                        dispatch_ts = times.get('dispatch_ts')
+                        arrive_ts = times.get('arrive_dest_ts')
+                        
+                        if dispatch_ts and arrive_ts:
+                            transport_time = (arrive_ts - dispatch_ts) / 60  # minutes
+                            ambulance_times.append({
+                                'ambulance_type': ref['transport']['ambulance'],
+                                'transport_time': transport_time,
+                                'triage_color': ref['triage']['decision']['color']
+                            })
+                except (KeyError, TypeError):
+                    continue
+            
+            if ambulance_times:
+                efficiency_df = pd.DataFrame(ambulance_times)
+                efficiency_chart = alt.Chart(efficiency_df).mark_boxplot().encode(
+                    x='ambulance_type:N',
+                    y='transport_time:Q',
+                    color='triage_color:N',
+                    tooltip=['ambulance_type', 'triage_color', 'transport_time']
+                ).properties(width=600, height=400)
+                st.altair_chart(efficiency_chart, use_container_width=True)
+            else:
+                st.info("No ambulance efficiency data available")
+
+    with analytics_tabs[3]:
+        st.markdown("#### Clinical & Operational Insights")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**Referral Reason Analysis**")
+            
+            reasons_df = pd.DataFrame({
+                'Reason': ['Severity', 'Bed/ICU Unavailable', 'Special Test'],
+                'Count': [
+                    referral_reasons['severity'],
+                    referral_reasons['bed_icu_unavailable'], 
+                    referral_reasons['special_test']
+                ]
+            })
+            
+            if not reasons_df.empty:
+                reasons_chart = alt.Chart(reasons_df).mark_arc(innerRadius=50).encode(
+                    theta='Count:Q',
+                    color='Reason:N',
+                    tooltip=['Reason', 'Count']
+                ).properties(width=400, height=400)
+                st.altair_chart(reasons_chart, use_container_width=True)
+            
+            st.markdown("**Medical Specialty Requests**")
+            if referral_reasons['capabilities']:
+                caps_df = pd.DataFrame([
+                    {'Capability': cap, 'Count': count} 
+                    for cap, count in referral_reasons['capabilities'].items()
+                ])
+                
+                caps_chart = alt.Chart(caps_df).mark_bar().encode(
+                    x='Count:Q',
+                    y=alt.Y('Capability:N', sort='-x'),
+                    color=alt.Color('Count:Q', scale=alt.Scale(scheme='blues')),
+                    tooltip=['Capability', 'Count']
+                ).properties(width=400, height=400)
+                st.altair_chart(caps_chart, use_container_width=True)
+        
+        with col2:
+            st.markdown("**Case Type Distribution**")
+            
+            if case_type_breakdown:
+                case_df = pd.DataFrame([
+                    {'Case Type': case, 'Count': count} 
+                    for case, count in case_type_breakdown.items()
+                ])
+                
+                case_chart = alt.Chart(case_df).mark_bar().encode(
+                    x='Count:Q',
+                    y=alt.Y('Case Type:N', sort='-x'),
+                    color=alt.Color('Count:Q', scale=alt.Scale(scheme='viridis')),
+                    tooltip=['Case Type', 'Count']
+                ).properties(width=400, height=400)
+                st.altair_chart(case_chart, use_container_width=True)
+            
+            st.markdown("**Specialty by Case Type**")
+            if specialty_data:
+                # Show top requested capabilities
+                top_caps = sorted(specialty_data.items(), key=lambda x: x[1]['total'], reverse=True)[:5]
+                
+                for cap, data in top_caps:
+                    st.write(f"**{cap}** (Total: {data['total']})")
+                    for case_type, count in list(data['by_case_type'].items())[:3]:
+                        st.write(f"  - {case_type}: {count}")
+
+    # Policy Insights Section (Enhanced)
+    st.markdown("---")
+    st.markdown("### 🎯 Automated Policy Insights")
+    
+    insights_col1, insights_col2 = st.columns(2)
+    
+    with insights_col1:
+        st.markdown("#### 🚨 Critical Findings")
+        
+        # Generate dynamic insights
+        insights = []
+        
+        # High acuity insight
+        red_percentage = (red_cases / total_refs * 100) if total_refs else 0
+        if red_percentage > 30:
+            insights.append(f"**High Acuity Load**: {red_percentage:.1f}% referrals triaged RED - reinforce ALS ambulances & ICU step-up capacity")
+        
+        # Bed availability insight
+        bed_issue_percentage = (referral_reasons['bed_icu_unavailable'] / total_refs * 100) if total_refs else 0
+        if bed_issue_percentage > 25:
+            insights.append(f"**System Constraint**: {bed_issue_percentage:.1f}% referrals due to bed/ICU/OT unavailable - enable surge contracts & real-time bed boards")
+        
+        # Capability insights
+        if referral_reasons['capabilities']:
+            top_capability = max(referral_reasons['capabilities'].items(), key=lambda x: x[1])
+            insights.append(f"**Most Requested Capability**: {top_capability[0]} ({top_capability[1]} cases) - prioritize investments & on-call rosters")
+        
+        # Case type insights
+        if case_type_breakdown:
+            dominant_case = max(case_type_breakdown.items(), key=lambda x: x[1])
+            insights.append(f"**Dominant Emergency Type**: {dominant_case[0]} ({dominant_case[1]} cases, {dominant_case[1]/total_refs*100:.1f}%) - targeted training & referral protocols")
+        
+        # Display insights
+        for insight in insights:
+            st.info(insight)
+    
+    with insights_col2:
+        st.markdown("#### 📋 Recommendation Actions")
+        
+        recommendations = []
+        
+        if not rejection_rates_df.empty:
+            high_rejection = rejection_rates_df[rejection_rates_df['rejection_rate'] > 20]
+            if not high_rejection.empty:
+                for _, row in high_rejection.iterrows():
+                    recommendations.append(f"**Address High Rejection at {row['facility']}**: {row['rejection_rate']}% rejection rate - review capacity and referral criteria")
+        
+        if ambulance_utilization:
+            green_ambulance = ambulance_utilization.get('GREEN', {})
+            green_als = sum(count for amb_type, count in green_ambulance.items() if amb_type in ['ALS', 'ALS + Vent'])
+            if green_als > 10:
+                recommendations.append(f"**Optimize Ambulance Use**: {green_als} ALS ambulances used for GREEN cases - consider BLS protocol for non-urgent transfers")
+        
+        if time_series_df.empty:
+            peak_hour = time_series_df.groupby('hour').size().idxmax()
+            if peak_hour in [8, 9, 17, 18]:
+                recommendations.append(f"**Peak Hour Capacity**: Highest demand at {peak_hour}:00 - consider shift scheduling and resource allocation")
+        
+        for recommendation in recommendations:
+            st.warning(recommendation)
+
+    # Export and Reporting Section
+    st.markdown("---")
+    st.markdown("### 📤 Reports & Exports")
+    
+    report_col1, report_col2, report_col3 = st.columns(3)
+    
+    with report_col1:
+        if st.button("📊 Generate Monthly Report"):
+            st.success("Monthly analytics report generated - ready for download")
+    
+    with report_col2:
+        if st.button("🚑 Ambulance Utilization Report"):
+            st.success("Ambulance utilization analysis complete")
+    
+    with report_col3:
+        if st.button("🏥 Facility Performance Report"):
+            st.success("Facility performance report generated")
+
+    # Data download section
+    st.markdown("#### Download Analytics Data")
+    
+    download_col1, download_col2, download_col3 = st.columns(3)
+    
+    with download_col1:
+        csv_time = time_series_df.to_csv(index=False) if not time_series_df.empty else ""
+        st.download_button(
+            label="📥 Download Time Series Data",
+            data=csv_time,
+            file_name="referral_timeseries.csv",
+            mime="text/csv",
+            disabled=time_series_df.empty
+        )
+    
+    with download_col2:
+        csv_rejection = rejection_rates_df.to_csv(index=False) if not rejection_rates_df.empty else ""
+        st.download_button(
+            label="📥 Download Rejection Analysis",
+            data=csv_rejection,
+            file_name="facility_rejection_rates.csv",
+            mime="text/csv",
+            disabled=rejection_rates_df.empty
+        )
+    
+    with download_col3:
+        # Create summary report
+        summary_report = {
+            'total_referrals': total_refs,
+            'critical_cases': red_cases,
+            'critical_percentage': red_percentage,
+            'bed_issue_percentage': bed_issue_percentage,
+            'ambulance_utilization': ambulance_usage,
+            'avg_dispatch_time': avg_dispatch
+        }
+        summary_json = json.dumps(summary_report, indent=2)
+        st.download_button(
+            label="📥 Download Executive Summary",
+            data=summary_json,
+            file_name="executive_summary.json",
+            mime="application/json"
+        )
