@@ -32,6 +32,124 @@ ORS_BASE_URL = "https://api.openrouteservice.org"  # Requires free API key but g
 DISTANCE_CACHE = {}
 CACHE_DURATION = timedelta(hours=24)  # Refresh cache every 24 hours
 
+# === FREE ROUTING CONFIGURATION UI ===
+def show_free_routing_configuration():
+    """
+    Show free routing provider configuration in the UI
+    """
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("🆓 Free Routing Configuration")
+    
+    # Provider selection
+    provider = st.sidebar.selectbox(
+        "Routing Provider",
+        ["osrm", "graphhopper", "openrouteservice"],
+        index=0,
+        format_func=lambda x: {
+            "osrm": "OSRM (Recommended - Free)",
+            "graphhopper": "GraphHopper (Free Tier)", 
+            "openrouteservice": "OpenRouteService (Free)"
+        }[x]
+    )
+    
+    # Traffic simulation settings
+    st.sidebar.markdown("**Traffic Simulation**")
+    enable_traffic = st.sidebar.checkbox("Simulate traffic patterns", value=True)
+    
+    if enable_traffic:
+        st.sidebar.info("Traffic simulation considers:\n- Peak hours (7-10 AM, 5-8 PM)\n- Weekends vs weekdays")
+    
+    # Cache management
+    col1, col2 = st.sidebar.columns(2)
+    with col1:
+        if st.button("🔄 Clear Cache"):
+            DISTANCE_CACHE.clear()
+            st.success("Route cache cleared!")
+    with col2:
+        st.metric("Cached Routes", len(DISTANCE_CACHE))
+    
+    # Provider info
+    if provider == "osrm":
+        st.sidebar.success("**OSRM**: Open Source • No API Key • Global Coverage")
+    elif provider == "graphhopper":
+        st.sidebar.info("**GraphHopper**: Free Tier • Good Accuracy")
+    else:
+        st.sidebar.info("**OpenRouteService**: Free with Registration")
+    
+    return provider, enable_traffic
+
+# === ENHANCED FACILITY CARD WITH ROUTING INFO ===
+def enhanced_facility_card(row, rank, is_primary=False, is_alternate=False):
+    """
+    Enhanced facility card with routing information
+    """
+    with st.container():
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        
+        # Header with routing status indicator
+        header_col1, header_col2 = st.columns([3, 1])
+        with header_col1:
+            if is_primary:
+                st.markdown(f"#### 🏥 {row['name']} 🥇 <span class='priority-badge'>PRIMARY</span>", unsafe_allow_html=True)
+            elif is_alternate:
+                st.markdown(f"#### 🏥 {row['name']} 🥈 <span class='alternate-badge'>ALTERNATE</span>", unsafe_allow_html=True)
+            else:
+                st.markdown(f"#### 🏥 {row['name']} #{rank}", unsafe_allow_html=True)
+            
+            # Routing status indicator
+            if row.get('routing_success'):
+                if row.get('estimated'):
+                    st.markdown('<span class="badge warn">⚠ Estimated ETA</span>', unsafe_allow_html=True)
+                else:
+                    st.markdown('<span class="badge ok">✓ Live Routing</span>', unsafe_allow_html=True)
+            else:
+                st.markdown('<span class="badge warn">⚠ Estimated ETA</span>', unsafe_allow_html=True)
+        
+        with header_col2:
+            st.markdown(f"**Match Score: {row['score']}**", unsafe_allow_html=True)
+        
+        # Enhanced info with real routing data
+        if isinstance(row['eta_min'], (int, float)):
+            traffic_info = f" (Traffic: {row['traffic_factor']}x)" if row.get('traffic_factor', 1.0) > 1.0 else ""
+            provider_info = f" • {row.get('routing_provider', '')}"
+            sub = f"ETA ~ {row['eta_min']} min{traffic_info}{provider_info} • {row['km']} km • ICU beds: {row['ICU_open']} • Acceptance: {row['accept']}%"
+        else:
+            sub = f"Distance: {row['km']} km • ICU beds: {row['ICU_open']} • Acceptance: {row['accept']}%"
+        
+        st.markdown(f'<div class="small">{sub}</div>', unsafe_allow_html=True)
+        
+        # Enhanced scoring breakdown
+        with st.expander("Enhanced Score Details"):
+            details = row.get("scoring_details", {})
+            st.write(f"**Capability Match:** {details.get('capability_score', 0)}")
+            st.write(f"**Proximity (ETA-based):** {details.get('proximity_score', 0)}")
+            if 'eta_minutes' in details and isinstance(details['eta_minutes'], (int, float)):
+                st.write(f"**Driving Time:** {details['eta_minutes']} min")
+            if 'traffic_factor' in details:
+                st.write(f"**Traffic Impact:** {details['traffic_factor']}x")
+            st.write(f"**ICU Availability:** {details.get('icu_score', 0)}")
+            st.write(f"**Acceptance Rate:** {details.get('acceptance_score', 0)}")
+            st.write(f"**Specialization Bonus:** {details.get('specialization_bonus', 0)}")
+        
+        st.markdown("**Specialties**")
+        cap_badges(row.get("specialties",""))
+        
+        st.markdown("**High-end equipment**")
+        cap_badges(row.get("highend",""))
+        
+        st.markdown('<hr class="soft" />', unsafe_allow_html=True)
+        
+        # Action buttons
+        cta1, cta2 = st.columns(2)
+        pick_label = "Select as primary" if not is_primary else "✓ Primary selected"
+        alt_label = "Add as alternate" if not is_alternate else "✓ Alternate"
+        
+        pick = cta1.button(pick_label, key=f"pick_{row['name']}", disabled=is_primary)
+        alt = cta2.button(alt_label, key=f"alt_{row['name']}", disabled=is_alternate)
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+        return pick, alt
+    
 # === LOAD ICD CATALOG FROM CSV ===
 def load_icd_catalogue():
     """Load ICD catalog from CSV file with robust error handling."""
