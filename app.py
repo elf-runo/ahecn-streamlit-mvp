@@ -12,6 +12,10 @@ import altair as alt
 import os
 import requests
 import urllib.parse
+import asyncio
+import threading
+from collections import deque
+
 # Clear any cached widget states (development only)
 if 'widget_key_reset' not in st.session_state:
     st.session_state.widget_key_reset = True
@@ -23,6 +27,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed"
 )
+
 # === FREE ROUTING CONFIGURATION ===
 # Choose your free routing provider: 'osrm' (recommended) or 'openrouteservice'
 ROUTING_PROVIDER = 'osrm'
@@ -80,6 +85,570 @@ def show_free_routing_configuration():
         st.sidebar.info("**OpenRouteService**: Free with Registration")
     
     return provider, enable_traffic
+
+# === REAL-TIME EVENT SYSTEM ===
+class RealTimeEventSystem:
+    def __init__(self):
+        self.events = []
+        self.subscribers = []
+    
+    def publish_event(self, event_type, data, user=None, facility=None):
+        """Publish system-wide event"""
+        event = {
+            "id": f"evt_{int(time.time())}_{len(self.events)}",
+            "timestamp": time.time(),
+            "type": event_type,
+            "data": data,
+            "user": user or "System",
+            "facility": facility,
+            "read_by": set()
+        }
+        
+        self.events.append(event)
+        st.session_state.system_activities.insert(0, event)
+        
+        # Keep only last 100 events
+        if len(st.session_state.system_activities) > 100:
+            st.session_state.system_activities = st.session_state.system_activities[:100]
+        
+        # Create notification for relevant users
+        self.create_notification(event)
+        
+        return event
+    
+    def create_notification(self, event):
+        """Create targeted notifications based on event type"""
+        notification = {
+            "id": f"notif_{event['id']}",
+            "event_id": event["id"],
+            "timestamp": event["timestamp"],
+            "type": event["type"],
+            "title": self.get_notification_title(event),
+            "message": self.get_notification_message(event),
+            "priority": self.get_notification_priority(event),
+            "target_users": self.get_target_users(event),
+            "facility": event.get("facility"),
+            "read": False,
+            "action_required": self.is_action_required(event)
+        }
+        
+        st.session_state.notifications.append(notification)
+        
+        # Keep only last 50 notifications
+        if len(st.session_state.notifications) > 50:
+            st.session_state.notifications = st.session_state.notifications[:50]
+    
+    def get_notification_title(self, event):
+        """Get appropriate title for event type"""
+        titles = {
+            "CASE_CREATED": "🆕 New Referral Created",
+            "CASE_DISPATCHED": "🚑 Ambulance Dispatched", 
+            "CASE_ACCEPTED": "✅ Case Accepted",
+            "CASE_REJECTED": "❌ Case Rejected",
+            "TRIAGE_OVERRIDE": "⚡ Triage Override",
+            "AMBULANCE_ARRIVED": "🏥 Ambulance Arrived",
+            "HANDOVER_COMPLETE": "🤝 Handover Complete",
+            "CRITICAL_ALERT": "🚨 Critical Alert",
+            "RESOURCE_LOW": "⚠️ Resource Alert",
+            "SYSTEM_ALERT": "🔧 System Alert"
+        }
+        return titles.get(event["type"], "System Notification")
+    
+    def get_notification_message(self, event):
+        """Generate appropriate message for event"""
+        data = event["data"]
+        
+        if event["type"] == "CASE_CREATED":
+            return f"New {data.get('complaint', 'case')} referral for {data.get('patient_name', 'patient')} - {data.get('triage_color', 'Unknown')} triage"
+        
+        elif event["type"] == "CASE_DISPATCHED":
+            return f"Ambulance {data.get('ambulance_type', '')} dispatched to {data.get('facility', 'facility')}"
+            
+        elif event["type"] == "TRIAGE_OVERRIDE":
+            return f"Dr. {event['user']} overrode triage from {data.get('from_color')} to {data.get('to_color')}"
+            
+        elif event["type"] == "CRITICAL_ALERT":
+            return data.get('message', 'Critical situation requiring attention')
+            
+        elif event["type"] == "RESOURCE_LOW":
+            return f"{data.get('resource')} running low: {data.get('level')}"
+        
+        return f"Event: {event['type']}"
+    
+    def get_notification_priority(self, event):
+        """Determine notification priority"""
+        high_priority = ["CRITICAL_ALERT", "TRIAGE_OVERRIDE", "RESOURCE_LOW"]
+        medium_priority = ["CASE_REJECTED", "CASE_DISPATCHED", "AMBULANCE_ARRIVED"]
+        
+        if event["type"] in high_priority:
+            return "HIGH"
+        elif event["type"] in medium_priority:
+            return "MEDIUM"
+        else:
+            return "LOW"
+    
+    def get_target_users(self, event):
+        """Determine which users should receive this notification"""
+        if event["type"] in ["CASE_ACCEPTED", "CASE_REJECTED", "AMBULANCE_ARRIVED"]:
+            return ["receiving_hospital", "ambulance_crew"]
+        elif event["type"] in ["CASE_CREATED", "TRIAGE_OVERRIDE"]:
+            return ["referrer", "coordinator"]
+        elif event["type"] in ["CRITICAL_ALERT", "RESOURCE_LOW"]:
+            return ["all"]
+        else:
+            return ["coordinator"]
+    
+    def is_action_required(self, event):
+        """Check if this notification requires action"""
+        action_events = ["CASE_REJECTED", "CRITICAL_ALERT", "RESOURCE_LOW"]
+        return event["type"] in action_events
+
+# Initialize event system
+event_system = RealTimeEventSystem()
+
+# === REAL-TIME COMPONENT FUNCTIONS ===
+def show_realtime_activity_feed():
+    """Main real-time activity feed component"""
+    st.markdown("### 🔴 Live System Activity")
+    
+    # Auto-refresh toggle
+    col1, col2, col3 = st.columns([2, 1, 1])
+    with col1:
+        auto_refresh = st.checkbox("🔄 Auto-refresh every 10s", value=True)
+    with col2:
+        if st.button("Clear Read"):
+            mark_all_notifications_read()
+    with col3:
+        if st.button("Simulate Activity"):
+            generate_demo_activities()
+    
+    # Auto-refresh logic
+    if auto_refresh:
+        st.rerun()
+    
+    # Show unread notifications count
+    unread_count = len([n for n in st.session_state.notifications if not n.get('read', False)])
+    if unread_count > 0:
+        st.error(f"🚨 {unread_count} unread notifications requiring attention")
+    
+    # Activity feed
+    activities = st.session_state.system_activities[:15]
+    
+    if not activities:
+        st.info("No recent activity. System monitoring for new events...")
+        return
+    
+    for activity in activities:
+        render_activity_item(activity)
+
+def render_activity_item(activity):
+    """Render individual activity item"""
+    timestamp = datetime.fromtimestamp(activity["timestamp"]).strftime("%H:%M:%S")
+    
+    icons = {
+        "CASE_CREATED": "🆕",
+        "CASE_DISPATCHED": "🚑", 
+        "CASE_ACCEPTED": "✅",
+        "CASE_REJECTED": "❌",
+        "TRIAGE_OVERRIDE": "⚡",
+        "AMBULANCE_ARRIVED": "🏥",
+        "HANDOVER_COMPLETE": "🤝",
+        "CRITICAL_ALERT": "🚨",
+        "RESOURCE_LOW": "⚠️",
+        "SYSTEM_ALERT": "🔧"
+    }
+    
+    colors = {
+        "CASE_CREATED": "#3B82F6",
+        "CASE_DISPATCHED": "#F59E0B", 
+        "CASE_ACCEPTED": "#10B981",
+        "CASE_REJECTED": "#EF4444",
+        "TRIAGE_OVERRIDE": "#8B5CF6",
+        "AMBULANCE_ARRIVED": "#06B6D4",
+        "HANDOVER_COMPLETE": "#84CC16",
+        "CRITICAL_ALERT": "#DC2626",
+        "RESOURCE_LOW": "#D97706",
+        "SYSTEM_ALERT": "#6B7280"
+    }
+    
+    icon = icons.get(activity["type"], "🔔")
+    color = colors.get(activity["type"], "#6B7280")
+    
+    with st.container():
+        col1, col2 = st.columns([1, 4])
+        
+        with col1:
+            st.markdown(f"<h3 style='color: {color}; margin: 0;'>{icon}</h3>", unsafe_allow_html=True)
+            st.caption(timestamp)
+        
+        with col2:
+            st.markdown(f"**{activity.get('user', 'System')}**")
+            st.write(f"{activity['data'].get('message', activity['type'])}")
+            
+            if activity.get('facility'):
+                st.caption(f"📍 {activity['facility']}")
+            
+            if activity["type"] in ["CASE_REJECTED", "CRITICAL_ALERT"]:
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    if st.button("Acknowledge", key=f"ack_{activity['id']}"):
+                        acknowledge_event(activity['id'])
+                with col_b:
+                    if st.button("View Details", key=f"view_{activity['id']}"):
+                        show_event_details(activity)
+        
+        st.markdown("---")
+
+def show_notification_center():
+    """Dedicated notification center"""
+    st.markdown("### 📋 Notification Center")
+    
+    notifications = st.session_state.notifications
+    
+    if not notifications:
+        st.info("No notifications at this time")
+        return
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        show_all = st.checkbox("Show all", value=True)
+    with col2:
+        show_unread = st.checkbox("Unread only", value=False)
+    with col3:
+        priority_filter = st.selectbox("Priority", ["All", "HIGH", "MEDIUM", "LOW"])
+    
+    filtered_notifications = notifications
+    
+    if show_unread:
+        filtered_notifications = [n for n in filtered_notifications if not n.get('read', False)]
+    
+    if priority_filter != "All":
+        filtered_notifications = [n for n in filtered_notifications if n.get('priority') == priority_filter]
+    
+    for notification in filtered_notifications[:20]:
+        render_notification_item(notification)
+
+def render_notification_item(notification):
+    """Render individual notification item"""
+    timestamp = datetime.fromtimestamp(notification["timestamp"]).strftime("%H:%M:%S")
+    
+    priority_styles = {
+        "HIGH": "🔴",
+        "MEDIUM": "🟡", 
+        "LOW": "🟢"
+    }
+    
+    priority_icon = priority_styles.get(notification.get('priority', 'LOW'), '⚪')
+    
+    with st.container():
+        col1, col2, col3 = st.columns([3, 1, 1])
+        
+        with col1:
+            read_status = "✓ " if notification.get('read') else ""
+            st.markdown(f"**{priority_icon} {read_status}{notification['title']}**")
+        
+        with col2:
+            st.caption(timestamp)
+        
+        with col3:
+            if notification.get('action_required') and not notification.get('read'):
+                st.error("Action Required")
+            else:
+                st.info("Acknowledged")
+        
+        st.write(notification['message'])
+        
+        if notification.get('facility'):
+            st.caption(f"Facility: {notification['facility']}")
+        
+        if not notification.get('read'):
+            col_a, col_b, col_c = st.columns([1, 1, 2])
+            with col_a:
+                if st.button("Mark Read", key=f"read_{notification['id']}"):
+                    mark_notification_read(notification['id'])
+                    st.rerun()
+            with col_b:
+                if st.button("View Event", key=f"event_{notification['id']}"):
+                    event = next((e for e in st.session_state.system_activities 
+                                if e['id'] == notification['event_id']), None)
+                    if event:
+                        show_event_details(event)
+        
+        st.markdown("---")
+
+def show_live_case_tracker():
+    """Live case tracking dashboard"""
+    st.markdown("### 🚨 Live Case Tracker")
+    
+    if not st.session_state.live_cases:
+        initialize_demo_cases()
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        status_filter = st.selectbox("Case Status", ["All", "DISPATCHED", "ENROUTE", "ARRIVED", "HANDOVER"])
+    with col2:
+        triage_filter = st.selectbox("Triage Level", ["All", "RED", "YELLOW", "GREEN"])
+    with col3:
+        facility_filter = st.selectbox("Facility", ["All"] + list(set(
+            case['facility'] for case in st.session_state.live_cases.values()
+            if case.get('facility')
+        )))
+    
+    filtered_cases = st.session_state.live_cases.copy()
+    
+    if status_filter != "All":
+        filtered_cases = {k: v for k, v in filtered_cases.items() 
+                         if v.get('status') == status_filter}
+    
+    if triage_filter != "All":
+        filtered_cases = {k: v for k, v in filtered_cases.items() 
+                         if v.get('triage_color') == triage_filter}
+    
+    if facility_filter != "All":
+        filtered_cases = {k: v for k, v in filtered_cases.items() 
+                         if v.get('facility') == facility_filter}
+    
+    for case_id, case in list(filtered_cases.items())[:10]:
+        render_live_case(case_id, case)
+
+def render_live_case(case_id, case):
+    """Render individual live case"""
+    with st.container():
+        col1, col2, col3 = st.columns([2, 2, 1])
+        
+        with col1:
+            st.markdown(f"#### {case.get('patient_name', 'Unknown Patient')}")
+            st.write(f"**{case.get('complaint', 'Unknown')}** • {case.get('age', 'N/A')} {case.get('gender', '')}")
+            
+            triage_color = case.get('triage_color', 'GREEN')
+            badge_color = {
+                'RED': '🔴', 
+                'YELLOW': '🟡',
+                'GREEN': '🟢'
+            }.get(triage_color, '⚪')
+            
+            st.markdown(f"{badge_color} **{triage_color}** triage")
+        
+        with col2:
+            status = case.get('status', 'UNKNOWN')
+            progress_data = {
+                "DISPATCHED": 25,
+                "ENROUTE_SCENE": 50, 
+                "ARRIVE_SCENE": 60,
+                "DEPART_SCENE": 75,
+                "ARRIVE_DEST": 90,
+                "HANDOVER": 100
+            }
+            
+            progress = progress_data.get(status, 0)
+            st.progress(progress/100)
+            st.caption(f"Status: {status.replace('_', ' ').title()}")
+            
+            if case.get('eta'):
+                st.write(f"**ETA:** {case['eta']} min")
+        
+        with col3:
+            if status in ["DISPATCHED", "ENROUTE_SCENE"]:
+                if st.button("Update ETA", key=f"eta_{case_id}"):
+                    update_case_eta(case_id)
+            
+            if st.button("View Details", key=f"details_{case_id}"):
+                show_case_details(case)
+        
+        if case.get('latest_vitals'):
+            vitals = case['latest_vitals']
+            vitals_cols = st.columns(5)
+            vitals_cols[0].metric("HR", vitals.get('hr', '--'))
+            vitals_cols[1].metric("SBP", vitals.get('sbp', '--'))
+            vitals_cols[2].metric("SpO2", f"{vitals.get('spo2', '--')}%")
+            vitals_cols[3].metric("RR", vitals.get('rr', '--'))
+            vitals_cols[4].metric("Temp", f"{vitals.get('temp', '--')}°C")
+        
+        st.markdown("---")    
+
+# === REAL-TIME HELPER FUNCTIONS ===
+def mark_notification_read(notification_id):
+    """Mark notification as read"""
+    for notification in st.session_state.notifications:
+        if notification['id'] == notification_id:
+            notification['read'] = True
+            break
+
+def mark_all_notifications_read():
+    """Mark all notifications as read"""
+    for notification in st.session_state.notifications:
+        notification['read'] = True
+
+def acknowledge_event(event_id):
+    """Acknowledge an event"""
+    for activity in st.session_state.system_activities:
+        if activity['id'] == event_id:
+            activity['acknowledged'] = True
+            break
+
+def show_event_details(event):
+    """Show detailed event view"""
+    st.sidebar.markdown("### 🔍 Event Details")
+    st.sidebar.write(f"**Type:** {event['type']}")
+    st.sidebar.write(f"**Time:** {datetime.fromtimestamp(event['timestamp']).strftime('%Y-%m-%d %H:%M:%S')}")
+    st.sidebar.write(f"**User:** {event.get('user', 'System')}")
+    st.sidebar.write(f"**Facility:** {event.get('facility', 'N/A')}")
+    st.sidebar.write("**Data:**")
+    st.sidebar.json(event['data'])
+
+def show_case_details(case):
+    """Show detailed case view"""
+    st.sidebar.markdown("### 📋 Case Details")
+    st.sidebar.write(f"**Patient:** {case.get('patient_name')}")
+    st.sidebar.write(f"**Complaint:** {case.get('complaint')}")
+    st.sidebar.write(f"**Triage:** {case.get('triage_color')}")
+    st.sidebar.write(f"**Status:** {case.get('status')}")
+    st.sidebar.write(f"**Facility:** {case.get('facility')}")
+
+def update_case_eta(case_id):
+    """Update case ETA"""
+    if case_id in st.session_state.live_cases:
+        st.session_state.live_cases[case_id]['eta'] = random.randint(5, 25)
+
+def generate_demo_activities():
+    """Generate demo activities for testing"""
+    demo_events = [
+        {
+            "type": "CASE_CREATED",
+            "data": {"patient_name": "Rani Devi", "complaint": "Maternal", "triage_color": "RED", "message": "New maternal hemorrhage case"},
+            "user": "Dr. Sharma",
+            "facility": "PHC Mawlai"
+        },
+        {
+            "type": "CASE_DISPATCHED", 
+            "data": {"ambulance_type": "ALS", "destination": "Civil Hospital", "message": "ALS ambulance dispatched"},
+            "user": "Dispatcher",
+            "facility": "Civil Hospital"
+        },
+        {
+            "type": "TRIAGE_OVERRIDE",
+            "data": {"from_color": "YELLOW", "to_color": "RED", "reason": "Clinical deterioration", "message": "Triage escalated to RED"},
+            "user": "Dr. Kumar", 
+            "facility": "NEIGRIHMS"
+        },
+        {
+            "type": "RESOURCE_LOW",
+            "data": {"resource": "O- Blood", "level": "3 units", "message": "O- blood supply critical"},
+            "user": "System",
+            "facility": "Blood Bank"
+        }
+    ]
+    
+    for event in demo_events:
+        event_system.publish_event(**event)
+
+def initialize_demo_cases():
+    """Initialize demo live cases"""
+    st.session_state.live_cases = {
+        "CASE_001": {
+            "patient_name": "Rani Devi",
+            "complaint": "Maternal Hemorrhage", 
+            "triage_color": "RED",
+            "age": 28,
+            "gender": "F",
+            "status": "ENROUTE_SCENE",
+            "facility": "Civil Hospital",
+            "eta": 12,
+            "latest_vitals": {"hr": 118, "sbp": 92, "rr": 26, "spo2": 88, "temp": 37.8}
+        },
+        "CASE_002": {
+            "patient_name": "Amit Kumar",
+            "complaint": "STEMI",
+            "triage_color": "RED", 
+            "age": 45,
+            "gender": "M",
+            "status": "ARRIVE_SCENE",
+            "facility": "NEIGRIHMS",
+            "eta": 8,
+            "latest_vitals": {"hr": 105, "sbp": 110, "rr": 22, "spo2": 94, "temp": 36.8}
+        },
+        "CASE_003": {
+            "patient_name": "Priya Singh",
+            "complaint": "Stroke",
+            "triage_color": "YELLOW",
+            "age": 62, 
+            "gender": "F",
+            "status": "DISPATCHED",
+            "facility": "District Hospital",
+            "eta": 15,
+            "latest_vitals": {"hr": 88, "sbp": 150, "rr": 18, "spo2": 96, "temp": 36.5}
+        }
+    }
+
+def integrate_realtime_events():
+    """Hook real-time events into existing workflow"""
+    if "referrals" in st.session_state and st.session_state.referrals:
+        latest_referral = st.session_state.referrals[0]
+        
+        referral_id = latest_referral.get('id')
+        if referral_id not in st.session_state.get('published_referrals', set()):
+            
+            event_system.publish_event(
+                event_type="CASE_CREATED",
+                data={
+                    "patient_name": latest_referral['patient']['name'],
+                    "complaint": latest_referral['triage']['complaint'],
+                    "triage_color": latest_referral['triage']['decision']['color'],
+                    "referrer": latest_referral['referrer']['name'],
+                    "facility": latest_referral.get('dest')
+                },
+                user=latest_referral['referrer']['name'],
+                facility=latest_referral['referrer']['facility']
+            )
+            
+            if 'published_referrals' not in st.session_state:
+                st.session_state.published_referrals = set()
+            st.session_state.published_referrals.add(referral_id)
+            
+            st.session_state.live_cases[referral_id] = {
+                "patient_name": latest_referral['patient']['name'],
+                "complaint": latest_referral['triage']['complaint'],
+                "triage_color": latest_referral['triage']['decision']['color'],
+                "age": latest_referral['patient']['age'],
+                "gender": latest_referral['patient']['sex'],
+                "status": latest_referral.get('status', 'PREALERT'),
+                "facility": latest_referral.get('dest'),
+                "latest_vitals": {
+                    "hr": latest_referral['triage']['hr'],
+                    "sbp": latest_referral['triage']['sbp'],
+                    "rr": latest_referral['triage']['rr'],
+                    "spo2": latest_referral['triage']['spo2'],
+                    "temp": latest_referral['triage']['temp']
+                }
+            }
+
+def publish_triage_override_event(original_color, override_color, reason, user):
+    """Publish triage override event"""
+    event_system.publish_event(
+        event_type="TRIAGE_OVERRIDE",
+        data={
+            "from_color": original_color,
+            "to_color": override_color,
+            "reason": reason,
+            "message": f"Triage overridden from {original_color} to {override_color}"
+        },
+        user=user,
+        facility=st.session_state.get('active_facility')
+    )
+
+def publish_ambulance_dispatch_event(case_id, ambulance_type, destination):
+    """Publish ambulance dispatch event"""
+    event_system.publish_event(
+        event_type="CASE_DISPATCHED",
+        data={
+            "case_id": case_id,
+            "ambulance_type": ambulance_type,
+            "destination": destination,
+            "message": f"{ambulance_type} ambulance dispatched to {destination}"
+        },
+        user="Dispatcher",
+        facility=destination
+    )
 
 # === ENHANCED FACILITY CARD WITH ROUTING INFO ===
 def enhanced_facility_card(row, rank, is_primary=False, is_alternate=False):
@@ -152,7 +721,7 @@ def enhanced_facility_card(row, rank, is_primary=False, is_alternate=False):
         
         st.markdown('</div>', unsafe_allow_html=True)
         return pick, alt
-    
+
 # === LOAD ICD CATALOG FROM CSV ===
 def load_icd_catalogue():
     """Load ICD catalog from CSV file with robust error handling."""
@@ -725,6 +1294,14 @@ def render_triage_banner(hr, rr, sbp, temp, spo2, avpu, complaint, override_appl
     if override_applied and st.session_state.get("triage_override_active", False):
         final_colour = st.session_state.get("triage_override_color", base_colour)
         override_reason = st.session_state.get("triage_override_reason", "")
+        
+        # === ADD REAL-TIME EVENT: Triage Override ===
+        publish_triage_override_event(
+            base_colour,
+            final_colour,
+            override_reason,
+            st.session_state.get('referrer_name', 'Unknown')
+        )
 
     st.markdown("### Triage decision")
     triage_pill(final_colour, overridden=(final_colour != base_colour))
@@ -1142,6 +1719,7 @@ def get_route_info_free(origin_lat, origin_lon, dest_lat, dest_lon, provider=Non
     }
     
     return result
+
 # === ENHANCED ANALYTICS FUNCTIONS ===
 def create_enhanced_time_series(referrals):
     """Enhanced time series analysis with trends"""
@@ -1286,6 +1864,7 @@ def analyze_ambulance_utilization(referrals):
             continue
     
     return utilization_data    
+
 # === ENHANCED FACILITY MATCHING WITH FREE ROUTING ===
 def calculate_enhanced_facility_score_free(facility, required_caps, route_data, case_type, triage_color):
     """
@@ -1747,6 +2326,22 @@ if "referrals" not in st.session_state:
 if "active_fac" not in st.session_state: 
     st.session_state.active_fac = st.session_state.facilities[0]["name"]
 
+# === REAL-TIME SESSION STATE ===
+if "system_activities" not in st.session_state:
+    st.session_state.system_activities = []
+    
+if "notifications" not in st.session_state:
+    st.session_state.notifications = []
+    
+if "live_cases" not in st.session_state:
+    st.session_state.live_cases = {}
+
+if "user_presence" not in st.session_state:
+    st.session_state.user_presence = {}
+
+if "published_referrals" not in st.session_state:
+    st.session_state.published_referrals = set()
+
 # Initialize facility matching session state
 if "matched_primary" not in st.session_state:
     st.session_state.matched_primary = None
@@ -1762,7 +2357,7 @@ if len(st.session_state.referrals) < 100:
 
 # === MAIN APP UI ===
 st.title("AHECN – Streamlit MVP v1.9 (Enhanced Analytics Dashboard)")
-tabs = st.tabs(["Referrer","Ambulance / EMT","Receiving Hospital","Government Analytics","Data / Admin","Facility Admin"])
+tabs = st.tabs(["Referrer","Ambulance / EMT","Receiving Hospital","Government Analytics","Data / Admin","Facility Admin", "🚨 Real-time Dashboard"])
 
 # ======== Referrer Tab ========
 with tabs[0]:
@@ -1781,6 +2376,9 @@ with tabs[0]:
     with c3:
         r_name = st.text_input("Referrer name", "Dr. Smith")
         r_fac = st.text_input("Referrer facility", "PHC Mawlai")
+    
+    # Store referrer name for event system
+    st.session_state.referrer_name = r_name
     
     # Referrer Role Selector
     st.subheader("Referrer Role & Diagnosis")
@@ -1841,7 +2439,8 @@ with tabs[0]:
         st.caption("PEWS disabled for ≥18y")
 
     # Triage decision banner
-    render_triage_banner(hr, rr, sbp, temp, spo2, avpu, complaint)
+    override_applied = st.session_state.get("triage_override_active", False)
+    render_triage_banner(hr, rr, sbp, temp, spo2, avpu, complaint, override_applied)
 
     # === CLINICIAN OVERRIDE CONTROL ===
     st.subheader("Clinician Triage Override")
@@ -2241,14 +2840,14 @@ with tabs[0]:
         # Validate based on role
         if referrer_role == "Doctor/Physician" and dx_payload is None:
             st.error("Please select an ICD diagnosis to create referral")
-            return False
+            return None
         elif referrer_role == "ANM/ASHA/EMT" and not dx_payload.get("label"):
             st.error("Please provide a reason for referral")
-            return False
+            return None
             
         if not primary:
             st.error("Select a primary destination from 'Find Best Matched Facilities' above.")
-            return False
+            return None
             
         vit = dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu, complaint=complaint)
         
@@ -2346,19 +2945,29 @@ with tabs[0]:
             ref["ambulance_available"] = True
             
         st.session_state.referrals.insert(0, ref)
-        return True
+        return ref
 
     col1, col2 = st.columns(2)
     if col1.button("Create referral"):
-        if _save_referral(dispatch=False):
+        ref = _save_referral(dispatch=False)
+        if ref:
             st.success(f"Referral created → {primary}")
             # Reset override after successful referral
             st.session_state.triage_override_active = False
             st.session_state.triage_override_color = None
             st.session_state.triage_override_reason = ""
     if col2.button("Create & dispatch now"):
-        if _save_referral(dispatch=True):
+        ref = _save_referral(dispatch=True)
+        if ref:
             st.success(f"Referral created and DISPATCHED → {primary}")
+            
+            # === ADD REAL-TIME EVENT: Ambulance Dispatch ===
+            publish_ambulance_dispatch_event(
+                ref["id"], 
+                amb_type, 
+                primary
+            )
+            
             # Reset override after successful referral
             st.session_state.triage_override_active = False
             st.session_state.triage_override_color = None
@@ -2884,151 +3493,6 @@ with tabs[3]:
     else:
         facilities_df = pd.DataFrame()
 
-    # Enhanced analytics functions
-    def create_enhanced_time_series(referrals):
-        """Enhanced time series analysis with trends"""
-        if not referrals:
-            return pd.DataFrame()
-        
-        df_data = []
-        for ref in referrals:
-            try:
-                ts = ref['times'].get('first_contact_ts', now_ts())
-                dt = datetime.fromtimestamp(ts)
-                
-                df_data.append({
-                    'datetime': dt,
-                    'date': dt.date(),
-                    'hour': dt.hour,
-                    'day_of_week': dt.strftime('%A'),
-                    'week_number': dt.isocalendar()[1],
-                    'month': dt.month,
-                    'referral': 1,
-                    'triage_color': ref['triage']['decision']['color'],
-                    'case_type': ref['triage']['complaint'],
-                    'facility': ref.get('dest', 'Unknown'),
-                    'dispatched': 1 if ref['times'].get('dispatch_ts') else 0,
-                    'arrived': 1 if ref['times'].get('arrive_dest_ts') else 0,
-                    'handover': 1 if ref['times'].get('handover_ts') else 0
-                })
-            except (ValueError, TypeError, KeyError):
-                continue
-        
-        return pd.DataFrame(df_data) if df_data else pd.DataFrame()
-
-    def calculate_rejection_rates(referrals):
-        """Calculate rejection rates per facility"""
-        facility_rejections = {}
-        
-        for ref in referrals:
-            try:
-                facility = ref.get('dest', 'Unknown')
-                audit_log = ref.get('audit_log', [])
-                
-                # Check for rejection in audit log
-                rejected = any(log.get('action') == 'CASE_REJECTED' for log in audit_log)
-                
-                if facility not in facility_rejections:
-                    facility_rejections[facility] = {'total': 0, 'rejected': 0}
-                
-                facility_rejections[facility]['total'] += 1
-                if rejected:
-                    facility_rejections[facility]['rejected'] += 1
-                    
-            except (KeyError, TypeError):
-                continue
-        
-        # Calculate rejection rates
-        rejection_rates = []
-        for facility, stats in facility_rejections.items():
-            rate = (stats['rejected'] / stats['total']) * 100 if stats['total'] > 0 else 0
-            rejection_rates.append({
-                'facility': facility,
-                'total_referrals': stats['total'],
-                'rejected': stats['rejected'],
-                'rejection_rate': round(rate, 1)
-            })
-        
-        return pd.DataFrame(rejection_rates)
-
-    def analyze_referral_reasons(referrals):
-        """Analyze reasons for referral"""
-        reasons_data = {
-            'severity': 0,
-            'bed_icu_unavailable': 0,
-            'special_test': 0,
-            'capabilities': {}
-        }
-        
-        for ref in referrals:
-            try:
-                ref_reasons = ref.get('reasons', {})
-                
-                if ref_reasons.get('severity'):
-                    reasons_data['severity'] += 1
-                if ref_reasons.get('bedOrICUUnavailable'):
-                    reasons_data['bed_icu_unavailable'] += 1
-                if ref_reasons.get('specialTest'):
-                    reasons_data['special_test'] += 1
-                
-                # Count capabilities requested
-                capabilities = ref_reasons.get('requiredCapabilities', [])
-                for cap in capabilities:
-                    reasons_data['capabilities'][cap] = reasons_data['capabilities'].get(cap, 0) + 1
-                    
-            except (KeyError, TypeError):
-                continue
-        
-        return reasons_data
-
-    def analyze_medical_specialties(referrals):
-        """Analyze medical specialty requests"""
-        specialty_data = {}
-        case_type_breakdown = {}
-        
-        for ref in referrals:
-            try:
-                case_type = ref['triage']['complaint']
-                capabilities = ref.get('reasons', {}).get('requiredCapabilities', [])
-                
-                # Count case types
-                case_type_breakdown[case_type] = case_type_breakdown.get(case_type, 0) + 1
-                
-                # Associate capabilities with case types
-                for cap in capabilities:
-                    if cap not in specialty_data:
-                        specialty_data[cap] = {'total': 0, 'by_case_type': {}}
-                    
-                    specialty_data[cap]['total'] += 1
-                    specialty_data[cap]['by_case_type'][case_type] = specialty_data[cap]['by_case_type'].get(case_type, 0) + 1
-                    
-            except (KeyError, TypeError):
-                continue
-        
-        return specialty_data, case_type_breakdown
-
-    def analyze_ambulance_utilization(referrals):
-        """Analyze ambulance usage by triage category"""
-        utilization_data = {'RED': {}, 'YELLOW': {}, 'GREEN': {}}
-        
-        for ref in referrals:
-            try:
-                triage_color = ref['triage']['decision']['color']
-                transport = ref.get('transport', {})
-                ambulance_type = transport.get('ambulance', 'None')
-                used_ambulance = ambulance_type in ['BLS', 'ALS', 'ALS + Vent', 'Neonatal']
-                
-                if triage_color not in utilization_data:
-                    utilization_data[triage_color] = {}
-                
-                # Count by ambulance type
-                utilization_data[triage_color][ambulance_type] = utilization_data[triage_color].get(ambulance_type, 0) + 1
-                
-            except (KeyError, TypeError):
-                continue
-        
-        return utilization_data
-
     # Generate enhanced analytics data
     time_series_df = create_enhanced_time_series(referrals_data)
     sla_df = create_sla_analysis(referrals_data)
@@ -3182,7 +3646,7 @@ with tabs[3]:
                 st.info("No ambulance utilization data available")
         
         with col2:
-            st.markdown("**Ambulance Efficiency Metrics**")
+            st.markdown("#### Ambulance Efficiency Metrics")
             
             # Calculate ambulance efficiency metrics
             ambulance_times = []
@@ -3335,7 +3799,7 @@ with tabs[3]:
             if green_als > 10:
                 recommendations.append(f"**Optimize Ambulance Use**: {green_als} ALS ambulances used for GREEN cases - consider BLS protocol for non-urgent transfers")
         
-        if time_series_df.empty:
+        if not time_series_df.empty:
             peak_hour = time_series_df.groupby('hour').size().idxmax()
             if peak_hour in [8, 9, 17, 18]:
                 recommendations.append(f"**Peak Hour Capacity**: Highest demand at {peak_hour}:00 - consider shift scheduling and resource allocation")
@@ -3403,3 +3867,94 @@ with tabs[3]:
             file_name="executive_summary.json",
             mime="application/json"
         )
+
+# ======== Data / Admin Tab ========
+with tabs[4]:
+    st.subheader("Data Management & System Administration")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("#### 📊 Referral Data")
+        st.write(f"Total referrals: {len(st.session_state.referrals)}")
+        
+        if st.button("🔄 Generate Demo Data"):
+            seed_referrals(n=500)
+            st.success("Demo data generated with 500 referrals")
+        
+        if st.button("🗑️ Clear All Data"):
+            st.session_state.referrals = []
+            st.success("All referral data cleared")
+    
+    with col2:
+        st.markdown("#### 🏥 Facility Data")
+        st.write(f"Total facilities: {len(st.session_state.facilities)}")
+        
+        if st.button("🔄 Reload Default Facilities"):
+            st.session_state.facilities = default_facilities(count=15)
+            st.success("Default facilities reloaded")
+
+# ======== Facility Admin Tab ========
+with tabs[5]:
+    st.subheader("Facility Capacity & Capability Management")
+    
+    # Facility selection
+    fac_names = [f["name"] for f in st.session_state.facilities]
+    selected_facility = st.selectbox("Select Facility", fac_names, key="facility_admin_select")
+    
+    # Find selected facility
+    current_fac = next((f for f in st.session_state.facilities if f["name"] == selected_facility), None)
+    
+    if current_fac:
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("#### Capacity Management")
+            current_fac["ICU_open"] = st.number_input("ICU Beds Available", 0, 50, current_fac.get("ICU_open", 0))
+            current_fac["acceptanceRate"] = st.slider("Acceptance Rate", 0.0, 1.0, current_fac.get("acceptanceRate", 0.75), 0.05)
+        
+        with col2:
+            st.markdown("#### Capability Management")
+            
+            st.markdown("**Specialties**")
+            for specialty in SPECIALTIES:
+                current_fac["specialties"][specialty] = st.checkbox(specialty, current_fac["specialties"].get(specialty, False), key=f"spec_{specialty}")
+            
+            st.markdown("**High-end Equipment**")
+            for equipment in INTERVENTIONS:
+                current_fac["highend"][equipment] = st.checkbox(equipment, current_fac["highend"].get(equipment, False), key=f"eq_{equipment}")
+        
+        if st.button("💾 Save Facility Changes"):
+            st.success(f"Facility {selected_facility} updated successfully")
+
+# ======== 🚨 REAL-TIME DASHBOARD TAB ========
+with tabs[6]:
+    st.header("🚨 Real-time Collaboration & Notifications")
+    
+    # Integrate real-time events from existing system
+    integrate_realtime_events()
+    
+    # Tabbed interface for real-time features
+    rt_tabs = st.tabs(["Activity Feed", "Notification Center", "Live Tracker", "System Health"])
+    
+    with rt_tabs[0]:
+        show_realtime_activity_feed()
+        
+    with rt_tabs[1]:
+        show_notification_center()
+        
+    with rt_tabs[2]:
+        show_live_case_tracker()
+        
+    with rt_tabs[3]:
+        st.markdown("### 🖥️ System Health")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Active Cases", len(st.session_state.live_cases))
+        col2.metric("Unread Notifications", len([n for n in st.session_state.notifications if not n.get('read')]))
+        col3.metric("System Events", len(st.session_state.system_activities))
+        
+        st.markdown("#### Component Status")
+        st.success("✅ Event System: Operational")
+        st.success("✅ Notifications: Active") 
+        st.success("✅ Case Tracker: Live")
+        st.info("🔄 Last updated: " + datetime.now().strftime("%H:%M:%S"))
