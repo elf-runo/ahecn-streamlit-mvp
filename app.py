@@ -2532,7 +2532,7 @@ with tabs[3]:
                                              value_vars=['referral', 'dispatched', 'arrived'],
                                              var_name='metric', value_name='value')
                 
-                    # Time Series Analysis
+                       # Time Series Analysis
     st.markdown("### ⏰ Time Series Analysis")
     if not time_series_df.empty:
         tab1, tab2, tab3 = st.tabs(["By Hour", "By Day", "By Day of Week"])
@@ -2606,6 +2606,33 @@ with tabs[3]:
                     st.error(f"Error creating daily chart: {str(e)}")
             else:
                 st.info("No daily data available")
+        
+        with tab3:
+            dow_data = time_series_df.groupby('day_of_week').agg({
+                'referral': 'sum'
+            }).reset_index()
+            
+            if not dow_data.empty and len(dow_data) > 0:
+                try:
+                    # Define day order for proper sorting
+                    day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+                    dow_data['day_of_week'] = pd.Categorical(dow_data['day_of_week'], categories=day_order, ordered=True)
+                    dow_data = dow_data.sort_values('day_of_week')
+                    
+                    chart = alt.Chart(dow_data).mark_bar().encode(
+                        x=alt.X('day_of_week:N', title='Day of Week', sort=day_order),
+                        y=alt.Y('referral:Q', title='Referrals'),
+                        color=alt.Color('day_of_week:N', legend=None),
+                        tooltip=['day_of_week', 'referral']
+                    ).properties(height=300, title='Referrals by Day of Week')
+                    
+                    st.altair_chart(chart, use_container_width=True)
+                except Exception as e:
+                    st.error(f"Error creating day-of-week chart: {str(e)}")
+            else:
+                st.info("No day-of-week data available")
+    else:
+        st.info("No time series data available")
         
         with tab3:
             dow_data = time_series_df.groupby('day_of_week').agg({
