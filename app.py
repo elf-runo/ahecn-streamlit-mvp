@@ -12,7 +12,7 @@ import altair as alt
 import os
 import requests
 import urllib.parse
-from datetime import datetime, timedelta
+
 
 # === PAGE CONFIG MUST BE FIRST STREAMLIT COMMAND ===
 st.set_page_config(
@@ -1393,28 +1393,14 @@ def facilities_df():
 # === ENHANCED SYNTHETIC DATA SEEDING ===
 RESUS = ["Airway positioning","Oxygen","IV fluids","Uterotonics","TXA","Bleeding control","Antibiotics","Nebulization","Immobilization","AED/CPR"]
 
-def seed_referrals(n=500, rng_seed=42):
-    # ... existing code ...
-    
-    for i in range(n):
-        # ... existing case generation code ...
-        
-        # Generate interventions in new format
-        interventions = []
-        for intervention in rng.sample(RESUS, rng.randint(0, 3)):
-            interventions.append({
-                "name": intervention,
-                "type": "resuscitation", 
-                "timestamp": ts_first,
-                "performed_by": "referrer",
-                "status": "completed"
-            })
-        
-        st.session_state.referrals.append(dict(
-            # ... existing referral data ...
-            interventions=interventions,
-            # ... rest of referral data ...
-        ))
+# REMOVE these duplicate sections:
+
+# Remove duplicate imports (lines 8-9)
+# from datetime import datetime, timedelta  # DUPLICATE
+
+# Remove duplicate function definitions:
+# - enhanced_facility_card (defined twice)
+# - show_free_routing_configuration (defined twice)
     
     # Define medically appropriate case profiles
     case_profiles = {
@@ -1795,12 +1781,13 @@ with tabs[0]:
     if referrer_role == "Doctor/Physician" and chosen_icd and row is not None:
         # Show default interventions from ICD as checkboxes
         default_iv = row.get("default_interventions", [])
+        iv_selected = []  # Initialize here
+        
         if default_iv:
             st.markdown("**Diagnosis-Specific Interventions**")
             st.caption(f"Default interventions for {row['label']}:")
             
             iv_cols = st.columns(2)
-            iv_selected = []
             for i, item in enumerate(default_iv):
                 col_idx = i % 2
                 if iv_cols[col_idx].checkbox(item, value=True, key=f"iv_{i}"):
@@ -1844,65 +1831,11 @@ with tabs[0]:
                 if line:
                     iv_selected.append({
                         "name": line,
-                        "type": "custom",
+                        "type": "custom", 
                         "timestamp": now_ts(),
                         "performed_by": "referrer",
                         "status": "completed"
-                    })    
-        # Additional notes (optional for doctors)
-        dx_free = st.text_input("Additional clinical notes (optional)", "")
-        
-        # Diagnosis payload for doctors
-        if chosen_icd and row is not None:
-            dx_payload = dict(code=row["icd_code"], label=row["label"], case_type=row["case_type"])
-        else:
-            st.error("Please select an ICD diagnosis to proceed")
-            dx_payload = None
-
-    else:
-        # ANM/ASHA/EMT: Optional ICD with prominent free-text
-        st.markdown("**Reason for Referral** <span class='required'>*</span>", unsafe_allow_html=True)
-        
-        # Free-text reason (primary for non-doctors)
-        referral_reason = st.text_area("Describe the reason for referral", 
-                                     placeholder="Describe symptoms, observations, and reason for transfer...",
-                                     height=80)
-        
-        # Optional ICD selection
-        with st.expander("Optional: Select ICD diagnosis (if known)"):
-            icd_choices, icd_df_filt = icd_options_for(complaint, p_age)
-            if icd_choices:
-                chosen_icd = st.selectbox("ICD diagnosis (optional)", [""] + icd_choices, index=0)
-                if chosen_icd:
-                    row = icd_df_filt[icd_df_filt["display"] == chosen_icd].iloc[0]
-                    default_iv = [x.strip() for x in str(row.get("default_interventions", "")).split(";") if x.strip()]
-                    
-                    # Optional interventions
-                    st.markdown("**Suggested interventions**")
-                    for i, item in enumerate(default_iv):
-                        if st.checkbox(item, value=False, key=f"iv_{i}"):
-                            iv_selected.append(item) if 'iv_selected' in locals() else iv_selected.extend([item])
-                else:
-                    row = None
-                    default_iv = []
-                    iv_selected = []
-            else:
-                st.info("No ICD suggestions for this age & case type")
-                chosen_icd = None
-                row = None
-                default_iv = []
-                iv_selected = []
-        
-        # Additional notes
-        dx_free = st.text_input("Additional notes (optional)", "")
-        
-        # Diagnosis payload for non-doctors
-        dx_payload = dict(code=row["icd_code"] if chosen_icd else "", 
-                         label=referral_reason or (row["label"] if chosen_icd else ""), 
-                         case_type=str(complaint))
-        
-        if not referral_reason and not chosen_icd:
-            st.error("Please provide a reason for referral or select an ICD diagnosis")
+                    })
 
     # Resuscitation interventions (common to both roles)
     st.subheader("Resuscitation / Stabilization done (tick all applied)")
@@ -1953,164 +1886,164 @@ with tabs[0]:
             st.error("Please provide a reason for referral to find matching facilities")
         else:
             # Calculate current triage color for scoring
-                vitals = dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu)
-                context = dict(
+            vitals = dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu)
+            context = dict(
                 age=p_age,
                 pregnant=(complaint == "Maternal"),
                 infection=(complaint in ["Sepsis", "Other"]),
                 o2_device=st.session_state.o2_device,
                 spo2_scale=st.session_state.spo2_scale,
                 behavior=st.session_state.pews_behavior
-        )
-        triage_color, _ = triage_decision(vitals, context)
-        
-        # Apply override if active
-        if st.session_state.triage_override_active and st.session_state.triage_override_color:
-            triage_color = st.session_state.triage_override_color
-
-        # Get ranked facilities with free routing
-        with st.spinner("Calculating optimal routes with free routing services..."):
-            ranked_facilities = rank_facilities_with_free_routing(
-                origin_coords=(p_lat, p_lon),
-                required_caps=need_caps,
-                case_type=complaint,
-                triage_color=triage_color,
-                top_k=8
             )
+            triage_color, _ = triage_decision(vitals, context)
+            
+            # Apply override if active
+            if st.session_state.triage_override_active and st.session_state.triage_override_color:
+                triage_color = st.session_state.triage_override_color
 
-        if not ranked_facilities:
-            st.warning("No suitable facilities found. Try relaxing capability requirements.")
-        else:
-            # Display routing provider info
-            provider_name = {
-                "osrm": "OSRM (Free Open Source)",
-                "graphhopper": "GraphHopper (Free Tier)", 
-                "openrouteservice": "OpenRouteService (Free)"
-            }[current_provider]
-            
-            st.success(f"✓ Routing completed using {provider_name}")
-            
-            # Display ranked facilities
-            st.markdown(f"#### 🏆 Top {len(ranked_facilities)} Matched Facilities")
-            
-            # Show traffic simulation status
-            if enable_traffic:
-                current_hour = datetime.now().hour
-                if (7 <= current_hour <= 10) or (17 <= current_hour <= 20):
-                    st.info("🚗 **Peak hours detected**: Estimated travel times include traffic delays")
-                else:
-                    st.info("🛣️ **Off-peak hours**: Normal travel conditions")
-            
-            st.info(f"**Case Type:** {complaint} | **Triage:** {triage_color} | **Required Capabilities:** {', '.join(need_caps) if need_caps else 'None'}")
-            
-            # Reset selection state
-            st.session_state.matched_primary = None
-            st.session_state.matched_alts = set()
+            # Get ranked facilities with free routing
+            with st.spinner("Calculating optimal routes with free routing services..."):
+                ranked_facilities = rank_facilities_with_free_routing(
+                    origin_coords=(p_lat, p_lon),
+                    required_caps=need_caps,
+                    case_type=complaint,
+                    triage_color=triage_color,
+                    top_k=8
+                )
 
-            # Display facilities with enhanced cards
-            for i, facility in enumerate(ranked_facilities, 1):
-                is_primary = (st.session_state.matched_primary == facility["name"])
-                is_alternate = (facility["name"] in st.session_state.matched_alts)
+            if not ranked_facilities:
+                st.warning("No suitable facilities found. Try relaxing capability requirements.")
+            else:
+                # Display routing provider info
+                provider_name = {
+                    "osrm": "OSRM (Free Open Source)",
+                    "graphhopper": "GraphHopper (Free Tier)", 
+                    "openrouteservice": "OpenRouteService (Free)"
+                }[current_provider]
                 
-                pick, alt = enhanced_facility_card(facility, i, is_primary, is_alternate)
+                st.success(f"✓ Routing completed using {provider_name}")
                 
-                if pick:
-                    st.session_state.matched_primary = facility["name"]
-                    st.rerun()
-                if alt:
-                    st.session_state.matched_alts.add(facility["name"])
-                    st.rerun()
+                # Display ranked facilities
+                st.markdown(f"#### 🏆 Top {len(ranked_facilities)} Matched Facilities")
+                
+                # Show traffic simulation status
+                if enable_traffic:
+                    current_hour = datetime.now().hour
+                    if (7 <= current_hour <= 10) or (17 <= current_hour <= 20):
+                        st.info("🚗 **Peak hours detected**: Estimated travel times include traffic delays")
+                    else:
+                        st.info("🛣️ **Off-peak hours**: Normal travel conditions")
+                
+                st.info(f"**Case Type:** {complaint} | **Triage:** {triage_color} | **Required Capabilities:** {', '.join(need_caps) if need_caps else 'None'}")
+                
+                # Reset selection state
+                st.session_state.matched_primary = None
+                st.session_state.matched_alts = set()
 
-            # Set default primary if none selected
-            if not st.session_state.matched_primary and ranked_facilities:
-                st.session_state.matched_primary = ranked_facilities[0]["name"]
-
-            # Show selection summary
-            st.markdown("---")
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.session_state.matched_primary:
-                    st.success(f"**Primary:** {st.session_state.matched_primary}")
-                else:
-                    st.warning("No primary facility selected")
-            
-            with col2:
-                if st.session_state.matched_alts:
-                    st.info(f"**Alternates:** {', '.join(sorted(st.session_state.matched_alts))}")
-                else:
-                    st.info("No alternate facilities selected")
-
-            # Enhanced map visualization with actual routes
-            show_map = st.checkbox("Show detailed routes to facilities", value=True)
-            if show_map and st.session_state.matched_primary:
-                try:
-                    primary_name = st.session_state.matched_primary
-                    primary_fac = next((f for f in ranked_facilities if f["name"] == primary_name), None)
+                # Display facilities with enhanced cards
+                for i, facility in enumerate(ranked_facilities, 1):
+                    is_primary = (st.session_state.matched_primary == facility["name"])
+                    is_alternate = (facility["name"] in st.session_state.matched_alts)
                     
-                    if primary_fac and p_lat and p_lon:
-                        # Create enhanced layers for visualization
-                        layers = []
+                    pick, alt = enhanced_facility_card(facility, i, is_primary, is_alternate)
+                    
+                    if pick:
+                        st.session_state.matched_primary = facility["name"]
+                        st.rerun()
+                    if alt:
+                        st.session_state.matched_alts.add(facility["name"])
+                        st.rerun()
+
+                # Set default primary if none selected
+                if not st.session_state.matched_primary and ranked_facilities:
+                    st.session_state.matched_primary = ranked_facilities[0]["name"]
+
+                # Show selection summary
+                st.markdown("---")
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.session_state.matched_primary:
+                        st.success(f"**Primary:** {st.session_state.matched_primary}")
+                    else:
+                        st.warning("No primary facility selected")
+                
+                with col2:
+                    if st.session_state.matched_alts:
+                        st.info(f"**Alternates:** {', '.join(sorted(st.session_state.matched_alts))}")
+                    else:
+                        st.info("No alternate facilities selected")
+
+                # Enhanced map visualization with actual routes
+                show_map = st.checkbox("Show detailed routes to facilities", value=True)
+                if show_map and st.session_state.matched_primary:
+                    try:
+                        primary_name = st.session_state.matched_primary
+                        primary_fac = next((f for f in ranked_facilities if f["name"] == primary_name), None)
                         
-                        # Origin layer
-                        layers.append(pdk.Layer(
-                            "ScatterplotLayer",
-                            data=[{"lon": p_lon, "lat": p_lat}],
-                            get_position="[lon, lat]",
-                            get_radius=200,
-                            get_fill_color=[66, 133, 244, 200],
-                            get_line_color=[0, 0, 0, 255],
-                            get_line_width=50,
-                        ))
-                        
-                        # Facility layers with color coding by score
-                        for i, fac in enumerate(ranked_facilities[:6]):  # Top 6 facilities
-                            # Color based on score (green=high, yellow=medium, red=low)
-                            if fac["score"] >= 80:
-                                color = [34, 197, 94, 200]  # Green
-                            elif fac["score"] >= 60:
-                                color = [245, 158, 11, 200]  # Yellow
-                            else:
-                                color = [239, 68, 68, 200]  # Red
-                                
-                            # Highlight primary facility
-                            if fac["name"] == primary_name:
-                                color = [139, 92, 246, 255]  # Purple for primary
+                        if primary_fac and p_lat and p_lon:
+                            # Create enhanced layers for visualization
+                            layers = []
                             
+                            # Origin layer
                             layers.append(pdk.Layer(
                                 "ScatterplotLayer",
-                                data=[{"lon": fac["lon"], "lat": fac["lat"]}],
+                                data=[{"lon": p_lon, "lat": p_lat}],
                                 get_position="[lon, lat]",
-                                get_radius=180,
-                                get_fill_color=color,
-                                get_line_color=[255, 255, 255, 255],
-                                get_line_width=20,
+                                get_radius=200,
+                                get_fill_color=[66, 133, 244, 200],
+                                get_line_color=[0, 0, 0, 255],
+                                get_line_width=50,
                             ))
                             
-                            # Route visualization for primary only (to reduce clutter)
-                            if fac["name"] == primary_name and fac.get("route"):
-                                route_data = []
-                                for point in fac["route"]:
-                                    route_data.append({"lon": point[1], "lat": point[0]})
+                            # Facility layers with color coding by score
+                            for i, fac in enumerate(ranked_facilities[:6]):  # Top 6 facilities
+                                # Color based on score (green=high, yellow=medium, red=low)
+                                if fac["score"] >= 80:
+                                    color = [34, 197, 94, 200]  # Green
+                                elif fac["score"] >= 60:
+                                    color = [245, 158, 11, 200]  # Yellow
+                                else:
+                                    color = [239, 68, 68, 200]  # Red
+                                    
+                                # Highlight primary facility
+                                if fac["name"] == primary_name:
+                                    color = [139, 92, 246, 255]  # Purple for primary
                                 
                                 layers.append(pdk.Layer(
-                                    "PathLayer",
-                                    data=[{"path": route_data}],
-                                    get_path="path",
-                                    get_color=[16, 185, 129, 180],
-                                    get_width=8,
-                                    width_scale=8,
-                                    width_min_pixels=4,
+                                    "ScatterplotLayer",
+                                    data=[{"lon": fac["lon"], "lat": fac["lat"]}],
+                                    get_position="[lon, lat]",
+                                    get_radius=180,
+                                    get_fill_color=color,
+                                    get_line_color=[255, 255, 255, 255],
+                                    get_line_width=20,
                                 ))
-                        
-                        st.pydeck_chart(pdk.Deck(
-                            layers=layers,
-                            initial_view_state=pdk.ViewState(latitude=p_lat, longitude=p_lon, zoom=10),
-                            map_style="mapbox://styles/mapbox/dark-v10",
-                        ))
-                    else:
-                        st.warning("Could not render map: missing location data")
-                except Exception as e:
-                    st.error(f"Map rendering error: {str(e)}")
+                                
+                                # Route visualization for primary only (to reduce clutter)
+                                if fac["name"] == primary_name and fac.get("route"):
+                                    route_data = []
+                                    for point in fac["route"]:
+                                        route_data.append({"lon": point[1], "lat": point[0]})
+                                    
+                                    layers.append(pdk.Layer(
+                                        "PathLayer",
+                                        data=[{"path": route_data}],
+                                        get_path="path",
+                                        get_color=[16, 185, 129, 180],
+                                        get_width=8,
+                                        width_scale=8,
+                                        width_min_pixels=4,
+                                    ))
+                            
+                            st.pydeck_chart(pdk.Deck(
+                                layers=layers,
+                                initial_view_state=pdk.ViewState(latitude=p_lat, longitude=p_lon, zoom=10),
+                                map_style="mapbox://styles/mapbox/dark-v10",
+                            ))
+                        else:
+                            st.warning("Could not render map: missing location data")
+                    except Exception as e:
+                        st.error(f"Map rendering error: {str(e)}")
                         
 # === ENHANCED FACILITY CARD WITH ROUTING INFO ===
 def enhanced_facility_card(row, rank, is_primary=False, is_alternate=False):
@@ -2242,130 +2175,116 @@ def show_free_routing_configuration():
     primary = st.session_state.get("matched_primary")
     alternates = sorted(list(st.session_state.get("matched_alts", [])))
 
-    def _save_referral(dispatch=False):
-        # Validate based on role
-        if referrer_role == "Doctor/Physician" and dx_payload is None:
-            st.error("Please select an ICD diagnosis to create referral")
-            return False
-        elif referrer_role == "ANM/ASHA/EMT" and not dx_payload.get("label"):
-            st.error("Please provide a reason for referral")
-            return False
-            
-        if not primary:
-            st.error("Select a primary destination from 'Find Best Matched Facilities' above.")
-            return False
-            
-        vit = dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu, complaint=complaint)
-        # Combine interventions
-        all_interventions = iv_selected if 'iv_selected' in locals() else []
+def _save_referral(dispatch=False):
+    # Validate based on role
+    if referrer_role == "Doctor/Physician" and dx_payload is None:
+        st.error("Please select an ICD diagnosis to create referral")
+        return False
+    elif referrer_role == "ANM/ASHA/EMT" and not dx_payload.get("label"):
+        st.error("Please provide a reason for referral")
+        return False
+        
+    if not primary:
+        st.error("Select a primary destination from 'Find Best Matched Facilities' above.")
+        return False
+        
+    vit = dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu, complaint=complaint)
     
-        # Add resuscitation interventions
-        for resus in resus_done:
-            all_interventions.append({
-                "name": resus,
-                "type": "resuscitation",
-                "timestamp": now_ts(),
-                "performed_by": "referrer",
-                "status": "completed"
+    # Combine interventions properly
+    all_interventions = iv_selected if 'iv_selected' in locals() else []
+    
+    # Add resuscitation interventions
+    for resus in resus_done:
+        all_interventions.append({
+            "name": resus,
+            "type": "resuscitation",
+            "timestamp": now_ts(),
+            "performed_by": "referrer",
+            "status": "completed"
         })
     
-        ref = dict(
-            id="R" + str(int(time.time()))[-6:],
-            patient=dict(name=p_name, age=int(p_age), sex=p_sex, id=p_id, location=dict(lat=float(p_lat), lon=float(p_lon))),
-            referrer=dict(name=r_name, facility=r_fac, role=referrer_role),
-            provisionalDx=dx_payload,
-            interventions=all_interventions,  # Now using enhanced structure
-            # ... rest of the referral data ...
+    # Calculate base triage color
+    age = _num(p_age)
+    context = dict(
+        age=age,
+        pregnant=(complaint == "Maternal"),
+        infection=(complaint in ["Sepsis", "Other"]),
+        o2_device=st.session_state.o2_device,
+        spo2_scale=st.session_state.spo2_scale,
+        behavior=st.session_state.pews_behavior
     )
-        # Calculate base triage color
-        age = _num(p_age)
-        context = dict(
-            age=age,
-            pregnant=(complaint == "Maternal"),
-            infection=(complaint in ["Sepsis", "Other"]),
-            o2_device=st.session_state.o2_device,
-            spo2_scale=st.session_state.spo2_scale,
-            behavior=st.session_state.pews_behavior
-        )
-        base_colour, score_details = triage_decision(vit, context)
-        
-        # Apply override if active
-        final_colour = base_colour
-        audit_log = []
-        
-        if st.session_state.triage_override_active and st.session_state.triage_override_color:
-            final_colour = st.session_state.triage_override_color
-            audit_entry = {
-                "timestamp": datetime.now().isoformat(),
-                "action": "TRIAGE_OVERRIDE",
-                "user": r_name,
-                "details": {
-                    "from": base_colour,
-                    "to": final_colour,
-                    "reason": st.session_state.triage_override_reason,
-                    "scores": {
-                        "NEWS2": score_details["NEWS2"]["score"],
-                        "qSOFA": score_details["qSOFA"]["score"],
-                        "MEOWS_red": len(score_details["MEOWS"]["red"]),
-                        "PEWS": score_details["PEWS"]["score"]
-                    }
+    base_colour, score_details = triage_decision(vit, context)
+    
+    # Apply override if active
+    final_colour = base_colour
+    audit_log = []
+    
+    if st.session_state.triage_override_active and st.session_state.triage_override_color:
+        final_colour = st.session_state.triage_override_color
+        audit_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "action": "TRIAGE_OVERRIDE",
+            "user": r_name,
+            "details": {
+                "from": base_colour,
+                "to": final_colour,
+                "reason": st.session_state.triage_override_reason,
+                "scores": {
+                    "NEWS2": score_details["NEWS2"]["score"],
+                    "qSOFA": score_details["qSOFA"]["score"],
+                    "MEOWS_red": len(score_details["MEOWS"]["red"]),
+                    "PEWS": score_details["PEWS"]["score"]
                 }
             }
-            audit_log.append(audit_entry)
+        }
+        audit_log.append(audit_entry)
 
-        # Combine interventions
-        all_interventions = (iv_selected if 'iv_selected' in locals() else []) + ([dx_free] if dx_free else [])
+    ref = dict(
+        id="R" + str(int(time.time()))[-6:],
+        patient=dict(
+            name=p_name, 
+            age=int(p_age), 
+            sex=p_sex, 
+            id=p_id, 
+            location=dict(lat=float(p_lat), lon=float(p_lon))
+        ),
+        referrer=dict(name=r_name, facility=r_fac, role=referrer_role),
+        provisionalDx=dx_payload,
+        interventions=all_interventions,
+        resuscitation=resus_done,
+        triage=dict(
+            complaint=complaint, 
+            decision=dict(
+                color=final_colour,
+                base_color=base_colour,
+                overridden=(final_colour != base_colour)
+            ), 
+            hr=hr, sbp=sbp, rr=rr, temp=temp, spo2=spo2, avpu=avpu,
+            scores=score_details
+        ),
+        clinical=dict(summary=" ".join(ocr.split()[:60])),
+        reasons=dict(
+            severity=True, 
+            bedOrICUUnavailable=ref_beds, 
+            specialTest=ref_tests, 
+            requiredCapabilities=need_caps
+        ),
+        dest=primary,
+        alternates=alternates,
+        transport=dict(priority=priority, ambulance=amb_type, consent=bool(consent)),
+        times=dict(first_contact_ts=now_ts(), decision_ts=now_ts()),
+        status="PREALERT",
+        ambulance_available=None,
+        audit_log=audit_log
+    )
+    
+    if dispatch:
+        ref["times"]["dispatch_ts"] = now_ts()
+        ref["status"] = "DISPATCHED"
+        ref["ambulance_available"] = True
         
-        ref = dict(
-            id="R" + str(int(time.time()))[-6:],
-            patient=dict(name=p_name, age=int(p_age), sex=p_sex, id=p_id, location=dict(lat=float(p_lat), lon=float(p_lon))),
-            referrer=dict(name=r_name, facility=r_fac, role=referrer_role),
-            provisionalDx=dx_payload,
-            interventions=all_interventions,
-            resuscitation=resus_done,
-            triage=dict(
-                complaint=complaint, 
-                decision=dict(
-                    color=final_colour,
-                    base_color=base_colour,
-                    overridden=(final_colour != base_colour)
-                ), 
-                hr=hr, sbp=sbp, rr=rr, temp=temp, spo2=spo2, avpu=avpu,
-                scores=score_details
-            ),
-            clinical=dict(summary=" ".join(ocr.split()[:60])),
-            reasons=dict(severity=True, bedOrICUUnavailable=ref_beds, specialTest=ref_tests, requiredCapabilities=need_caps),
-            dest=primary,
-            alternates=alternates,
-            transport=dict(priority=priority, ambulance=amb_type, consent=bool(consent)),
-            times=dict(first_contact_ts=now_ts(), decision_ts=now_ts()),
-            status="PREALERT",
-            ambulance_available=None,
-            audit_log=audit_log
-        )
-        if dispatch:
-            ref["times"]["dispatch_ts"] = now_ts()
-            ref["status"] = "DISPATCHED"
-            ref["ambulance_available"] = True
-            
-        st.session_state.referrals.insert(0, ref)
-        return True
-
-    col1, col2 = st.columns(2)
-    if col1.button("Create referral"):
-        if _save_referral(dispatch=False):
-            st.success(f"Referral created → {primary}")
-            # Reset override after successful referral
-            st.session_state.triage_override_active = False
-            st.session_state.triage_override_color = None
-            st.session_state.triage_override_reason = ""
-    if col2.button("Create & dispatch now"):
-        if _save_referral(dispatch=True):
-            st.success(f"Referral created and DISPATCHED → {primary}")
-            # Reset override after successful referral
-            st.session_state.triage_override_active = False
-            st.session_state.triage_override_color = None
-            st.session_state.triage_override_reason = ""
+    st.session_state.referrals.insert(0, ref)
+    return True
 
 # ======== Receiving Hospital Tab ========
 with tabs[2]:
