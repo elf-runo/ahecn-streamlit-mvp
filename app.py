@@ -10,6 +10,9 @@ import streamlit as st
 import pydeck as pdk
 import altair as alt
 import os
+import requests
+import urllib.parse
+from datetime import datetime, timedelta
 
 # === PAGE CONFIG MUST BE FIRST STREAMLIT COMMAND ===
 st.set_page_config(
@@ -17,6 +20,17 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed"
 )
+# === FREE ROUTING CONFIGURATION ===
+# Choose your free routing provider: 'osrm' (recommended) or 'openrouteservice'
+ROUTING_PROVIDER = 'osrm'
+
+# No API keys needed for these free services
+OSRM_BASE_URL = "http://router.project-osrm.org"  # Public OSRM instance
+ORS_BASE_URL = "https://api.openrouteservice.org"  # Requires free API key but generous free tier
+
+# Cache configuration
+DISTANCE_CACHE = {}
+CACHE_DURATION = timedelta(hours=24)  # Refresh cache every 24 hours
 
 # === LOAD ICD CATALOG FROM CSV ===
 def load_icd_catalogue():
@@ -806,6 +820,379 @@ def eta_minutes_for(km, traffic_mult, speed_kmh=36):
     if km is None:
         return None
     return max(5, int(km / max(speed_kmh, 1e-6) * 60 * float(traffic_mult)))
+    
+# === FREE ROUTING PROVIDER INTEGRATIONS ===
+def get_route_osrm_free(origin_lat, origin_lon, dest_lat, dest_lon, profile='driving'):
+    """
+    Get route information from public OSRM instance (completely free)
+    """
+    try:
+        # Format coordinates
+        coordinates = f"{origin_lon},{origin_lat};{dest_lon},{dest_lat}"
+        
+        # Build URL - using public OSRM instance
+        url = f"{OSRM_BASE_URL}/route/v1/{profile}/{coordinates}"
+        params = {
+            'overview': 'false',
+            'steps': 'false',
+            'annotations': 'true'
+        }
+        
+        response = requests.get(url, params=params, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            if data['code'] == 'Ok' and data['routes']:
+                route = data['routes'][0]
+                
+                return {
+                    'distance_km': route['distance'] / 1000,  # Convert to km
+                    'duration_min': route['duration'] / 60,   # Convert to minutes
+                    'success': True,
+                    'provider': 'OSRM (Free)'
+                }
+        
+        return {'success': False, 'error': 'No route found', 'provider': 'OSRM'}
+            
+    except Exception as e:
+        return {'success': False, 'error': str(e), 'provider': 'OSRM'}
+
+def get_route_graphhopper_free(origin_lat, origin_lon, dest_lat, dest_lon, profile='car'):
+    """
+    Get route information from GraphHopper (free tier available)
+    """
+    try:
+        # GraphHopper offers free tier with API key, but we'll use their demo key
+        # For production, get a free API key from https://www.graphhopper.com/
+        api_key = "demo_key"  # Replace with your free API key if needed
+        
+        url = "https://graphhopper.com/api/1/route"
+        params = {
+            'point': [f"{origin_lat},{origin_lon}", f"{dest_lat},{dest_lon}"],
+            'vehicle': profile,
+            'key': api_key,
+            'type': 'json',
+            'instructions': 'false',
+            'elevation': 'false'
+        }
+        
+        response = requests.get(url, params=params, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            if 'paths' in data and data['paths']:
+                path = data['paths'][0]
+                
+                return {
+                    'distance_km': path['distance'] / 1000,
+                    'duration_min': path['time'] / 60000,  # Convert ms to minutes
+                    'success': True,
+                    'provider': 'GraphHopper (Free)'
+                }
+        
+        return {'success': False, 'error': 'No route found', 'provider': 'GraphHopper'}
+            
+    except Exception as e:
+        return {'success': False, 'error': str(e), 'provider': 'GraphHopper'}
+
+def get_route_openrouteservice_free(origin_lat, origin_lon, dest_lat, dest_lon, profile='driving-car'):
+    """
+    Get route information from OpenRouteService (free with API key)
+    """
+    try:
+        # OpenRouteService offers free tier with registration
+        # Get free API key from https://openrouteservice.org/
+        api_key = "your_free_api_key_here"  # Optional for MVP
+        
+        url = f"{ORS_BASE_URL}/v2/directions/{profile}"
+        headers = {
+            'Accept': 'application/json, application/geo+json, application/gpx+xml, img/png; charset=utf-8',
+        }
+        if api_key and api_key != "your_free_api_key_here":
+            headers['Authorization'] = api_key
+            
+        body = {
+            "coordinates": [[origin_lon, origin_lat], [dest_lon, dest_lat]],
+            "instructions": "false",
+            "preference": "recommended"
+        }
+        
+        response = requests.post(url, json=body, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            if 'routes' in data and data['routes']:
+                route = data['routes'][0]
+                summary = route['summary']
+                
+                return {
+                    'distance_km': summary['distance'] / 1000,
+                    'duration_min': summary['duration'] / 60,
+                    'success': True,
+                    'provider': 'OpenRouteService'
+                }
+        
+        return {'success': False, 'error': 'No route found', 'provider': 'OpenRouteService'}
+            
+    except Exception as e:
+        return {'success': False, 'error': str(e), 'provider': 'OpenRouteService'}
+
+def estimate_traffic_for_route(route_data, hour_of_day=None):
+    """
+    Estimate traffic based on time of day and route characteristics
+    Uses heuristic rules since we don't have real traffic data
+    """
+    if hour_of_day is None:
+        hour_of_day = datetime.now().hour
+    
+    base_duration = route_data.get('duration_min', 0)
+    
+    # Simple traffic estimation based on time of day
+    traffic_multiplier = 1.0
+    
+    # Peak hours (morning and evening rush)
+    if (7 <= hour_of_day <= 10) or (17 <= hour_of_day <= 20):
+        traffic_multiplier = 1.3  # 30% longer during peak hours
+    elif (11 <= hour_of_day <= 13) or (15 <= hour_of_day <= 16):
+        traffic_multiplier = 1.1  # 10% longer during moderate hours
+    
+    # Weekend adjustment (lighter traffic)
+    if datetime.now().weekday() >= 5:  # Saturday or Sunday
+        traffic_multiplier *= 0.9  # 10% shorter on weekends
+    
+    estimated_duration = base_duration * traffic_multiplier
+    
+    return {
+        'estimated_duration_min': estimated_duration,
+        'traffic_multiplier': traffic_multiplier,
+        'base_duration_min': base_duration,
+        'peak_hour': (7 <= hour_of_day <= 10) or (17 <= hour_of_day <= 20)
+    }
+
+def get_route_info_free(origin_lat, origin_lon, dest_lat, dest_lon, provider=None):
+    """
+    Unified function to get route information from free providers
+    """
+    if provider is None:
+        provider = ROUTING_PROVIDER
+    
+    # Create cache key
+    cache_key = f"{origin_lat}_{origin_lon}_{dest_lat}_{dest_lon}_{provider}"
+    
+    # Check cache
+    if cache_key in DISTANCE_CACHE:
+        cached_data = DISTANCE_CACHE[cache_key]
+        if datetime.now() - cached_data['timestamp'] < CACHE_DURATION:
+            return cached_data['data']
+    
+    # Get route based on provider
+    if provider == 'osrm':
+        result = get_route_osrm_free(origin_lat, origin_lon, dest_lat, dest_lon)
+    elif provider == 'graphhopper':
+        result = get_route_graphhopper_free(origin_lat, origin_lon, dest_lat, dest_lon)
+    elif provider == 'openrouteservice':
+        result = get_route_openrouteservice_free(origin_lat, origin_lon, dest_lat, dest_lon)
+    else:
+        result = {'success': False, 'error': 'Unknown routing provider'}
+    
+    # If routing failed, fall back to straight-line distance calculation
+    if not result.get('success'):
+        straight_line_km = dist_km(origin_lat, origin_lon, dest_lat, dest_lon)
+        # Estimate driving time based on straight-line distance (assuming average speed)
+        estimated_driving_min = (straight_line_km / 40) * 60  # 40 km/h average
+        
+        result = {
+            'success': True,
+            'distance_km': straight_line_km,
+            'duration_min': estimated_driving_min,
+            'estimated': True,
+            'provider': 'Straight-line Estimation'
+        }
+    
+    # Add traffic estimation
+    if result.get('success'):
+        traffic_data = estimate_traffic_for_route(result)
+        result.update(traffic_data)
+    
+    # Cache the result
+    DISTANCE_CACHE[cache_key] = {
+        'timestamp': datetime.now(),
+        'data': result
+    }
+    
+    return result
+# === ENHANCED FACILITY MATCHING WITH FREE ROUTING ===
+def calculate_enhanced_facility_score_free(facility, required_caps, route_data, case_type, triage_color):
+    """
+    Enhanced facility scoring with free routing data
+    """
+    score = 0
+    scoring_details = {}
+    
+    # 1. Capability Match (40% weight) - Hard filter
+    if required_caps:
+        capability_match = sum(1 for cap in required_caps if facility["caps"].get(cap, 0)) / len(required_caps)
+        # Apply hard filter - must meet minimum capability threshold
+        if capability_match < 0.5:  # At least 50% of required capabilities
+            return 0, {"capability_score": 0, "reason": "Insufficient capabilities"}
+    else:
+        capability_match = 1.0
+    
+    score += capability_match * 40
+    scoring_details["capability_score"] = round(capability_match * 40, 1)
+    
+    # 2. Proximity Score (30% weight) - Based on estimated ETA
+    if route_data.get('success'):
+        # Use traffic-adjusted duration if available
+        eta_minutes = route_data.get('estimated_duration_min', route_data.get('duration_min', 0))
+        
+        # Normalize ETA score (0-30 points)
+        # Shorter ETA = higher score, max score for <30min, linear decay to 60min
+        if eta_minutes <= 30:
+            proximity_score = 30
+        elif eta_minutes <= 60:
+            proximity_score = 30 * (1 - (eta_minutes - 30) / 30)
+        else:
+            proximity_score = max(0, 30 * (1 - (eta_minutes - 60) / 60))
+            
+        # Apply traffic factor adjustment
+        traffic_factor = route_data.get('traffic_multiplier', 1.0)
+        proximity_score = proximity_score / traffic_factor
+        
+        score += proximity_score
+        scoring_details["proximity_score"] = round(proximity_score, 1)
+        scoring_details["eta_minutes"] = round(eta_minutes, 1)
+        scoring_details["traffic_factor"] = round(traffic_factor, 2)
+        scoring_details["estimated"] = route_data.get('estimated', False)
+        scoring_details["peak_hour"] = route_data.get('peak_hour', False)
+    else:
+        # Fallback to straight-line distance if routing fails
+        scoring_details["proximity_score"] = 0
+        scoring_details["eta_minutes"] = "N/A"
+        scoring_details["traffic_factor"] = 1.0
+    
+    # 3. ICU Availability (20% weight)
+    icu_beds = facility.get("ICU_open", 0)
+    icu_score = min(1.0, icu_beds / 5.0) * 20  # Max score at 5+ ICU beds
+    score += icu_score
+    scoring_details["icu_score"] = round(icu_score, 1)
+    
+    # 4. Acceptance Rate (10% weight)
+    acceptance_rate = facility.get("acceptanceRate", 0.75)
+    acceptance_score = acceptance_rate * 10
+    score += acceptance_score
+    scoring_details["acceptance_score"] = round(acceptance_score, 1)
+    
+    # 5. Specialization Bonuses
+    specialization_bonus = 0
+    
+    # Case type specialization matching
+    if case_type in facility.get("specialties", {}):
+        if facility["specialties"][case_type]:
+            specialization_bonus += 5
+    
+    # High-end equipment bonus for critical cases
+    if triage_color == "RED":
+        high_end_count = sum(1 for eq in facility.get("highend", {}).values() if eq)
+        specialization_bonus += min(5, high_end_count)
+    
+    score += specialization_bonus
+    scoring_details["specialization_bonus"] = specialization_bonus
+    
+    # Ensure score is within bounds
+    final_score = min(100, max(0, score))
+    scoring_details["total_score"] = round(final_score, 1)
+    
+    return final_score, scoring_details
+
+def rank_facilities_with_free_routing(origin_coords, required_caps, case_type, triage_color, top_k=8):
+    """
+    Enhanced facility ranking with free routing data
+    """
+    ranked_facilities = []
+    
+    # Validate inputs
+    if not origin_coords or len(origin_coords) != 2:
+        st.error("Invalid origin coordinates")
+        return []
+    
+    if not hasattr(st.session_state, 'facilities') or not st.session_state.facilities:
+        st.error("No facilities data available")
+        return []
+    
+    # Show progress for routing calculations
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    total_facilities = len(st.session_state.facilities)
+    
+    for i, facility in enumerate(st.session_state.facilities):
+        try:
+            # Update progress
+            progress = (i + 1) / total_facilities
+            progress_bar.progress(progress)
+            status_text.text(f"Calculating routes... ({i + 1}/{total_facilities})")
+            
+            # Validate facility data
+            if not facility or 'lat' not in facility or 'lon' not in facility:
+                continue
+            
+            # Get free route information
+            route_data = get_route_info_free(
+                origin_coords[0], origin_coords[1],
+                float(facility["lat"]), float(facility["lon"])
+            )
+            
+            # Calculate enhanced score with routing data
+            score, scoring_details = calculate_enhanced_facility_score_free(
+                facility, required_caps, route_data, case_type, triage_color
+            )
+            
+            # Skip facilities with insufficient capabilities
+            if score == 0:
+                continue
+            
+            # Generate route for visualization
+            route_coords = interpolate_route(
+                origin_coords[0], origin_coords[1],
+                float(facility["lat"]), float(facility["lon"]), n=20
+            )
+            
+            ranked_facilities.append({
+                "name": facility.get("name", "Unknown Facility"),
+                "type": facility.get("type", "Unknown"),
+                "score": score,
+                "scoring_details": scoring_details,
+                "km": round(route_data.get('distance_km', 0), 1),
+                "eta_min": scoring_details.get("eta_minutes", "N/A"),
+                "traffic_factor": scoring_details.get("traffic_factor", 1.0),
+                "estimated": scoring_details.get("estimated", False),
+                "peak_hour": scoring_details.get("peak_hour", False),
+                "ICU_open": facility.get("ICU_open", 0),
+                "accept": int(facility.get("acceptanceRate", 0.75) * 100),
+                "specialties": ", ".join([s for s, v in facility.get("specialties", {}).items() if v]) or "—",
+                "highend": ", ".join([e for e, v in facility.get("highend", {}).items() if v]) or "—",
+                "route": route_coords,
+                "lat": float(facility["lat"]),
+                "lon": float(facility["lon"]),
+                "routing_success": route_data.get('success', False),
+                "routing_provider": route_data.get('provider', 'Unknown')
+            })
+        except Exception as e:
+            st.error(f"Error processing facility {facility.get('name', 'Unknown')}: {str(e)}")
+            continue
+    
+    # Clear progress indicators
+    progress_bar.empty()
+    status_text.empty()
+    
+    # Sort by score (descending)
+    ranked_facilities.sort(key=lambda x: (-x["score"], x["eta_min"] if isinstance(x["eta_min"], (int, float)) else 999))
+    
+    return ranked_facilities[:top_k]
 
 # === DEMO FACILITIES (East Khasi Hills) ===
 EH_BASE = dict(lat_min=25.45, lat_max=25.65, lon_min=91.80, lon_max=91.95)
@@ -1331,10 +1718,13 @@ with tabs[0]:
             if cap_cols[i % 5].checkbox(cap, value=pre_select, key=f"cap_{cap}"):
                 need_caps.append(cap)
 
-    # === ENHANCED FACILITY MATCHING ===
-    st.markdown("### 🎯 Smart Facility Matching")
-    
-    if st.button("Find Best Matched Facilities", type="primary"):
+    # === ENHANCED FACILITY MATCHING WITH FREE ROUTING ===
+    st.markdown("### 🎯 Enhanced Facility Matching (Free Routing)")
+
+    # Show free routing configuration
+    current_provider, enable_traffic = show_free_routing_configuration()
+
+    if st.button("Find Best Matched Facilities with Free Routing", type="primary"):
         # Validate diagnosis before proceeding
         if referrer_role == "Doctor/Physician" and dx_payload is None:
             st.error("Please select an ICD diagnosis to find matching facilities")
@@ -1342,126 +1732,282 @@ with tabs[0]:
             st.error("Please provide a reason for referral to find matching facilities")
         else:
             # Calculate current triage color for scoring
-            vitals = dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu)
-            context = dict(
+                vitals = dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu)
+                context = dict(
                 age=p_age,
                 pregnant=(complaint == "Maternal"),
                 infection=(complaint in ["Sepsis", "Other"]),
                 o2_device=st.session_state.o2_device,
                 spo2_scale=st.session_state.spo2_scale,
                 behavior=st.session_state.pews_behavior
-            )
-            triage_color, _ = triage_decision(vitals, context)
-            
-            # Apply override if active
-            if st.session_state.triage_override_active and st.session_state.triage_override_color:
-                triage_color = st.session_state.triage_override_color
+        )
+        triage_color, _ = triage_decision(vitals, context)
+        
+        # Apply override if active
+        if st.session_state.triage_override_active and st.session_state.triage_override_color:
+            triage_color = st.session_state.triage_override_color
 
-            # Get ranked facilities - FIXED FUNCTION CALL
-            ranked_facilities = rank_facilities_for_case(
-                origin_coords=(p_lat, p_lon),  # CORRECTED PARAMETER NAME
+        # Get ranked facilities with free routing
+        with st.spinner("Calculating optimal routes with free routing services..."):
+            ranked_facilities = rank_facilities_with_free_routing(
+                origin_coords=(p_lat, p_lon),
                 required_caps=need_caps,
                 case_type=complaint,
                 triage_color=triage_color,
                 top_k=8
             )
 
-            if not ranked_facilities:
-                st.warning("No suitable facilities found. Try relaxing capability requirements.")
-            else:
-                # Display ranked facilities
-                st.markdown(f"#### 🏆 Top {len(ranked_facilities)} Matched Facilities")
-                st.info(f"**Case Type:** {complaint} | **Triage:** {triage_color} | **Required Capabilities:** {', '.join(need_caps) if need_caps else 'None'}")
+        if not ranked_facilities:
+            st.warning("No suitable facilities found. Try relaxing capability requirements.")
+        else:
+            # Display routing provider info
+            provider_name = {
+                "osrm": "OSRM (Free Open Source)",
+                "graphhopper": "GraphHopper (Free Tier)", 
+                "openrouteservice": "OpenRouteService (Free)"
+            }[current_provider]
+            
+            st.success(f"✓ Routing completed using {provider_name}")
+            
+            # Display ranked facilities
+            st.markdown(f"#### 🏆 Top {len(ranked_facilities)} Matched Facilities")
+            
+            # Show traffic simulation status
+            if enable_traffic:
+                current_hour = datetime.now().hour
+                if (7 <= current_hour <= 10) or (17 <= current_hour <= 20):
+                    st.info("🚗 **Peak hours detected**: Estimated travel times include traffic delays")
+                else:
+                    st.info("🛣️ **Off-peak hours**: Normal travel conditions")
+            
+            st.info(f"**Case Type:** {complaint} | **Triage:** {triage_color} | **Required Capabilities:** {', '.join(need_caps) if need_caps else 'None'}")
+            
+            # Reset selection state
+            st.session_state.matched_primary = None
+            st.session_state.matched_alts = set()
+
+            # Display facilities with enhanced cards
+            for i, facility in enumerate(ranked_facilities, 1):
+                is_primary = (st.session_state.matched_primary == facility["name"])
+                is_alternate = (facility["name"] in st.session_state.matched_alts)
                 
-                # Reset selection state
-                st.session_state.matched_primary = None
-                st.session_state.matched_alts = set()
-
-                # Display facilities with ranking
-                for i, facility in enumerate(ranked_facilities, 1):
-                    is_primary = (st.session_state.matched_primary == facility["name"])
-                    is_alternate = (facility["name"] in st.session_state.matched_alts)
-                    
-                    pick, alt = facility_card(facility, i, is_primary, is_alternate)
-                    
-                    if pick:
-                        st.session_state.matched_primary = facility["name"]
-                        st.rerun()
-                    if alt:
-                        st.session_state.matched_alts.add(facility["name"])
-                        st.rerun()
-
-                # Set default primary if none selected
-                if not st.session_state.matched_primary and ranked_facilities:
-                    st.session_state.matched_primary = ranked_facilities[0]["name"]
-
-                # Show selection summary
-                st.markdown("---")
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.session_state.matched_primary:
-                        st.success(f"**Primary:** {st.session_state.matched_primary}")
-                    else:
-                        st.warning("No primary facility selected")
+                pick, alt = enhanced_facility_card(facility, i, is_primary, is_alternate)
                 
-                with col2:
-                    if st.session_state.matched_alts:
-                        st.info(f"**Alternates:** {', '.join(sorted(st.session_state.matched_alts))}")
-                    else:
-                        st.info("No alternate facilities selected")
+                if pick:
+                    st.session_state.matched_primary = facility["name"]
+                    st.rerun()
+                if alt:
+                    st.session_state.matched_alts.add(facility["name"])
+                    st.rerun()
 
-                # Show map visualization
-                show_map = st.checkbox("Show routes to top facilities", value=True)
-                if show_map and st.session_state.matched_primary:
-                    try:
-                        primary_name = st.session_state.matched_primary
-                        primary_fac = next((f for f in ranked_facilities if f["name"] == primary_name), None)
+            # Set default primary if none selected
+            if not st.session_state.matched_primary and ranked_facilities:
+                st.session_state.matched_primary = ranked_facilities[0]["name"]
+
+            # Show selection summary
+            st.markdown("---")
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.session_state.matched_primary:
+                    st.success(f"**Primary:** {st.session_state.matched_primary}")
+                else:
+                    st.warning("No primary facility selected")
+            
+            with col2:
+                if st.session_state.matched_alts:
+                    st.info(f"**Alternates:** {', '.join(sorted(st.session_state.matched_alts))}")
+                else:
+                    st.info("No alternate facilities selected")
+
+            # Enhanced map visualization with actual routes
+            show_map = st.checkbox("Show detailed routes to facilities", value=True)
+            if show_map and st.session_state.matched_primary:
+                try:
+                    primary_name = st.session_state.matched_primary
+                    primary_fac = next((f for f in ranked_facilities if f["name"] == primary_name), None)
+                    
+                    if primary_fac and p_lat and p_lon:
+                        # Create enhanced layers for visualization
+                        layers = []
                         
-                        if primary_fac and p_lat and p_lon:
-                            # Create layers for visualization
-                            layers = []
+                        # Origin layer
+                        layers.append(pdk.Layer(
+                            "ScatterplotLayer",
+                            data=[{"lon": p_lon, "lat": p_lat}],
+                            get_position="[lon, lat]",
+                            get_radius=200,
+                            get_fill_color=[66, 133, 244, 200],
+                            get_line_color=[0, 0, 0, 255],
+                            get_line_width=50,
+                        ))
+                        
+                        # Facility layers with color coding by score
+                        for i, fac in enumerate(ranked_facilities[:6]):  # Top 6 facilities
+                            # Color based on score (green=high, yellow=medium, red=low)
+                            if fac["score"] >= 80:
+                                color = [34, 197, 94, 200]  # Green
+                            elif fac["score"] >= 60:
+                                color = [245, 158, 11, 200]  # Yellow
+                            else:
+                                color = [239, 68, 68, 200]  # Red
+                                
+                            # Highlight primary facility
+                            if fac["name"] == primary_name:
+                                color = [139, 92, 246, 255]  # Purple for primary
                             
-                            # Origin layer
                             layers.append(pdk.Layer(
                                 "ScatterplotLayer",
-                                data=[{"lon": p_lon, "lat": p_lat}],
+                                data=[{"lon": fac["lon"], "lat": fac["lat"]}],
                                 get_position="[lon, lat]",
-                                get_radius=200,
-                                get_fill_color=[66, 133, 244, 200],
+                                get_radius=180,
+                                get_fill_color=color,
+                                get_line_color=[255, 255, 255, 255],
+                                get_line_width=20,
                             ))
                             
-                            # Facility layers
-                            for i, fac in enumerate(ranked_facilities[:4]):  # Top 4 facilities
-                                color = [34, 197, 94, 200] if fac["name"] == primary_name else [59, 130, 246, 150]
-                                layers.append(pdk.Layer(
-                                    "ScatterplotLayer",
-                                    data=[{"lon": fac["lon"], "lat": fac["lat"]}],
-                                    get_position="[lon, lat]",
-                                    get_radius=180,
-                                    get_fill_color=color,
-                                ))
+                            # Route visualization for primary only (to reduce clutter)
+                            if fac["name"] == primary_name and fac.get("route"):
+                                route_data = []
+                                for point in fac["route"]:
+                                    route_data.append({"lon": point[1], "lat": point[0]})
                                 
-                                # Route to primary only
-                                if fac["name"] == primary_name:
-                                    layers.append(pdk.Layer(
-                                        "PathLayer",
-                                        data=[{"path": [[p_lon, p_lat], [fac["lon"], fac["lat"]]]}],
-                                        get_path="path",
-                                        get_color=[16, 185, 129, 180],
-                                        width_scale=8,
-                                        width_min_pixels=4,
-                                    ))
-                            
-                            st.pydeck_chart(pdk.Deck(
-                                layers=layers,
-                                initial_view_state=pdk.ViewState(latitude=p_lat, longitude=p_lon, zoom=10),
-                                map_style="mapbox://styles/mapbox/dark-v10",
-                            ))
-                        else:
-                            st.warning("Could not render map: missing location data")
-                    except Exception as e:
-                        st.error(f"Map rendering error: {str(e)}")
-
+                                layers.append(pdk.Layer(
+                                    "PathLayer",
+                                    data=[{"path": route_data}],
+                                    get_path="path",
+                                    get_color=[16, 185, 129, 180],
+                                    get_width=8,
+                                    width_scale=8,
+                                    width_min_pixels=4,
+                                ))
+                        
+                        st.pydeck_chart(pdk.Deck(
+                            layers=layers,
+                            initial_view_state=pdk.ViewState(latitude=p_lat, longitude=p_lon, zoom=10),
+                            map_style="mapbox://styles/mapbox/dark-v10",
+                        ))
+                    else:
+                        st.warning("Could not render map: missing location data")
+                except Exception as e:
+                    st.error(f"Map rendering error: {str(e)}")
+                        
+# === ENHANCED FACILITY CARD WITH ROUTING INFO ===
+def enhanced_facility_card(row, rank, is_primary=False, is_alternate=False):
+    """
+    Enhanced facility card with routing information
+    """
+    with st.container():
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        
+        # Header with routing status indicator
+        header_col1, header_col2 = st.columns([3, 1])
+        with header_col1:
+            if is_primary:
+                st.markdown(f"#### 🏥 {row['name']} 🥇 <span class='priority-badge'>PRIMARY</span>", unsafe_allow_html=True)
+            elif is_alternate:
+                st.markdown(f"#### 🏥 {row['name']} 🥈 <span class='alternate-badge'>ALTERNATE</span>", unsafe_allow_html=True)
+            else:
+                st.markdown(f"#### 🏥 {row['name']} #{rank}", unsafe_allow_html=True)
+            
+            # Routing status indicator
+            if row.get('routing_success'):
+                if row.get('estimated'):
+                    st.markdown('<span class="badge warn">⚠ Estimated ETA</span>', unsafe_allow_html=True)
+                else:
+                    st.markdown('<span class="badge ok">✓ Live Routing</span>', unsafe_allow_html=True)
+            else:
+                st.markdown('<span class="badge warn">⚠ Estimated ETA</span>', unsafe_allow_html=True)
+        
+        with header_col2:
+            st.markdown(f"**Match Score: {row['score']}**", unsafe_allow_html=True)
+        
+        # Enhanced info with real routing data
+        if isinstance(row['eta_min'], (int, float)):
+            traffic_info = f" (Traffic: {row['traffic_factor']}x)" if row.get('traffic_factor', 1.0) > 1.0 else ""
+            provider_info = f" • {row.get('routing_provider', '')}"
+            sub = f"ETA ~ {row['eta_min']} min{traffic_info}{provider_info} • {row['km']} km • ICU beds: {row['ICU_open']} • Acceptance: {row['accept']}%"
+        else:
+            sub = f"Distance: {row['km']} km • ICU beds: {row['ICU_open']} • Acceptance: {row['accept']}%"
+        
+        st.markdown(f'<div class="small">{sub}</div>', unsafe_allow_html=True)
+        
+        # Enhanced scoring breakdown
+        with st.expander("Enhanced Score Details"):
+            details = row.get("scoring_details", {})
+            st.write(f"**Capability Match:** {details.get('capability_score', 0)}")
+            st.write(f"**Proximity (ETA-based):** {details.get('proximity_score', 0)}")
+            if 'eta_minutes' in details and isinstance(details['eta_minutes'], (int, float)):
+                st.write(f"**Driving Time:** {details['eta_minutes']} min")
+            if 'traffic_factor' in details:
+                st.write(f"**Traffic Impact:** {details['traffic_factor']}x")
+            st.write(f"**ICU Availability:** {details.get('icu_score', 0)}")
+            st.write(f"**Acceptance Rate:** {details.get('acceptance_score', 0)}")
+            st.write(f"**Specialization Bonus:** {details.get('specialization_bonus', 0)}")
+        
+        st.markdown("**Specialties**")
+        cap_badges(row.get("specialties",""))
+        
+        st.markdown("**High-end equipment**")
+        cap_badges(row.get("highend",""))
+        
+        st.markdown('<hr class="soft" />', unsafe_allow_html=True)
+        
+        # Action buttons
+        cta1, cta2 = st.columns(2)
+        pick_label = "Select as primary" if not is_primary else "✓ Primary selected"
+        alt_label = "Add as alternate" if not is_alternate else "✓ Alternate"
+        
+        pick = cta1.button(pick_label, key=f"pick_{row['name']}", disabled=is_primary)
+        alt = cta2.button(alt_label, key=f"alt_{row['name']}", disabled=is_alternate)
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+        return pick, alt
+# === FREE ROUTING CONFIGURATION UI ===
+def show_free_routing_configuration():
+    """
+    Show free routing provider configuration in the UI
+    """
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("🆓 Free Routing Configuration")
+    
+    # Provider selection
+    provider = st.sidebar.selectbox(
+        "Routing Provider",
+        ["osrm", "graphhopper", "openrouteservice"],
+        index=0,
+        format_func=lambda x: {
+            "osrm": "OSRM (Recommended - Free)",
+            "graphhopper": "GraphHopper (Free Tier)", 
+            "openrouteservice": "OpenRouteService (Free)"
+        }[x]
+    )
+    
+    # Traffic simulation settings
+    st.sidebar.markdown("**Traffic Simulation**")
+    enable_traffic = st.sidebar.checkbox("Simulate traffic patterns", value=True)
+    
+    if enable_traffic:
+        st.sidebar.info("Traffic simulation considers:\n- Peak hours (7-10 AM, 5-8 PM)\n- Weekends vs weekdays")
+    
+    # Cache management
+    col1, col2 = st.sidebar.columns(2)
+    with col1:
+        if st.button("🔄 Clear Cache"):
+            DISTANCE_CACHE.clear()
+            st.success("Route cache cleared!")
+    with col2:
+        st.metric("Cached Routes", len(DISTANCE_CACHE))
+    
+    # Provider info
+    if provider == "osrm":
+        st.sidebar.success("**OSRM**: Open Source • No API Key • Global Coverage")
+    elif provider == "graphhopper":
+        st.sidebar.info("**GraphHopper**: Free Tier • Good Accuracy")
+    else:
+        st.sidebar.info("**OpenRouteService**: Free with Registration")
+    
+    return provider, enable_traffic
+    
     # Final referral details
     st.markdown("### Referral details")
     colA, colB, colC = st.columns(3)
