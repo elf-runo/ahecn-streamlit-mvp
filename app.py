@@ -1393,14 +1393,14 @@ def facilities_df():
 # === ENHANCED SYNTHETIC DATA SEEDING ===
 RESUS = ["Airway positioning","Oxygen","IV fluids","Uterotonics","TXA","Bleeding control","Antibiotics","Nebulization","Immobilization","AED/CPR"]
 
-# REMOVE these duplicate sections:
-
-# Remove duplicate imports (lines 8-9)
-# from datetime import datetime, timedelta  # DUPLICATE
-
-# Remove duplicate function definitions:
-# - enhanced_facility_card (defined twice)
-# - show_free_routing_configuration (defined twice)
+def seed_referrals(n=500, rng_seed=42):
+    """Enhanced synthetic data seeding with proper structure"""
+    rng = random.Random(rng_seed)
+    facs = st.session_state.facilities
+    conds = ["Maternal", "Trauma", "Stroke", "Cardiac", "Sepsis", "Other"]
+    
+    # Clear existing referrals
+    st.session_state.referrals = []
     
     # Define medically appropriate case profiles
     case_profiles = {
@@ -1448,11 +1448,11 @@ RESUS = ["Airway positioning","Oxygen","IV fluids","Uterotonics","TXA","Bleeding
         }
     }
     
-    # Generate data over last 30 days for better time series
-    base  = time.time() - 30*24*3600
+    # Generate data over last 30 days
+    base = time.time() - 30 * 24 * 3600
 
     for i in range(n):
-        cond = rng.choices(conds, weights=[0.22,0.23,0.18,0.18,0.14,0.05])[0]
+        cond = rng.choices(conds, weights=[0.22, 0.23, 0.18, 0.18, 0.14, 0.05])[0]
         profile = case_profiles[cond]
         
         # Generate medically appropriate vitals
@@ -1465,42 +1465,42 @@ RESUS = ["Airway positioning","Oxygen","IV fluids","Uterotonics","TXA","Bleeding
         
         vit = dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu, complaint=cond)
         color = tri_color(vit)
-        severity = {"RED":"Critical", "YELLOW":"Moderate", "GREEN":"Non-critical"}[color]
+        severity = {"RED": "Critical", "YELLOW": "Moderate", "GREEN": "Non-critical"}[color]
 
         lat, lon = rand_geo(rng)
         
-        # Select appropriate destination based on case requirements
+        # Select appropriate destination
         suitable_facs = [
             f for f in facs 
             if all(f["caps"].get(cap, 0) for cap in profile["required_caps"])
         ]
         
         if not suitable_facs:
-            dest = rng.choice(facs)  # Fallback if no suitable facilities
+            dest = rng.choice(facs)
         else:
             dest = rng.choice(suitable_facs)
             
-        dkm  = dist_km(lat, lon, dest["lat"], dest["lon"])
+        dkm = dist_km(lat, lon, dest["lat"], dest["lon"])
         
-        # More varied timestamps for better time series
-        ts_first = base + rng.randint(0, 30*24*3600)
+        # More varied timestamps
+        ts_first = base + rng.randint(0, 30 * 24 * 3600)
         hr_of_day = datetime.fromtimestamp(ts_first).hour
         traffic_mult = traffic_factor_for_hour(hr_of_day)
         speed_kmh = rng.choice([30, 36, 45, 50, 60])
         eta_min = max(5, int(dkm / speed_kmh * 60 * traffic_mult))
         route = interpolate_route(lat, lon, dest["lat"], dest["lon"], n=24)
 
-        # More varied transport types
+        # Transport types
         transport_type = rng.choice(profile["transport_types"])
         amb_avail = (rng.random() > 0.25)
         
-        # More realistic time intervals
-        t_dec = ts_first + rng.randint(60, 6*60)
-        t_disp = t_dec + (rng.randint(2*60, 10*60) if amb_avail else rng.randint(15*60, 45*60))
-        t_arr  = t_disp + (eta_min*60)
-        t_hov  = t_arr + rng.randint(5*60, 20*60)
+        # Time intervals
+        t_dec = ts_first + rng.randint(60, 6 * 60)
+        t_disp = t_dec + (rng.randint(2 * 60, 10 * 60) if amb_avail else rng.randint(15 * 60, 45 * 60))
+        t_arr = t_disp + (eta_min * 60)
+        t_hov = t_arr + rng.randint(5 * 60, 20 * 60)
 
-        # Select appropriate ICD code
+        # ICD code
         icd_code = rng.choice(profile["icd_codes"])
         icd_label = next((item["label"] for item in ICD_LUT if item["icd_code"] == icd_code), f"{cond} Case")
         
@@ -1510,33 +1510,65 @@ RESUS = ["Airway positioning","Oxygen","IV fluids","Uterotonics","TXA","Bleeding
             case_type=cond
         )
 
+        # Generate interventions
+        interventions = []
+        for intervention in rng.sample(RESUS, rng.randint(0, 3)):
+            interventions.append({
+                "name": intervention,
+                "type": "resuscitation",
+                "timestamp": ts_first,
+                "performed_by": "referrer",
+                "status": "completed"
+            })
+
         st.session_state.referrals.append(dict(
             id=f"S{i:04d}",
-            patient=dict(name=f"Pt{i:04d}", age=rng.randint(1,85), sex=("Female" if rng.random()<0.5 else "Male"),
-                         id="", location=dict(lat=lat,lon=lon)),
-            referrer=dict(name=rng.choice(["Dr. Rai","Dr. Khonglah","ANM Pynsuk", "Dr. Sharma", "Dr. Singh"]), 
-                         facility=rng.choice(["PHC Mawlai","CHC Smit","CHC Pynursla","District Hospital Shillong",
-                                            "Tertiary Shillong Hub", "PHC Nongpoh", "CHC Jowai"]),
-                         role=rng.choice(["Doctor/Physician", "ANM/ASHA/EMT"])),
+            patient=dict(
+                name=f"Pt{i:04d}", 
+                age=rng.randint(1, 85), 
+                sex=("Female" if rng.random() < 0.5 else "Male"),
+                id="", 
+                location=dict(lat=lat, lon=lon)
+            ),
+            referrer=dict(
+                name=rng.choice(["Dr. Rai", "Dr. Khonglah", "ANM Pynsuk", "Dr. Sharma", "Dr. Singh"]), 
+                facility=rng.choice(["PHC Mawlai", "CHC Smit", "CHC Pynursla", "District Hospital Shillong",
+                                   "Tertiary Shillong Hub", "PHC Nongpoh", "CHC Jowai"]),
+                role=rng.choice(["Doctor/Physician", "ANM/ASHA/EMT"])
+            ),
             provisionalDx=provisional_dx,
-            interventions=rng.sample(RESUS, rng.randint(0,3)),
-            triage=dict(complaint=cond, decision=dict(color=color), hr=hr, sbp=sbp, rr=rr, temp=temp, spo2=spo2, avpu=avpu),
+            interventions=interventions,
+            triage=dict(
+                complaint=cond, 
+                decision=dict(color=color), 
+                hr=hr, sbp=sbp, rr=rr, temp=temp, spo2=spo2, avpu=avpu
+            ),
             clinical=dict(summary=f"Auto-seeded {cond.lower()} case"),
             severity=severity,
             reasons=dict(
                 severity=True, 
-                bedOrICUUnavailable=(rng.random()<0.2), 
-                specialTest=(rng.random()<0.3), 
+                bedOrICUUnavailable=(rng.random() < 0.2), 
+                specialTest=(rng.random() < 0.3), 
                 requiredCapabilities=profile["required_caps"]
             ),
             dest=dest["name"],
             alternates=[],
-            transport=dict(eta_min=eta_min, traffic=traffic_mult, speed_kmh=speed_kmh, 
-                          ambulance=transport_type, priority=rng.choice(["Routine", "Urgent", "STAT"])),
+            transport=dict(
+                eta_min=eta_min, 
+                traffic=traffic_mult, 
+                speed_kmh=speed_kmh, 
+                ambulance=transport_type, 
+                priority=rng.choice(["Routine", "Urgent", "STAT"])
+            ),
             route=route,
-            times=dict(first_contact_ts=ts_first, decision_ts=t_dec, dispatch_ts=t_disp, 
-                      arrive_dest_ts=t_arr, handover_ts=t_hov),
-            status=rng.choice(["HANDOVER","ARRIVE_DEST","DEPART_SCENE", "DISPATCHED", "PREALERT"]),
+            times=dict(
+                first_contact_ts=ts_first, 
+                decision_ts=t_dec, 
+                dispatch_ts=t_disp, 
+                arrive_dest_ts=t_arr, 
+                handover_ts=t_hov
+            ),
+            status=rng.choice(["HANDOVER", "ARRIVE_DEST", "DEPART_SCENE", "DISPATCHED", "PREALERT"]),
             ambulance_available=amb_avail,
             audit_log=[]
         ))
@@ -2045,123 +2077,6 @@ with tabs[0]:
                     except Exception as e:
                         st.error(f"Map rendering error: {str(e)}")
                         
-# === ENHANCED FACILITY CARD WITH ROUTING INFO ===
-def enhanced_facility_card(row, rank, is_primary=False, is_alternate=False):
-    """
-    Enhanced facility card with routing information
-    """
-    with st.container():
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        
-        # Header with routing status indicator
-        header_col1, header_col2 = st.columns([3, 1])
-        with header_col1:
-            if is_primary:
-                st.markdown(f"#### 🏥 {row['name']} 🥇 <span class='priority-badge'>PRIMARY</span>", unsafe_allow_html=True)
-            elif is_alternate:
-                st.markdown(f"#### 🏥 {row['name']} 🥈 <span class='alternate-badge'>ALTERNATE</span>", unsafe_allow_html=True)
-            else:
-                st.markdown(f"#### 🏥 {row['name']} #{rank}", unsafe_allow_html=True)
-            
-            # Routing status indicator
-            if row.get('routing_success'):
-                if row.get('estimated'):
-                    st.markdown('<span class="badge warn">⚠ Estimated ETA</span>', unsafe_allow_html=True)
-                else:
-                    st.markdown('<span class="badge ok">✓ Live Routing</span>', unsafe_allow_html=True)
-            else:
-                st.markdown('<span class="badge warn">⚠ Estimated ETA</span>', unsafe_allow_html=True)
-        
-        with header_col2:
-            st.markdown(f"**Match Score: {row['score']}**", unsafe_allow_html=True)
-        
-        # Enhanced info with real routing data
-        if isinstance(row['eta_min'], (int, float)):
-            traffic_info = f" (Traffic: {row['traffic_factor']}x)" if row.get('traffic_factor', 1.0) > 1.0 else ""
-            provider_info = f" • {row.get('routing_provider', '')}"
-            sub = f"ETA ~ {row['eta_min']} min{traffic_info}{provider_info} • {row['km']} km • ICU beds: {row['ICU_open']} • Acceptance: {row['accept']}%"
-        else:
-            sub = f"Distance: {row['km']} km • ICU beds: {row['ICU_open']} • Acceptance: {row['accept']}%"
-        
-        st.markdown(f'<div class="small">{sub}</div>', unsafe_allow_html=True)
-        
-        # Enhanced scoring breakdown
-        with st.expander("Enhanced Score Details"):
-            details = row.get("scoring_details", {})
-            st.write(f"**Capability Match:** {details.get('capability_score', 0)}")
-            st.write(f"**Proximity (ETA-based):** {details.get('proximity_score', 0)}")
-            if 'eta_minutes' in details and isinstance(details['eta_minutes'], (int, float)):
-                st.write(f"**Driving Time:** {details['eta_minutes']} min")
-            if 'traffic_factor' in details:
-                st.write(f"**Traffic Impact:** {details['traffic_factor']}x")
-            st.write(f"**ICU Availability:** {details.get('icu_score', 0)}")
-            st.write(f"**Acceptance Rate:** {details.get('acceptance_score', 0)}")
-            st.write(f"**Specialization Bonus:** {details.get('specialization_bonus', 0)}")
-        
-        st.markdown("**Specialties**")
-        cap_badges(row.get("specialties",""))
-        
-        st.markdown("**High-end equipment**")
-        cap_badges(row.get("highend",""))
-        
-        st.markdown('<hr class="soft" />', unsafe_allow_html=True)
-        
-        # Action buttons
-        cta1, cta2 = st.columns(2)
-        pick_label = "Select as primary" if not is_primary else "✓ Primary selected"
-        alt_label = "Add as alternate" if not is_alternate else "✓ Alternate"
-        
-        pick = cta1.button(pick_label, key=f"pick_{row['name']}", disabled=is_primary)
-        alt = cta2.button(alt_label, key=f"alt_{row['name']}", disabled=is_alternate)
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-        return pick, alt
-# === FREE ROUTING CONFIGURATION UI ===
-def show_free_routing_configuration():
-    """
-    Show free routing provider configuration in the UI
-    """
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("🆓 Free Routing Configuration")
-    
-    # Provider selection
-    provider = st.sidebar.selectbox(
-        "Routing Provider",
-        ["osrm", "graphhopper", "openrouteservice"],
-        index=0,
-        format_func=lambda x: {
-            "osrm": "OSRM (Recommended - Free)",
-            "graphhopper": "GraphHopper (Free Tier)", 
-            "openrouteservice": "OpenRouteService (Free)"
-        }[x]
-    )
-    
-    # Traffic simulation settings
-    st.sidebar.markdown("**Traffic Simulation**")
-    enable_traffic = st.sidebar.checkbox("Simulate traffic patterns", value=True)
-    
-    if enable_traffic:
-        st.sidebar.info("Traffic simulation considers:\n- Peak hours (7-10 AM, 5-8 PM)\n- Weekends vs weekdays")
-    
-    # Cache management
-    col1, col2 = st.sidebar.columns(2)
-    with col1:
-        if st.button("🔄 Clear Cache"):
-            DISTANCE_CACHE.clear()
-            st.success("Route cache cleared!")
-    with col2:
-        st.metric("Cached Routes", len(DISTANCE_CACHE))
-    
-    # Provider info
-    if provider == "osrm":
-        st.sidebar.success("**OSRM**: Open Source • No API Key • Global Coverage")
-    elif provider == "graphhopper":
-        st.sidebar.info("**GraphHopper**: Free Tier • Good Accuracy")
-    else:
-        st.sidebar.info("**OpenRouteService**: Free with Registration")
-    
-    return provider, enable_traffic
-    
     # Final referral details
     st.markdown("### Referral details")
     colA, colB, colC = st.columns(3)
@@ -2175,116 +2090,132 @@ def show_free_routing_configuration():
     primary = st.session_state.get("matched_primary")
     alternates = sorted(list(st.session_state.get("matched_alts", [])))
 
-def _save_referral(dispatch=False):
-    # Validate based on role
-    if referrer_role == "Doctor/Physician" and dx_payload is None:
-        st.error("Please select an ICD diagnosis to create referral")
-        return False
-    elif referrer_role == "ANM/ASHA/EMT" and not dx_payload.get("label"):
-        st.error("Please provide a reason for referral")
-        return False
+    def _save_referral(dispatch=False):
+        # Validate based on role
+        if referrer_role == "Doctor/Physician" and dx_payload is None:
+            st.error("Please select an ICD diagnosis to create referral")
+            return False
+        elif referrer_role == "ANM/ASHA/EMT" and not dx_payload.get("label"):
+            st.error("Please provide a reason for referral")
+            return False
+            
+        if not primary:
+            st.error("Select a primary destination from 'Find Best Matched Facilities' above.")
+            return False
+            
+        vit = dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu, complaint=complaint)
         
-    if not primary:
-        st.error("Select a primary destination from 'Find Best Matched Facilities' above.")
-        return False
+        # Combine interventions properly
+        all_interventions = iv_selected if 'iv_selected' in locals() else []
         
-    vit = dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu, complaint=complaint)
-    
-    # Combine interventions properly
-    all_interventions = iv_selected if 'iv_selected' in locals() else []
-    
-    # Add resuscitation interventions
-    for resus in resus_done:
-        all_interventions.append({
-            "name": resus,
-            "type": "resuscitation",
-            "timestamp": now_ts(),
-            "performed_by": "referrer",
-            "status": "completed"
-        })
-    
-    # Calculate base triage color
-    age = _num(p_age)
-    context = dict(
-        age=age,
-        pregnant=(complaint == "Maternal"),
-        infection=(complaint in ["Sepsis", "Other"]),
-        o2_device=st.session_state.o2_device,
-        spo2_scale=st.session_state.spo2_scale,
-        behavior=st.session_state.pews_behavior
-    )
-    base_colour, score_details = triage_decision(vit, context)
-    
-    # Apply override if active
-    final_colour = base_colour
-    audit_log = []
-    
-    if st.session_state.triage_override_active and st.session_state.triage_override_color:
-        final_colour = st.session_state.triage_override_color
-        audit_entry = {
-            "timestamp": datetime.now().isoformat(),
-            "action": "TRIAGE_OVERRIDE",
-            "user": r_name,
-            "details": {
-                "from": base_colour,
-                "to": final_colour,
-                "reason": st.session_state.triage_override_reason,
-                "scores": {
-                    "NEWS2": score_details["NEWS2"]["score"],
-                    "qSOFA": score_details["qSOFA"]["score"],
-                    "MEOWS_red": len(score_details["MEOWS"]["red"]),
-                    "PEWS": score_details["PEWS"]["score"]
+        # Add resuscitation interventions
+        for resus in resus_done:
+            all_interventions.append({
+                "name": resus,
+                "type": "resuscitation",
+                "timestamp": now_ts(),
+                "performed_by": "referrer",
+                "status": "completed"
+            })
+        
+        # Calculate base triage color
+        age = _num(p_age)
+        context = dict(
+            age=age,
+            pregnant=(complaint == "Maternal"),
+            infection=(complaint in ["Sepsis", "Other"]),
+            o2_device=st.session_state.o2_device,
+            spo2_scale=st.session_state.spo2_scale,
+            behavior=st.session_state.pews_behavior
+        )
+        base_colour, score_details = triage_decision(vit, context)
+        
+        # Apply override if active
+        final_colour = base_colour
+        audit_log = []
+        
+        if st.session_state.triage_override_active and st.session_state.triage_override_color:
+            final_colour = st.session_state.triage_override_color
+            audit_entry = {
+                "timestamp": datetime.now().isoformat(),
+                "action": "TRIAGE_OVERRIDE",
+                "user": r_name,
+                "details": {
+                    "from": base_colour,
+                    "to": final_colour,
+                    "reason": st.session_state.triage_override_reason,
+                    "scores": {
+                        "NEWS2": score_details["NEWS2"]["score"],
+                        "qSOFA": score_details["qSOFA"]["score"],
+                        "MEOWS_red": len(score_details["MEOWS"]["red"]),
+                        "PEWS": score_details["PEWS"]["score"]
+                    }
                 }
             }
-        }
-        audit_log.append(audit_entry)
+            audit_log.append(audit_entry)
 
-    ref = dict(
-        id="R" + str(int(time.time()))[-6:],
-        patient=dict(
-            name=p_name, 
-            age=int(p_age), 
-            sex=p_sex, 
-            id=p_id, 
-            location=dict(lat=float(p_lat), lon=float(p_lon))
-        ),
-        referrer=dict(name=r_name, facility=r_fac, role=referrer_role),
-        provisionalDx=dx_payload,
-        interventions=all_interventions,
-        resuscitation=resus_done,
-        triage=dict(
-            complaint=complaint, 
-            decision=dict(
-                color=final_colour,
-                base_color=base_colour,
-                overridden=(final_colour != base_colour)
-            ), 
-            hr=hr, sbp=sbp, rr=rr, temp=temp, spo2=spo2, avpu=avpu,
-            scores=score_details
-        ),
-        clinical=dict(summary=" ".join(ocr.split()[:60])),
-        reasons=dict(
-            severity=True, 
-            bedOrICUUnavailable=ref_beds, 
-            specialTest=ref_tests, 
-            requiredCapabilities=need_caps
-        ),
-        dest=primary,
-        alternates=alternates,
-        transport=dict(priority=priority, ambulance=amb_type, consent=bool(consent)),
-        times=dict(first_contact_ts=now_ts(), decision_ts=now_ts()),
-        status="PREALERT",
-        ambulance_available=None,
-        audit_log=audit_log
-    )
-    
-    if dispatch:
-        ref["times"]["dispatch_ts"] = now_ts()
-        ref["status"] = "DISPATCHED"
-        ref["ambulance_available"] = True
+        ref = dict(
+            id="R" + str(int(time.time()))[-6:],
+            patient=dict(
+                name=p_name, 
+                age=int(p_age), 
+                sex=p_sex, 
+                id=p_id, 
+                location=dict(lat=float(p_lat), lon=float(p_lon))
+            ),
+            referrer=dict(name=r_name, facility=r_fac, role=referrer_role),
+            provisionalDx=dx_payload,
+            interventions=all_interventions,
+            resuscitation=resus_done,
+            triage=dict(
+                complaint=complaint, 
+                decision=dict(
+                    color=final_colour,
+                    base_color=base_colour,
+                    overridden=(final_colour != base_colour)
+                ), 
+                hr=hr, sbp=sbp, rr=rr, temp=temp, spo2=spo2, avpu=avpu,
+                scores=score_details
+            ),
+            clinical=dict(summary=" ".join(ocr.split()[:60])),
+            reasons=dict(
+                severity=True, 
+                bedOrICUUnavailable=ref_beds, 
+                specialTest=ref_tests, 
+                requiredCapabilities=need_caps
+            ),
+            dest=primary,
+            alternates=alternates,
+            transport=dict(priority=priority, ambulance=amb_type, consent=bool(consent)),
+            times=dict(first_contact_ts=now_ts(), decision_ts=now_ts()),
+            status="PREALERT",
+            ambulance_available=None,
+            audit_log=audit_log
+        )
         
-    st.session_state.referrals.insert(0, ref)
-    return True
+        if dispatch:
+            ref["times"]["dispatch_ts"] = now_ts()
+            ref["status"] = "DISPATCHED"
+            ref["ambulance_available"] = True
+            
+        st.session_state.referrals.insert(0, ref)
+        return True
+
+    col1, col2 = st.columns(2)
+    if col1.button("Create referral"):
+        if _save_referral(dispatch=False):
+            st.success(f"Referral created → {primary}")
+            # Reset override after successful referral
+            st.session_state.triage_override_active = False
+            st.session_state.triage_override_color = None
+            st.session_state.triage_override_reason = ""
+    if col2.button("Create & dispatch now"):
+        if _save_referral(dispatch=True):
+            st.success(f"Referral created and DISPATCHED → {primary}")
+            # Reset override after successful referral
+            st.session_state.triage_override_active = False
+            st.session_state.triage_override_color = None
+            st.session_state.triage_override_reason = ""
 
 # ======== Receiving Hospital Tab ========
 with tabs[2]:
@@ -2678,434 +2609,4 @@ with tabs[3]:
         else:
             st.metric("Avg Dispatch Time", "N/A")
     
-    with col4:
-        if ambulance_usage_df is not None and not ambulance_usage_df.empty:
-            avoidable_pct = (ambulance_usage_df['avoidable'].sum() / len(ambulance_usage_df)) * 100
-            st.metric("Avoidable Ambulance Use", f"{avoidable_pct:.1f}%")
-        else:
-            st.metric("Avoidable Ambulance Use", "N/A")
-    
-    # Time Series Analysis
-    st.markdown("### ⏰ Time Series Analysis")
-    if not time_series_df.empty:
-        tab1, tab2, tab3 = st.tabs(["By Hour", "By Day", "By Day of Week"])
-        
-        with tab1:
-            hourly_data = time_series_df.groupby('hour').agg({
-                'referral': 'sum',
-                'dispatched': 'sum',
-                'arrived': 'sum'
-            }).reset_index()
-            
-            if not hourly_data.empty and len(hourly_data) > 0:
-                try:
-                    # Convert to long format for Altair
-                    hourly_long = hourly_data.melt(id_vars=['hour'], 
-                                                 value_vars=['referral', 'dispatched', 'arrived'],
-                                                 var_name='metric', value_name='value')
-                    
-                    # Ensure data types are correct
-                    hourly_long['hour'] = pd.to_numeric(hourly_long['hour'], errors='coerce')
-                    hourly_long['value'] = pd.to_numeric(hourly_long['value'], errors='coerce')
-                    hourly_long = hourly_long.dropna()
-                    
-                    if not hourly_long.empty:
-                        chart = alt.Chart(hourly_long).mark_line(point=True).encode(
-                            x=alt.X('hour:Q', title='Hour of Day', scale=alt.Scale(zero=False)),
-                            y=alt.Y('value:Q', title='Count', scale=alt.Scale(zero=True)),
-                            color=alt.Color('metric:N', title='Metric'),
-                            tooltip=['hour', 'metric', 'value']
-                        ).properties(height=300, title='Referral Activity by Hour')
-                        
-                        st.altair_chart(chart, use_container_width=True)
-                    else:
-                        st.info("No valid data available for hourly chart")
-                except Exception as e:
-                    st.error(f"Error creating hourly chart: {str(e)}")
-                    st.info("Try generating more synthetic data or check data format")
-            else:
-                st.info("No hourly data available")
-        
-        with tab2:
-            daily_data = time_series_df.groupby('date').agg({
-                'referral': 'sum',
-                'dispatched': 'sum',
-                'arrived': 'sum'
-            }).reset_index()
-            
-            if not daily_data.empty and len(daily_data) > 0:
-                try:
-                    daily_long = daily_data.melt(id_vars=['date'], 
-                                               value_vars=['referral', 'dispatched', 'arrived'],
-                                               var_name='metric', value_name='value')
-                    
-                    # Ensure date is proper datetime
-                    daily_long['date'] = pd.to_datetime(daily_long['date'])
-                    daily_long['value'] = pd.to_numeric(daily_long['value'], errors='coerce')
-                    daily_long = daily_long.dropna()
-                    
-                    if not daily_long.empty:
-                        chart = alt.Chart(daily_long).mark_line(point=True).encode(
-                            x=alt.X('date:T', title='Date'),
-                            y=alt.Y('value:Q', title='Count', scale=alt.Scale(zero=True)),
-                            color=alt.Color('metric:N', title='Metric'),
-                            tooltip=['date', 'metric', 'value']
-                        ).properties(height=300, title='Referral Activity by Day')
-                        
-                        st.altair_chart(chart, use_container_width=True)
-                    else:
-                        st.info("No valid data available for daily chart")
-                except Exception as e:
-                    st.error(f"Error creating daily chart: {str(e)}")
-            else:
-                st.info("No daily data available")
-        
-        with tab3:
-            dow_data = time_series_df.groupby('day_of_week').agg({
-                'referral': 'sum'
-            }).reset_index()
-            
-            if not dow_data.empty and len(dow_data) > 0:
-                try:
-                    # Define day order for proper sorting
-                    day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-                    dow_data['day_of_week'] = pd.Categorical(dow_data['day_of_week'], categories=day_order, ordered=True)
-                    dow_data = dow_data.sort_values('day_of_week')
-                    
-                    chart = alt.Chart(dow_data).mark_bar().encode(
-                        x=alt.X('day_of_week:N', title='Day of Week', sort=day_order),
-                        y=alt.Y('referral:Q', title='Referrals'),
-                        color=alt.Color('day_of_week:N', legend=None),
-                        tooltip=['day_of_week', 'referral']
-                    ).properties(height=300, title='Referrals by Day of Week')
-                    
-                    st.altair_chart(chart, use_container_width=True)
-                except Exception as e:
-                    st.error(f"Error creating day-of-week chart: {str(e)}")
-            else:
-                st.info("No day-of-week data available")
-    else:
-        st.info("No time series data available")
-    
-    # Funnel Analysis
-    st.markdown("### 📊 Referral Funnel")
-    if funnel_data:
-        funnel_df = pd.DataFrame({
-            'Stage': list(funnel_data.keys()),
-            'Count': list(funnel_data.values())
-        })
-        
-        funnel_df['Conversion Rate'] = (funnel_df['Count'] / funnel_df['Count'].iloc[0] * 100).round(1)
-        
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            chart = alt.Chart(funnel_df).mark_bar().encode(
-                x=alt.X('Stage:N', sort=None, title='Stage'),
-                y=alt.Y('Count:Q', title='Count'),
-                color=alt.Color('Stage:N', legend=None),
-                tooltip=['Stage', 'Count', 'Conversion Rate']
-            ).properties(height=300, title='Referral Funnel')
-            
-            st.altair_chart(chart, use_container_width=True)
-        
-        with col2:
-            st.dataframe(funnel_df, use_container_width=True)
-    else:
-        st.info("No funnel data available")
-    
-    # SLA Distributions
-    st.markdown("### ⏱️ Service Level Agreement (SLA) Distributions")
-    if sla_df is not None and not sla_df.empty:
-        # Calculate percentiles
-        sla_metrics = ['decision_dispatch', 'dispatch_arrival', 'arrival_handover']
-        percentile_data = []
-        
-        for metric in sla_metrics:
-            if metric in sla_df.columns and sla_df[metric].notna().any():
-                valid_data = sla_df[metric].dropna()
-                if len(valid_data) > 0:
-                    p50 = valid_data.quantile(0.5)
-                    p90 = valid_data.quantile(0.9)
-                    percentile_data.append({
-                        'Metric': metric.replace('_', ' → ').title(),
-                        'P50': p50,
-                        'P90': p90
-                    })
-        
-        if percentile_data:
-            percentile_df = pd.DataFrame(percentile_data)
-            
-            col1, col2 = st.columns([2, 1])
-            with col1:
-                # Melt for Altair
-                melt_df = percentile_df.melt(id_vars=['Metric'], value_vars=['P50', 'P90'], 
-                                           var_name='Percentile', value_name='Minutes')
-                
-                chart = alt.Chart(melt_df).mark_bar().encode(
-                    x=alt.X('Metric:N', title='Time Interval', axis=alt.Axis(labelAngle=0)),
-                    y=alt.Y('Minutes:Q', title='Minutes'),
-                    color=alt.Color('Percentile:N', title='Percentile'),
-                    column=alt.Column('Percentile:N'),
-                    tooltip=['Metric', 'Percentile', 'Minutes']
-                ).properties(height=300, width=150)
-                
-                st.altair_chart(chart, use_container_width=True)
-            
-            with col2:
-                st.dataframe(percentile_df.round(1), use_container_width=True)
-        else:
-            st.info("No SLA data available for percentiles")
-    else:
-        st.info("No SLA data available")
-    
-        # Triage Mix by Facility & Case Type
-    st.markdown("### 🎨 Triage Mix Analysis")
-    if not triage_mix_df.empty:
-        # Define professional triage colors
-        triage_colors = {
-            'RED': '#DC2626',    # Deeper red (emergency standard)
-            'YELLOW': '#D97706', # Amber yellow (urgent standard)  
-            'GREEN': '#059669'   # Emerald green (non-urgent standard)
-        }
-        
-        tab1, tab2 = st.tabs(["By Facility", "By Case Type"])
-        
-        with tab1:
-            facility_mix = triage_mix_df.groupby(['facility', 'triage_color']).size().reset_index(name='count')
-            
-            if not facility_mix.empty:
-                chart = alt.Chart(facility_mix).mark_bar().encode(
-                    x=alt.X('facility:N', title='Facility', axis=alt.Axis(labelAngle=45)),
-                    y=alt.Y('count:Q', title='Count'),
-                    color=alt.Color('triage_color:N', 
-                                  scale=alt.Scale(domain=list(triage_colors.keys()), 
-                                                range=list(triage_colors.values())),
-                                  title='Triage Color'),
-                    tooltip=['facility', 'triage_color', 'count']
-                ).properties(height=400, title='Triage Distribution by Facility')
-                
-                st.altair_chart(chart, use_container_width=True)
-            else:
-                st.info("No facility mix data available")
-        
-        with tab2:
-            case_mix = triage_mix_df.groupby(['case_type', 'triage_color']).size().reset_index(name='count')
-            
-            if not case_mix.empty:
-                chart = alt.Chart(case_mix).mark_bar().encode(
-                    x=alt.X('case_type:N', title='Case Type'),
-                    y=alt.Y('count:Q', title='Count'),
-                    color=alt.Color('triage_color:N', 
-                                  scale=alt.Scale(domain=list(triage_colors.keys()), 
-                                                range=list(triage_colors.values())),
-                                  title='Triage Color'),
-                    tooltip=['case_type', 'triage_color', 'count']
-                ).properties(height=400, title='Triage Distribution by Case Type')
-                
-                st.altair_chart(chart, use_container_width=True)
-            else:
-                st.info("No case mix data available")
-    else:
-        st.info("No triage mix data available")
-    
-    # Geographic Heatmap
-    st.markdown("### 🗺️ Case Origin Heatmap")
-    if not geo_df.empty:
-        try:
-            # PyDeck Hexagon Layer
-            layer = pdk.Layer(
-                "HexagonLayer",
-                data=geo_df,
-                get_position=['lon', 'lat'],
-                radius=1000,
-                elevation_scale=50,
-                elevation_range=[0, 1000],
-                extruded=True,
-                coverage=1,
-                pickable=True
-            )
-            
-            view_state = pdk.ViewState(
-                longitude=geo_df['lon'].mean(),
-                latitude=geo_df['lat'].mean(),
-                zoom=10,
-                pitch=50
-            )
-            
-            st.pydeck_chart(pdk.Deck(
-                layers=[layer],
-                initial_view_state=view_state,
-                map_style="mapbox://styles/mapbox/dark-v10"
-            ))
-            
-            # Triage distribution in heatmap
-            col1, col2 = st.columns(2)
-            with col1:
-                triage_dist = geo_df['triage_color'].value_counts()
-                st.bar_chart(triage_dist)
-            
-            with col2:
-                case_dist = geo_df['case_type'].value_counts()
-                st.bar_chart(case_dist)
-                
-        except Exception as e:
-            st.error(f"Map rendering error: {str(e)}")
-            st.info("Try checking the geographic data format")
-    else:
-        st.info("No geographic data available")
-    
-        # Avoidable Ambulance Usage
-    st.markdown("### 🚑 Ambulance Usage Analysis")
-    if not ambulance_usage_df.empty:
-        # Define professional triage colors
-        triage_colors = {
-            'RED': '#DC2626',    # Deeper red (emergency standard)
-            'YELLOW': '#D97706', # Amber yellow (urgent standard)  
-            'GREEN': '#059669'   # Emerald green (non-urgent standard)
-        }
-        
-        # Calculate avoidable usage by triage color
-        avoidable_by_triage = ambulance_usage_df.groupby('triage_color').agg({
-            'used_ambulance': 'sum',
-            'avoidable': 'sum',
-            'triage_color': 'count'
-        }).rename(columns={'triage_color': 'total_cases'}).reset_index()
-        
-        avoidable_by_triage['avoidable_pct'] = (avoidable_by_triage['avoidable'] / avoidable_by_triage['total_cases'] * 100).round(1)
-        avoidable_by_triage['ambulance_usage_pct'] = (avoidable_by_triage['used_ambulance'] / avoidable_by_triage['total_cases'] * 100).round(1)
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            total_avoidable = (ambulance_usage_df['avoidable'].sum() / len(ambulance_usage_df) * 100) if len(ambulance_usage_df) > 0 else 0
-            st.metric("Total Avoidable Ambulance Use", f"{total_avoidable:.1f}%")
-            
-            if not avoidable_by_triage.empty:
-                chart = alt.Chart(avoidable_by_triage).mark_bar().encode(
-                    x=alt.X('triage_color:N', title='Triage Color'),
-                    y=alt.Y('avoidable_pct:Q', title='Avoidable Usage (%)'),
-                    color=alt.Color('triage_color:N', 
-                                  scale=alt.Scale(domain=list(triage_colors.keys()), 
-                                                range=list(triage_colors.values())),
-                                  title='Triage Color'),
-                    tooltip=['triage_color', 'avoidable_pct']
-                ).properties(height=300, title='Avoidable Ambulance Use by Triage Color')
-                
-                st.altair_chart(chart, use_container_width=True)
-            else:
-                st.info("No avoidable usage data by triage color")
-        
-        with col2:
-            total_usage = (ambulance_usage_df['used_ambulance'].sum() / len(ambulance_usage_df) * 100) if len(ambulance_usage_df) > 0 else 0
-            st.metric("Overall Ambulance Usage", f"{total_usage:.1f}%")
-            
-            if not avoidable_by_triage.empty:
-                chart = alt.Chart(avoidable_by_triage).mark_bar().encode(
-                    x=alt.X('triage_color:N', title='Triage Color'),
-                    y=alt.Y('ambulance_usage_pct:Q', title='Ambulance Usage (%)'),
-                    color=alt.Color('triage_color:N', 
-                                  scale=alt.Scale(domain=list(triage_colors.keys()), 
-                                                range=list(triage_colors.values())),
-                                  title='Triage Color'),
-                    tooltip=['triage_color', 'ambulance_usage_pct']
-                ).properties(height=300, title='Ambulance Usage by Triage Color')
-                
-                st.altair_chart(chart, use_container_width=True)
-            else:
-                st.info("No ambulance usage data by triage color")
-    else:
-        st.info("No ambulance usage data available")
-        
-# ======== Data / Admin Tab ========
-with tabs[4]:
-    st.subheader("Seed / Import / Export (JSON & CSV)")
-    
-    st.markdown("#### Generate Synthetic Data")
-    seed_n = st.slider("Seed referrals (synthetic)", 100, 1000, 500, step=50)
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("Seed synthetic data"):
-            seed_referrals(n=seed_n)
-            st.success(f"Seeded {seed_n} referrals")
-            st.rerun()
-    
-    with col2:
-        if st.button("Validate Data Quality"):
-            # Check if we have valid data for analytics
-            time_series_df = create_time_series_analysis(st.session_state.referrals)
-            if time_series_df.empty:
-                st.error("No valid time series data. Try seeding more data.")
-            else:
-                st.success(f"Data validation passed: {len(time_series_df)} time series records available")
-
-    st.markdown("#### Export Data")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.download_button(
-            "Export JSON",
-            data=json.dumps(dict(referrals=st.session_state.referrals, facilities=st.session_state.facilities), indent=2),
-            file_name="ahecn_data.json", 
-            mime="application/json"
-        )
-    
-    with col2:
-        if st.session_state.referrals:
-            csv_data = pd.DataFrame(st.session_state.referrals).to_csv(index=False)
-            st.download_button(
-                "Export referrals (CSV)", 
-                data=csv_data, 
-                file_name="ahecn_referrals.csv", 
-                mime="text/csv"
-            )
-
-    st.markdown("#### Import Data")
-    upload = st.file_uploader("Import JSON", type=["json"])
-    if upload:
-        try:
-            data = json.load(upload)
-            st.session_state.referrals = data.get("referrals", [])
-            imported_fac = data.get("facilities", st.session_state.facilities)
-            st.session_state.facilities = [normalize_facility(x) for x in imported_fac]
-            st.success("Imported (schema normalized)")
-            st.rerun()
-        except Exception as e:
-            st.error(f"Import failed: {str(e)}")
-
-# ======== Facility Admin Tab ========
-with tabs[5]:
-    st.subheader("Facility capabilities & readiness (edit live)")
-
-    st.markdown("**Generate more demo facilities**")
-    new_n = st.slider("Number of facilities", 10, 30, len(st.session_state.facilities), step=1)
-    if st.button("Regenerate facilities"):
-        st.session_state.facilities = [normalize_facility(x) for x in default_facilities(count=new_n)]
-        st.success(f"Generated {new_n} facilities")
-        st.rerun()
-
-    fac_df = facilities_df()
-    st.dataframe(fac_df, use_container_width=True)
-
-    st.markdown("**Edit Facility Details**")
-    target = st.selectbox("Select facility", [f["name"] for f in st.session_state.facilities])
-    F = next(f for f in st.session_state.facilities if f["name"] == target)
-
-    c1, c2 = st.columns(2)
-    with c1:
-        new_icu = st.number_input("ICU_open", 0, 30, value=int(F["ICU_open"]))
-        new_acc = st.slider("Acceptance rate", 0.0, 1.0, value=float(F["acceptanceRate"]), step=0.01)
-    with c2:
-        st.caption("Toggle key specialties")
-        for s in SPECIALTIES:
-            F["specialties"][s] = st.checkbox(s, value=bool(F["specialties"].get(s, 0)), key=f"spec_{s}")
-
-    st.caption("High-end interventional equipment")
-    hi_cols = st.columns(5)
-    for i, cap in enumerate(INTERVENTIONS):
-        F["highend"][cap] = hi_cols[i % 5].checkbox(cap, value=bool(F["highend"].get(cap, 0)), key=f"hi_{cap}")
-
-    if st.button("Update facility"):
-        F["ICU_open"] = int(new_icu)
-        F["acceptanceRate"] = float(new_acc)
-        st.success("Facility updated")
+   
