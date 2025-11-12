@@ -1711,8 +1711,7 @@ with tabs[0]:
             st.info("Check to override score-based triage decision")
     
     st.session_state.triage_override_active = override_active
-
-    # ========== STEP 1: ICD-Coded Diagnosis (Role-based) ==========
+    # ========== STEP 1: ICD-CODED DIAGNOSIS (ROLE-BASED) ==========
     st.subheader("Provisional Diagnosis")
     
     if referrer_role == "Doctor/Physician":
@@ -1738,7 +1737,6 @@ with tabs[0]:
             chosen_icd = st.selectbox("Select ICD diagnosis", icd_choices, index=0, 
                                     help="Filtered by age and case type. Use search for more options.")
             row = icd_df_filt[icd_df_filt["display"] == chosen_icd].iloc[0]
-            default_iv = [x.strip() for x in str(row.get("default_interventions", "")).split(";") if x.strip()]
             
             # Display ICD details
             st.info(f"**Selected:** {row['label']} ({row['icd_code']}) • Age range: {row['age_min']}-{row['age_max']} years")
@@ -1746,7 +1744,50 @@ with tabs[0]:
             st.warning("No ICD codes match your search/filters. Try different criteria or check 'Show all diagnoses'.")
             chosen_icd = None
             row = None
-            default_iv = []
+
+        # Additional notes (optional for doctors)
+        dx_free = st.text_input("Additional clinical notes (optional)", "")
+        
+        # Diagnosis payload for doctors
+        if chosen_icd and row is not None:
+            dx_payload = dict(code=row["icd_code"], label=row["label"], case_type=row["case_type"])
+        else:
+            st.error("Please select an ICD diagnosis to proceed")
+            dx_payload = None
+
+    else:
+        # ANM/ASHA/EMT: Optional ICD with prominent free-text
+        st.markdown("**Reason for Referral** <span class='required'>*</span>", unsafe_allow_html=True)
+        
+        # Free-text reason (primary for non-doctors)
+        referral_reason = st.text_area("Describe the reason for referral", 
+                                     placeholder="Describe symptoms, observations, and reason for transfer...",
+                                     height=80)
+        
+        # Optional ICD selection
+        with st.expander("Optional: Select ICD diagnosis (if known)"):
+            icd_choices, icd_df_filt = icd_options_for(complaint, p_age)
+            if icd_choices:
+                chosen_icd = st.selectbox("ICD diagnosis (optional)", [""] + icd_choices, index=0)
+                if chosen_icd:
+                    row = icd_df_filt[icd_df_filt["display"] == chosen_icd].iloc[0]
+                else:
+                    row = None
+            else:
+                st.info("No ICD suggestions for this age & case type")
+                chosen_icd = None
+                row = None
+        
+        # Additional notes
+        dx_free = st.text_input("Additional notes (optional)", "")
+        
+        # Diagnosis payload for non-doctors
+        dx_payload = dict(code=row["icd_code"] if chosen_icd else "", 
+                         label=referral_reason or (row["label"] if chosen_icd else ""), 
+                         case_type=str(complaint))
+        
+        if not referral_reason and not chosen_icd:
+            st.error("Please provide a reason for referral or select an ICD diagnosis")
 
     # ========== INTERVENTIONS BY DIAGNOSIS ==========
     st.subheader("Interventions by Diagnosis")
@@ -1807,7 +1848,7 @@ with tabs[0]:
                         "timestamp": now_ts(),
                         "performed_by": "referrer",
                         "status": "completed"
-                    })   
+                    })    
         # Additional notes (optional for doctors)
         dx_free = st.text_input("Additional clinical notes (optional)", "")
         
