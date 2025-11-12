@@ -2687,9 +2687,16 @@ with tabs[3]:
     else:
         st.info("No SLA data available")
     
-    # Triage Mix by Facility & Case Type
+        # Triage Mix by Facility & Case Type
     st.markdown("### 🎨 Triage Mix Analysis")
     if not triage_mix_df.empty:
+        # Define professional triage colors
+        triage_colors = {
+            'RED': '#DC2626',    # Deeper red (emergency standard)
+            'YELLOW': '#D97706', # Amber yellow (urgent standard)  
+            'GREEN': '#059669'   # Emerald green (non-urgent standard)
+        }
+        
         tab1, tab2 = st.tabs(["By Facility", "By Case Type"])
         
         with tab1:
@@ -2699,7 +2706,10 @@ with tabs[3]:
                 chart = alt.Chart(facility_mix).mark_bar().encode(
                     x=alt.X('facility:N', title='Facility', axis=alt.Axis(labelAngle=45)),
                     y=alt.Y('count:Q', title='Count'),
-                    color=alt.Color('triage_color:N', title='Triage Color'),
+                    color=alt.Color('triage_color:N', 
+                                  scale=alt.Scale(domain=list(triage_colors.keys()), 
+                                                range=list(triage_colors.values())),
+                                  title='Triage Color'),
                     tooltip=['facility', 'triage_color', 'count']
                 ).properties(height=400, title='Triage Distribution by Facility')
                 
@@ -2714,7 +2724,10 @@ with tabs[3]:
                 chart = alt.Chart(case_mix).mark_bar().encode(
                     x=alt.X('case_type:N', title='Case Type'),
                     y=alt.Y('count:Q', title='Count'),
-                    color=alt.Color('triage_color:N', title='Triage Color'),
+                    color=alt.Color('triage_color:N', 
+                                  scale=alt.Scale(domain=list(triage_colors.keys()), 
+                                                range=list(triage_colors.values())),
+                                  title='Triage Color'),
                     tooltip=['case_type', 'triage_color', 'count']
                 ).properties(height=400, title='Triage Distribution by Case Type')
                 
@@ -2770,9 +2783,16 @@ with tabs[3]:
     else:
         st.info("No geographic data available")
     
-    # Avoidable Ambulance Usage
+        # Avoidable Ambulance Usage
     st.markdown("### 🚑 Ambulance Usage Analysis")
     if not ambulance_usage_df.empty:
+        # Define professional triage colors
+        triage_colors = {
+            'RED': '#DC2626',    # Deeper red (emergency standard)
+            'YELLOW': '#D97706', # Amber yellow (urgent standard)  
+            'GREEN': '#059669'   # Emerald green (non-urgent standard)
+        }
+        
         # Calculate avoidable usage by triage color
         avoidable_by_triage = ambulance_usage_df.groupby('triage_color').agg({
             'used_ambulance': 'sum',
@@ -2793,7 +2813,10 @@ with tabs[3]:
                 chart = alt.Chart(avoidable_by_triage).mark_bar().encode(
                     x=alt.X('triage_color:N', title='Triage Color'),
                     y=alt.Y('avoidable_pct:Q', title='Avoidable Usage (%)'),
-                    color=alt.Color('triage_color:N', legend=None),
+                    color=alt.Color('triage_color:N', 
+                                  scale=alt.Scale(domain=list(triage_colors.keys()), 
+                                                range=list(triage_colors.values())),
+                                  title='Triage Color'),
                     tooltip=['triage_color', 'avoidable_pct']
                 ).properties(height=300, title='Avoidable Ambulance Use by Triage Color')
                 
@@ -2809,7 +2832,10 @@ with tabs[3]:
                 chart = alt.Chart(avoidable_by_triage).mark_bar().encode(
                     x=alt.X('triage_color:N', title='Triage Color'),
                     y=alt.Y('ambulance_usage_pct:Q', title='Ambulance Usage (%)'),
-                    color=alt.Color('triage_color:N', legend=None),
+                    color=alt.Color('triage_color:N', 
+                                  scale=alt.Scale(domain=list(triage_colors.keys()), 
+                                                range=list(triage_colors.values())),
+                                  title='Triage Color'),
                     tooltip=['triage_color', 'ambulance_usage_pct']
                 ).properties(height=300, title='Ambulance Usage by Triage Color')
                 
