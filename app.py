@@ -16,11 +16,6 @@ import asyncio
 import threading
 from collections import deque
 
-# Clear any cached widget states (development only)
-if 'widget_key_reset' not in st.session_state:
-    st.session_state.widget_key_reset = True
-    st.rerun()  # FIXED: Changed from st.experimental_rerun() to st.rerun()
-
 # === PAGE CONFIG MUST BE FIRST STREAMLIT COMMAND ===
 st.set_page_config(
     page_title="AHECN MVP v1.9",
@@ -29,62 +24,13 @@ st.set_page_config(
 )
 
 # === FREE ROUTING CONFIGURATION ===
-# Choose your free routing provider: 'osrm' (recommended) or 'openrouteservice'
 ROUTING_PROVIDER = 'osrm'
-
-# No API keys needed for these free services
-OSRM_BASE_URL = "http://router.project-osrm.org"  # Public OSRM instance
-ORS_BASE_URL = "https://api.openrouteservice.org"  # Requires free API key but generous free tier
+OSRM_BASE_URL = "http://router.project-osrm.org"
+ORS_BASE_URL = "https://api.openrouteservice.org"
 
 # Cache configuration
 DISTANCE_CACHE = {}
-CACHE_DURATION = timedelta(hours=24)  # Refresh cache every 24 hours
-
-# === FREE ROUTING CONFIGURATION UI ===
-def show_free_routing_configuration():
-    """
-    Show free routing provider configuration in the UI
-    """
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("🆓 Free Routing Configuration")
-    
-    # Provider selection
-    provider = st.sidebar.selectbox(
-        "Routing Provider",
-        ["osrm", "graphhopper", "openrouteservice"],
-        index=0,
-        format_func=lambda x: {
-            "osrm": "OSRM (Recommended - Free)",
-            "graphhopper": "GraphHopper (Free Tier)", 
-            "openrouteservice": "OpenRouteService (Free)"
-        }[x]
-    )
-    
-    # Traffic simulation settings
-    st.sidebar.markdown("**Traffic Simulation**")
-    enable_traffic = st.sidebar.checkbox("Simulate traffic patterns", value=True)
-    
-    if enable_traffic:
-        st.sidebar.info("Traffic simulation considers:\n- Peak hours (7-10 AM, 5-8 PM)\n- Weekends vs weekdays")
-    
-    # Cache management
-    col1, col2 = st.sidebar.columns(2)
-    with col1:
-        if st.button("🔄 Clear Cache"):
-            DISTANCE_CACHE.clear()
-            st.success("Route cache cleared!")
-    with col2:
-        st.metric("Cached Routes", len(DISTANCE_CACHE))
-    
-    # Provider info
-    if provider == "osrm":
-        st.sidebar.success("**OSRM**: Open Source • No API Key • Global Coverage")
-    elif provider == "graphhopper":
-        st.sidebar.info("**GraphHopper**: Free Tier • Good Accuracy")
-    else:
-        st.sidebar.info("**OpenRouteService**: Free with Registration")
-    
-    return provider, enable_traffic
+CACHE_DURATION = timedelta(hours=24)
 
 # === REAL-TIME EVENT SYSTEM ===
 class RealTimeEventSystem:
@@ -218,14 +164,16 @@ def show_realtime_activity_feed():
     with col2:
         if st.button("Clear Read"):
             mark_all_notifications_read()
+            st.rerun()
     with col3:
         if st.button("Simulate Activity"):
             generate_demo_activities()
+            st.rerun()
     
     # Auto-refresh logic
     if auto_refresh:
         time.sleep(10)
-        st.rerun()  # FIXED: Changed from st.experimental_rerun() to st.rerun()
+        st.rerun()
     
     # Show unread notifications count
     unread_count = len([n for n in st.session_state.notifications if not n.get('read', False)])
@@ -294,7 +242,7 @@ def render_activity_item(activity):
                 with col_a:
                     if st.button("Acknowledge", key=f"ack_{activity['id']}"):
                         acknowledge_event(activity['id'])
-                        st.rerun()  # FIXED: Changed from st.experimental_rerun() to st.rerun()
+                        st.rerun()
                 with col_b:
                     if st.button("View Details", key=f"view_{activity['id']}"):
                         show_event_details(activity)
@@ -368,7 +316,7 @@ def render_notification_item(notification):
             with col_a:
                 if st.button("Mark Read", key=f"read_{notification['id']}"):
                     mark_notification_read(notification['id'])
-                    st.rerun()  # FIXED: Changed from st.experimental_rerun() to st.rerun()
+                    st.rerun()
             with col_b:
                 if st.button("View Event", key=f"event_{notification['id']}"):
                     event = next((e for e in st.session_state.system_activities 
@@ -453,6 +401,7 @@ def render_live_case(case_id, case):
             if status in ["DISPATCHED", "ENROUTE_SCENE"]:
                 if st.button("Update ETA", key=f"eta_{case_id}"):
                     update_case_eta(case_id)
+                    st.rerun()
             
             if st.button("View Details", key=f"details_{case_id}"):
                 show_case_details(case)
@@ -651,6 +600,52 @@ def publish_ambulance_dispatch_event(case_id, ambulance_type, destination):
         user="Dispatcher",
         facility=destination
     )
+
+# === FREE ROUTING CONFIGURATION UI ===
+def show_free_routing_configuration():
+    """
+    Show free routing provider configuration in the UI
+    """
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("🆓 Free Routing Configuration")
+    
+    # Provider selection
+    provider = st.sidebar.selectbox(
+        "Routing Provider",
+        ["osrm", "graphhopper", "openrouteservice"],
+        index=0,
+        format_func=lambda x: {
+            "osrm": "OSRM (Recommended - Free)",
+            "graphhopper": "GraphHopper (Free Tier)", 
+            "openrouteservice": "OpenRouteService (Free)"
+        }[x]
+    )
+    
+    # Traffic simulation settings
+    st.sidebar.markdown("**Traffic Simulation**")
+    enable_traffic = st.sidebar.checkbox("Simulate traffic patterns", value=True)
+    
+    if enable_traffic:
+        st.sidebar.info("Traffic simulation considers:\n- Peak hours (7-10 AM, 5-8 PM)\n- Weekends vs weekdays")
+    
+    # Cache management
+    col1, col2 = st.sidebar.columns(2)
+    with col1:
+        if st.button("🔄 Clear Cache"):
+            DISTANCE_CACHE.clear()
+            st.success("Route cache cleared!")
+    with col2:
+        st.metric("Cached Routes", len(DISTANCE_CACHE))
+    
+    # Provider info
+    if provider == "osrm":
+        st.sidebar.success("**OSRM**: Open Source • No API Key • Global Coverage")
+    elif provider == "graphhopper":
+        st.sidebar.info("**GraphHopper**: Free Tier • Good Accuracy")
+    else:
+        st.sidebar.info("**OpenRouteService**: Free with Registration")
+    
+    return provider, enable_traffic
 
 # === ENHANCED FACILITY CARD WITH ROUTING INFO ===
 def enhanced_facility_card(row, rank, is_primary=False, is_alternate=False):
@@ -1116,7 +1111,7 @@ def calc_qSOFA(rr, sbp, avpu):
     return score, hits, (score >= 2)
 
 def calc_MEOWS(hr, rr, sbp, temp, spo2):
-    hr, rr, sbp, temp, spo2 = _num(hr), _num(rr), _num(sbp), _num(temp), _num(spo2)
+    hr, rr, sbp, temp, spo2 = (_num(hr), _num(rr), _num(sbp), _num(temp), _num(spo2))
     red, yellow = [], []
     if sbp is not None:
         if sbp < 90 or sbp > 160: red.append("SBP critical")
@@ -2729,10 +2724,10 @@ with tabs[0]:
                     
                     if pick:
                         st.session_state.matched_primary = facility["name"]
-                        st.rerun()  # FIXED: Changed from st.experimental_rerun() to st.rerun()
+                        st.rerun()
                     if alt:
                         st.session_state.matched_alts.add(facility["name"])
-                        st.rerun()  # FIXED: Changed from st.experimental_rerun() to st.rerun()
+                        st.rerun()
 
                 # Set default primary if none selected
                 if not st.session_state.matched_primary and ranked_facilities:
@@ -2864,3 +2859,172 @@ with tabs[0]:
                 "timestamp": now_ts(),
                 "performed_by": "referrer",
                 "status": "completed"
+            })
+        
+        # Calculate triage color
+        context = dict(
+            age=p_age,
+            pregnant=(complaint == "Maternal"),
+            infection=(complaint in ["Sepsis", "Other"]),
+            o2_device=st.session_state.o2_device,
+            spo2_scale=st.session_state.spo2_scale,
+            behavior=st.session_state.pews_behavior
+        )
+        triage_color, triage_details = triage_decision(vit, context)
+        
+        # Apply override if active
+        if st.session_state.triage_override_active and st.session_state.triage_override_color:
+            triage_color = st.session_state.triage_override_color
+        
+        # Create referral object
+        ref = dict(
+            id=f"R{int(time.time())}",
+            patient=dict(
+                name=p_name, age=p_age, sex=p_sex, id=p_id,
+                location=dict(lat=p_lat, lon=p_lon)
+            ),
+            referrer=dict(
+                name=r_name, facility=r_fac, role=referrer_role
+            ),
+            provisionalDx=dx_payload,
+            interventions=all_interventions,
+            triage=dict(
+                complaint=complaint,
+                decision=dict(color=triage_color),
+                hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu
+            ),
+            clinical=dict(summary=ocr),
+            severity=triage_color,
+            reasons=dict(
+                severity=ref_severity,
+                bedOrICUUnavailable=ref_beds,
+                specialTest=ref_tests,
+                requiredCapabilities=need_caps
+            ),
+            dest=primary,
+            alternates=alternates,
+            transport=dict(
+                eta_min=0,  # Will be calculated
+                traffic=1.0,
+                speed_kmh=40,
+                ambulance=amb_type,
+                priority=priority
+            ),
+            route=[],
+            times=dict(
+                first_contact_ts=now_ts(),
+                decision_ts=now_ts(),
+                dispatch_ts=None,
+                arrive_dest_ts=None,
+                handover_ts=None
+            ),
+            status="PREALERT",
+            ambulance_available=True,
+            audit_log=[]
+        )
+        
+        # Add override info if applied
+        if st.session_state.triage_override_active:
+            ref["audit_log"].append({
+                "timestamp": now_ts(),
+                "user": r_name,
+                "action": "TRIAGE_OVERRIDE",
+                "details": {
+                    "original_color": triage_details,
+                    "override_color": triage_color,
+                    "reason": st.session_state.triage_override_reason
+                }
+            })
+        
+        st.session_state.referrals.insert(0, ref)
+        
+        # === ADD REAL-TIME EVENT: Case Created ===
+        event_system.publish_event(
+            event_type="CASE_CREATED",
+            data={
+                "patient_name": p_name,
+                "complaint": complaint,
+                "triage_color": triage_color,
+                "referrer": r_name,
+                "facility": primary
+            },
+            user=r_name,
+            facility=r_fac
+        )
+        
+        return ref["id"]
+
+    # Create referral button
+    if st.button("Create referral", type="primary"):
+        ref_id = _save_referral(dispatch=False)
+        if ref_id:
+            st.success(f"Referral {ref_id} created!")
+            st.balloons()
+            st.session_state.matched_primary = None
+            st.session_state.matched_alts = set()
+            st.rerun()
+
+# ======== Real-time Dashboard Tab ========
+with tabs[6]:
+    st.header("🚨 Real-time Emergency Coordination Dashboard")
+    
+    # Dashboard overview
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Active Cases", len(st.session_state.live_cases))
+    with col2:
+        unread_count = len([n for n in st.session_state.notifications if not n.get('read', False)])
+        st.metric("Unread Notifications", unread_count)
+    with col3:
+        active_count = len([a for a in st.session_state.system_activities if a.get('timestamp', 0) > time.time() - 3600])
+        st.metric("Last Hour Activity", active_count)
+    with col4:
+        dispatched_count = len([c for c in st.session_state.live_cases.values() if c.get('status') in ['DISPATCHED', 'ENROUTE_SCENE']])
+        st.metric("Ambulances Dispatched", dispatched_count)
+    
+    # Main real-time components
+    tab1, tab2, tab3 = st.tabs(["Live Activity Feed", "Notification Center", "Live Case Tracker"])
+    
+    with tab1:
+        show_realtime_activity_feed()
+    
+    with tab2:
+        show_notification_center()
+    
+    with tab3:
+        show_live_case_tracker()
+
+# ======== Other Tabs (Placeholders) ========
+with tabs[1]:
+    st.header("Ambulance / EMT Dashboard")
+    st.info("Ambulance coordination and dispatch interface coming soon...")
+    
+    # Quick dispatch demo
+    if st.button("🚑 Simulate Ambulance Dispatch"):
+        if st.session_state.referrals:
+            latest_ref = st.session_state.referrals[0]
+            publish_ambulance_dispatch_event(
+                latest_ref['id'],
+                "ALS",
+                latest_ref.get('dest', 'Unknown Facility')
+            )
+            st.success("Ambulance dispatch simulated!")
+
+with tabs[2]:
+    st.header("Receiving Hospital Dashboard")
+    st.info("Hospital acceptance and case management interface coming soon...")
+
+with tabs[3]:
+    st.header("Government Analytics Dashboard")
+    st.info("Regional analytics and performance monitoring coming soon...")
+
+with tabs[4]:
+    st.header("Data / Admin Dashboard")
+    st.info("System administration and data management coming soon...")
+
+with tabs[5]:
+    st.header("Facility Admin Dashboard")
+    st.info("Facility management and capacity monitoring coming soon...")
+
+# === Integrate real-time events with existing workflow ===
+integrate_realtime_events()
