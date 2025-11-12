@@ -161,13 +161,18 @@ def load_icd_catalogue():
             if 'default_caps' in df.columns and pd.notna(row.get('default_caps')):
                 default_caps = [cap.strip() for cap in str(row['default_caps']).split(';') if cap.strip()]
             
+            # Enhanced: Load default interventions properly
+            default_interventions = []
+            if 'default_interventions' in df.columns and pd.notna(row.get('default_interventions')):
+                default_interventions = [iv.strip() for iv in str(row['default_interventions']).split(';') if iv.strip()]
+            
             icd_lut.append({
                 "icd_code": row['icd10'],
                 "label": row['label'],
                 "case_type": row['bundle'],
                 "age_min": int(row['age_min']),
                 "age_max": int(row['age_max']),
-                "default_interventions": "",
+                "default_interventions": default_interventions,  # Now a list
                 "default_caps": default_caps
             })
         return icd_lut
@@ -180,33 +185,33 @@ def get_fallback_icd_catalog():
     return [
         # Maternal
         {"icd_code": "O72.0", "label": "Third-stage haemorrhage", "case_type": "Maternal", "age_min": 12, "age_max": 55,
-         "default_interventions": "IV fluids;Uterotonics;TXA", "default_caps": ["ICU", "BloodBank", "OBGYN_OT", "OR", "Ventilator"]},
+         "default_interventions": ["IV fluids", "Uterotonics", "TXA"], "default_caps": ["ICU", "BloodBank", "OBGYN_OT", "OR", "Ventilator"]},
         {"icd_code": "O72.1", "label": "Immediate postpartum haemorrhage", "case_type": "Maternal", "age_min": 12, "age_max": 55,
-         "default_interventions": "IV fluids;Uterotonics;TXA", "default_caps": ["ICU", "BloodBank", "OBGYN_OT", "OR", "Ventilator"]},
+         "default_interventions": ["IV fluids", "Uterotonics", "TXA"], "default_caps": ["ICU", "BloodBank", "OBGYN_OT", "OR", "Ventilator"]},
         {"icd_code": "O14.1", "label": "Severe pre-eclampsia", "case_type": "Maternal", "age_min": 12, "age_max": 55,
-         "default_interventions": "Magnesium sulfate;BP control", "default_caps": ["ICU", "OBGYN_OT"]},
+         "default_interventions": ["Magnesium sulfate", "BP control"], "default_caps": ["ICU", "OBGYN_OT"]},
         
         # Trauma
         {"icd_code": "S06.0", "label": "Concussion", "case_type": "Trauma", "age_min": 0, "age_max": 120,
-         "default_interventions": "Neuro checks;Immobilization", "default_caps": ["CT"]},
+         "default_interventions": ["Neuro checks", "Immobilization"], "default_caps": ["CT"]},
         {"icd_code": "S06.5", "label": "Traumatic subdural haemorrhage", "case_type": "Trauma", "age_min": 0, "age_max": 120,
-         "default_interventions": "Airway protection;IV access", "default_caps": ["CT", "Neurosurgery", "ICU", "OR"]},
+         "default_interventions": ["Airway protection", "IV access"], "default_caps": ["CT", "Neurosurgery", "ICU", "OR"]},
         
         # Stroke
         {"icd_code": "I63.9", "label": "Cerebral infarction unspecified", "case_type": "Stroke", "age_min": 18, "age_max": 120,
-         "default_interventions": "BP control;Glucose check", "default_caps": ["CT", "Thrombolysis", "ICU"]},
+         "default_interventions": ["BP control", "Glucose check"], "default_caps": ["CT", "Thrombolysis", "ICU"]},
         
         # Cardiac
         {"icd_code": "I21.9", "label": "Acute myocardial infarction unspecified", "case_type": "Cardiac", "age_min": 18, "age_max": 120,
-         "default_interventions": "Aspirin;Oxygen;IV access", "default_caps": ["CathLab", "ICU"]},
+         "default_interventions": ["Aspirin", "Oxygen", "IV access"], "default_caps": ["CathLab", "ICU"]},
         
         # Sepsis
         {"icd_code": "A41.9", "label": "Sepsis unspecified organism", "case_type": "Sepsis", "age_min": 0, "age_max": 120,
-         "default_interventions": "Antibiotics;IV fluids;Oxygen", "default_caps": ["ICU"]},
+         "default_interventions": ["Antibiotics", "IV fluids", "Oxygen"], "default_caps": ["ICU"]},
         
         # Other
         {"icd_code": "J96.0", "label": "Acute respiratory failure", "case_type": "Other", "age_min": 0, "age_max": 120,
-         "default_interventions": "Oxygen;Nebulization", "default_caps": ["Ventilator", "ICU"]},
+         "default_interventions": ["Oxygen", "Nebulization"], "default_caps": ["Ventilator", "ICU"]},
     ]
 
 # Load ICD catalog
@@ -1389,11 +1394,27 @@ def facilities_df():
 RESUS = ["Airway positioning","Oxygen","IV fluids","Uterotonics","TXA","Bleeding control","Antibiotics","Nebulization","Immobilization","AED/CPR"]
 
 def seed_referrals(n=500, rng_seed=42):
-    """Enhanced synthetic data generation with more varied cases for better demo visualization"""
-    st.session_state.referrals.clear()
-    rng = random.Random(rng_seed)
-    conds = ["Maternal","Trauma","Stroke","Cardiac","Sepsis","Other"]
-    facs  = st.session_state.facilities
+    # ... existing code ...
+    
+    for i in range(n):
+        # ... existing case generation code ...
+        
+        # Generate interventions in new format
+        interventions = []
+        for intervention in rng.sample(RESUS, rng.randint(0, 3)):
+            interventions.append({
+                "name": intervention,
+                "type": "resuscitation", 
+                "timestamp": ts_first,
+                "performed_by": "referrer",
+                "status": "completed"
+            })
+        
+        st.session_state.referrals.append(dict(
+            # ... existing referral data ...
+            interventions=interventions,
+            # ... rest of referral data ...
+        ))
     
     # Define medically appropriate case profiles
     case_profiles = {
@@ -1727,16 +1748,66 @@ with tabs[0]:
             row = None
             default_iv = []
 
-        # Interventions checklist (auto-suggested from ICD)
-        if chosen_icd and default_iv:
-            st.markdown("**Suggested Interventions**")
-            iv_cols = st.columns(3)
-            iv_selected = []
-            for i, item in enumerate(default_iv):
-                if iv_cols[i % 3].checkbox(item, value=True, key=f"iv_{i}"):
-                    iv_selected.append(item)
+        # ========== INTERVENTIONS BY DIAGNOSIS ==========
+        st.subheader("Interventions by Diagnosis")
+    
+        if referrer_role == "Doctor/Physician" and chosen_icd and row is not None:
+            # Show default interventions from ICD as checkboxes
+            default_iv = row.get("default_interventions", [])
+            if default_iv:
+                st.markdown("**Diagnosis-Specific Interventions**")
+                st.caption(f"Default interventions for {row['label']}:")
+            
+                iv_cols = st.columns(2)
+                iv_selected = []
+                for i, item in enumerate(default_iv):
+                    col_idx = i % 2
+                    if iv_cols[col_idx].checkbox(item, value=True, key=f"iv_{i}"):
+                        iv_selected.append({
+                            "name": item,
+                            "type": "diagnosis_default",
+                            "timestamp": now_ts(),
+                            "performed_by": "referrer",
+                            "status": "completed"
+                    })
+            
+                # Additional custom interventions
+                st.markdown("**Additional Interventions**")
+                custom_iv = st.text_area("Add custom interventions (one per line)", 
+                                   placeholder="Enter any additional interventions performed...",
+                                   height=60)
+                if custom_iv:
+                    for line in custom_iv.split('\n'):
+                    line = line.strip()
+                    if line:
+                        iv_selected.append({
+                            "name": line,
+                            "type": "custom",
+                            "timestamp": now_ts(),
+                            "performed_by": "referrer",
+                            "status": "completed"
+                        })
         else:
+            st.info("No default interventions for this diagnosis")
             iv_selected = []
+    else:
+        # For non-doctors or when no ICD selected
+        st.markdown("**Interventions Performed**")
+        custom_iv = st.text_area("Describe interventions performed", 
+                               placeholder="List all interventions performed (one per line)...",
+                               height=80)
+        iv_selected = []
+        if custom_iv:
+            for line in custom_iv.split('\n'):
+                line = line.strip()
+                if line:
+                    iv_selected.append({
+                        "name": line,
+                        "type": "custom",
+                        "timestamp": now_ts(),
+                        "performed_by": "referrer",
+                        "status": "completed"
+                    })
 
         # Additional notes (optional for doctors)
         dx_free = st.text_input("Additional clinical notes (optional)", "")
@@ -2145,7 +2216,27 @@ def show_free_routing_configuration():
             return False
             
         vit = dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu, complaint=complaint)
-        
+        # Combine interventions
+        all_interventions = iv_selected if 'iv_selected' in locals() else []
+    
+        # Add resuscitation interventions
+        for resus in resus_done:
+            all_interventions.append({
+                "name": resus,
+                "type": "resuscitation",
+                "timestamp": now_ts(),
+                "performed_by": "referrer",
+                "status": "completed"
+        })
+    
+        ref = dict(
+            id="R" + str(int(time.time()))[-6:],
+            patient=dict(name=p_name, age=int(p_age), sex=p_sex, id=p_id, location=dict(lat=float(p_lat), lon=float(p_lon))),
+            referrer=dict(name=r_name, facility=r_fac, role=referrer_role),
+            provisionalDx=dx_payload,
+            interventions=all_interventions,  # Now using enhanced structure
+            # ... rest of the referral data ...
+    )
         # Calculate base triage color
         age = _num(p_age)
         context = dict(
@@ -2333,7 +2424,47 @@ with tabs[2]:
                                     <em>Reason: {audit['details']['reason']}</em>
                                 </div>
                                 """, unsafe_allow_html=True)
-                    
+                                            # Enhanced Interventions Display for Receiving Hospital
+                    st.markdown("#### 📋 Interventions Timeline")
+                    interventions = r.get("interventions", [])
+                    if interventions:
+                        # Group by performer
+                        referrer_iv = [iv for iv in interventions if iv.get("performed_by") == "referrer"]
+                        emt_iv = [iv for iv in interventions if iv.get("performed_by") == "emt"]
+                        
+                        if referrer_iv:
+                            st.markdown("**Referrer Interventions:**")
+                            for iv in referrer_iv:
+                                timestamp = datetime.fromtimestamp(iv.get("timestamp", now_ts())).strftime("%H:%M:%S")
+                                st.markdown(f"""
+                                <div style="background: #1e293b; padding: 6px 10px; border-radius: 6px; margin: 2px 0; border-left: 3px solid #3b82f6;">
+                                    <div style="font-weight: 500;">{iv['name']}</div>
+                                    <div style="font-size: 0.75rem; color: #9ca3af;">{timestamp} • {iv.get('type', 'custom').replace('_', ' ').title()}</div>
+                                </div>
+                                """, unsafe_allow_html=True)
+                        
+                        if emt_iv:
+                            st.markdown("**En-route Interventions:**")
+                            for iv in emt_iv:
+                                timestamp = datetime.fromtimestamp(iv.get("timestamp", now_ts())).strftime("%H:%M:%S")
+                                status_badge = {
+                                    "completed": "🟢",
+                                    "in_progress": "🟡", 
+                                    "planned": "🔵"
+                                }.get(iv.get("status", "completed"), "⚪")
+                                
+                                st.markdown(f"""
+                                <div style="background: #1e293b; padding: 6px 10px; border-radius: 6px; margin: 2px 0; border-left: 3px solid #10b981;">
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <span style="font-weight: 500;">{iv['name']}</span>
+                                        <span style="margin-left: auto;">{status_badge}</span>
+                                    </div>
+                                    <div style="font-size: 0.75rem; color: #9ca3af;">{timestamp} • EMT • Status: {iv.get('status', 'completed').replace('_', ' ').title()}</div>
+                                </div>
+                                """, unsafe_allow_html=True)
+                    else:
+                        st.info("No interventions recorded")
+                        
                     # Enhanced ISBAR format
                     dx = r.get("provisionalDx", {})
                     if isinstance(dx, dict):
@@ -2404,11 +2535,12 @@ with tabs[2]:
 
 # ======== Ambulance / EMT Tab ========
 with tabs[1]:
-    st.subheader("Active jobs (availability • route • live ETA)")
+    st.subheader("Active jobs (availability • route • live ETA • interventions)")
     avail = st.radio("Ambulance availability", ["Available", "Unavailable"], horizontal=True)
 
     active = [r for r in st.session_state.referrals if r["status"] in
               ["PREALERT", "DISPATCHED", "ARRIVE_SCENE", "DEPART_SCENE", "ARRIVE_DEST"]]
+    
     if not active:
         st.info("No active jobs")
     else:
@@ -2416,6 +2548,7 @@ with tabs[1]:
         pick = st.selectbox("Select case", ids, index=0)
         r = active[ids.index(pick)]
 
+        # Case status controls
         c1, c2, c3, c4, c5 = st.columns(5)
         if c1.button("Dispatch"):     
             r["times"]["dispatch_ts"] = now_ts()
@@ -2439,7 +2572,85 @@ with tabs[1]:
             r["status"] = "HANDOVER"
             st.rerun()
 
-        st.markdown("### Route & live traffic")
+        # Enhanced Interventions Section for EMT
+        st.markdown("### 🚑 Interventions Timeline")
+        
+        # Display existing interventions
+        interventions = r.get("interventions", [])
+        if interventions:
+            st.markdown("**Completed Interventions:**")
+            for i, iv in enumerate(interventions):
+                timestamp = datetime.fromtimestamp(iv.get("timestamp", now_ts())).strftime("%H:%M:%S")
+                performed_by = iv.get("performed_by", "unknown").title()
+                iv_type = iv.get("type", "custom")
+                
+                badge_color = {
+                    "diagnosis_default": "badge ok",
+                    "custom": "badge",
+                    "en_route": "badge warn"
+                }.get(iv_type, "badge")
+                
+                st.markdown(f"""
+                <div style="background: #1f2937; padding: 8px 12px; border-radius: 8px; margin: 4px 0; border-left: 4px solid #3b82f6;">
+                    <div style="display: flex; justify-content: between; align-items: center;">
+                        <span style="font-weight: 600;">{iv['name']}</span>
+                        <span class="{badge_color}" style="margin-left: auto;">{iv_type.replace('_', ' ').title()}</span>
+                    </div>
+                    <div style="font-size: 0.8rem; color: #9ca3af;">
+                        {timestamp} • By: {performed_by} • Status: {iv.get('status', 'completed')}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("No interventions recorded yet")
+        
+        # Add new en-route interventions
+        st.markdown("**Add En-route Intervention**")
+        col1, col2, col3 = st.columns([3, 1, 1])
+        with col1:
+            new_intervention = st.text_input("Intervention description", key=f"new_iv_{r['id']}", 
+                                           placeholder="e.g., IV access, Oxygen administration, Medication...")
+        with col2:
+            iv_status = st.selectbox("Status", ["completed", "in_progress", "planned"], key=f"iv_status_{r['id']}")
+        with col3:
+            if st.button("Add Intervention", key=f"add_iv_{r['id']}"):
+                if new_intervention.strip():
+                    if "interventions" not in r:
+                        r["interventions"] = []
+                    
+                    r["interventions"].append({
+                        "name": new_intervention.strip(),
+                        "type": "en_route",
+                        "timestamp": now_ts(),
+                        "performed_by": "emt",
+                        "status": iv_status
+                    })
+                    st.success("Intervention added")
+                    st.rerun()
+                else:
+                    st.error("Please enter intervention description")
+
+        # Quick intervention buttons
+        st.markdown("**Quick Actions**")
+        quick_actions = st.columns(5)
+        common_interventions = ["IV access", "Oxygen", "ECG monitor", "BP monitoring", "Medication"]
+        for i, action in enumerate(common_interventions):
+            if quick_actions[i].button(action, key=f"quick_{action}_{r['id']}"):
+                if "interventions" not in r:
+                    r["interventions"] = []
+                
+                r["interventions"].append({
+                    "name": action,
+                    "type": "en_route",
+                    "timestamp": now_ts(),
+                    "performed_by": "emt",
+                    "status": "completed"
+                })
+                st.success(f"{action} added")
+                st.rerun()
+
+        # Route and traffic management
+        st.markdown("### 🗺️ Route & Live Traffic")
         current_traffic = r["transport"].get("traffic", 1.0)
         traffic_idx = 0 if current_traffic == 1.0 else 1 if current_traffic <= 1.2 else 2
         traffic_state = st.radio("Traffic", ["Free", "Moderate", "Heavy"], index=traffic_idx, horizontal=True)
@@ -2465,6 +2676,7 @@ with tabs[1]:
             else:
                 triage_pill(decision['color'])
 
+        # Route visualization
         if r.get("route"):
             try:
                 path = [dict(path=[[pt[1], pt[0]] for pt in r["route"]])]
