@@ -1748,7 +1748,7 @@ with tabs[0]:
             row = None
             default_iv = []
 
-        # ========== INTERVENTIONS BY DIAGNOSIS ==========
+    # ========== INTERVENTIONS BY DIAGNOSIS ==========
     st.subheader("Interventions by Diagnosis")
     
     if referrer_role == "Doctor/Physician" and chosen_icd and row is not None:
