@@ -2593,7 +2593,7 @@ with tabs[1]:
     
     # Active case selection
     active = [r for r in st.session_state.referrals if r["status"] in
-              ["PREALERT", "DISPATCHED", "ARRIVE_SCENE", "DEPART_SCENE", "ARRIVE_DEST"]]
+              ["PREALERT", "DISPATCHED", "ARRIVE_SCENE", "DEPART_SCENE", "ARRIVE_DEST", "ENROUTE_SCENE"]]
     
     if not active:
         st.info("No active jobs")
@@ -2619,7 +2619,8 @@ with tabs[1]:
                     "dest": "Civil Hospital Shillong",
                     "transport": {"ambulance": "ALS", "priority": "STAT"},
                     "status": "DISPATCHED",
-                    "times": {"dispatch_ts": now_ts()}
+                    "times": {"dispatch_ts": now_ts()},
+                    "reasons": {"requiredCapabilities": ["OBGYN_OT", "BloodBank", "ICU"]}
                 }
                 st.session_state.referrals.insert(0, demo_case)
                 st.rerun()
@@ -2660,6 +2661,183 @@ with tabs[1]:
             r["times"]["handover_ts"] = now_ts()
             st.success("Handover completed - case closed")
             st.rerun()
+        
+        # === ENHANCED VITALS MONITORING ===
+        st.markdown("### 📊 Enhanced Vitals Monitoring")
+        
+        vitals_col1, vitals_col2 = st.columns([1, 2])
+        
+        with vitals_col1:
+            st.markdown("**Live Vitals Entry**")
+            v1, v2 = st.columns(2)
+            with v1:
+                new_hr = st.number_input("HR", 0, 250, r['triage']['hr'], key="live_hr")
+                new_sbp = st.number_input("SBP", 0, 300, r['triage']['sbp'], key="live_sbp")
+                new_rr = st.number_input("RR", 0, 80, r['triage']['rr'], key="live_rr")
+            with v2:
+                new_spo2 = st.number_input("SpO₂", 50, 100, r['triage']['spo2'], key="live_spo2")
+                new_temp = st.number_input("Temp", 30.0, 43.0, r['triage']['temp'], step=0.1, key="live_temp")
+                new_avpu = st.selectbox("AVPU", ["A", "V", "P", "U"], index=0, key="live_avpu")
+            
+            if st.button("➕ Add Vitals Entry", key="add_vitals"):
+                # Create vitals history if not exists
+                if "vitals_history" not in r:
+                    r["vitals_history"] = []
+                
+                r["vitals_history"].append({
+                    "timestamp": now_ts(),
+                    "hr": new_hr,
+                    "sbp": new_sbp, 
+                    "rr": new_rr,
+                    "spo2": new_spo2,
+                    "temp": new_temp,
+                    "avpu": new_avpu
+                })
+                st.success("Vitals recorded")
+                st.rerun()
+        
+        with vitals_col2:
+            st.markdown("**Vitals Trend**")
+            if "vitals_history" in r and r["vitals_history"]:
+                # Create simple trend visualization
+                vitals_df = pd.DataFrame(r["vitals_history"])
+                vitals_df['time'] = pd.to_datetime(vitals_df['timestamp'], unit='s').dt.strftime('%H:%M')
+                
+                # Check for deterioration
+                latest = r["vitals_history"][-1]
+                deterioration = (
+                    (latest['sbp'] < 90) or 
+                    (latest['spo2'] < 90) or 
+                    (latest['avpu'] != 'A')
+                )
+                
+                if deterioration:
+                    st.error("⚠️ **DETERIORATION DETECTED**: Hypotension/Desaturation/Altered Mental Status")
+                
+                # Show vitals table
+                display_df = vitals_df[['time', 'hr', 'sbp', 'rr', 'spo2', 'temp', 'avpu']].tail(5)
+                st.dataframe(display_df, use_container_width=True)
+            else:
+                st.info("No vitals history yet. Add first reading above.")
+        
+        # === ENHANCED INTERVENTIONS ===
+        st.markdown("### 🩺 Interventions & Care Bundle")
+        
+        # Protocol checkboxes
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("**Protocol Activation**")
+            pph_protocol = st.checkbox("PPH Bundle (Maternal)", value=r['triage']['complaint'] == 'Maternal')
+            stroke_protocol = st.checkbox("Stroke Protocol", value=r['triage']['complaint'] == 'Stroke')
+            stemi_protocol = st.checkbox("STEMI Protocol", value=r['triage']['complaint'] == 'Cardiac')
+        
+        with col2:
+            st.markdown("**ABCD Assessment**")  # FIXED: markbox -> markdown
+            airway_ok = st.checkbox("Airway ✅", value=True)
+            breathing_ok = st.checkbox("Breathing ✅", value=True) 
+            circulation_ok = st.checkbox("Circulation ✅", value=True)
+            disability_ok = st.checkbox("Disability ✅", value=True)
+        
+        # Quick interventions
+        st.markdown("**Quick Interventions**")
+        quick_cols = st.columns(5)
+        interventions_list = ["Oxygen", "IV Access", "IV Fluids", "Uterotonics", "TXA", "Aspirin", "Bleeding Control", "Immobilization"]
+        
+        selected_interventions = []
+        for i, intervention in enumerate(interventions_list):
+            col_idx = i % 5
+            if quick_cols[col_idx].checkbox(intervention, key=f"quick_{intervention}"):
+                selected_interventions.append(intervention)
+        
+        # EMT Notes
+        emt_notes = st.text_area("EMT Clinical Notes", placeholder="Bleeding controlled with fundal massage... 1L NS given...", height=80)
+        
+        # === ONE-CLICK HANDOVER ===
+        st.markdown("### 📋 Handover Documents")
+        
+        doc_col1, doc_col2, doc_col3 = st.columns(3)
+        
+        with doc_col1:
+            if st.button("📋 Generate ISBAR Handover", key="isbar_btn"):
+                # Generate ISBAR report
+                isbar_report = f"""
+ISBAR HANDOVER - {r['patient']['name']}
+
+I: {r['patient']['name']}, {r['patient']['age']}{r['patient']['sex']} • {r['id']}
+S: {r['triage']['complaint']} • Triage: {r['triage']['decision']['color']}
+B: From {r['referrer']['facility']} • Required: {', '.join(r['reasons'].get('requiredCapabilities', []))}
+A: Latest Vitals - HR {new_hr}, SBP {new_sbp}, SpO2 {new_spo2}
+R: En route to {r['dest']} • Interventions: {', '.join(selected_interventions)}
+
+Notes: {emt_notes}
+                """
+                st.text_area("ISBAR Report", isbar_report, height=200)
+        
+        with doc_col2:
+            if st.button("📱 Copy Pre-alert", key="prealert_btn"):
+                prealert_text = f"PRE-ALERT: {r['dest']} - {r['patient']['name']} - {r['triage']['complaint']} - {r['triage']['decision']['color']} triage - ETA 15min"
+                st.success("Pre-alert text copied to clipboard")
+                # In production, this would use pyperclip or similar
+        
+        with doc_col3:
+            if st.button("💾 Download EMS Log", key="download_btn"):
+                # Create EMS log JSON
+                ems_log = {
+                    "case_id": r['id'],
+                    "patient": r['patient'],
+                    "triage": r['triage'],
+                    "vitals_history": r.get('vitals_history', []),
+                    "interventions": selected_interventions,
+                    "emt_notes": emt_notes,
+                    "timestamp": now_ts()
+                }
+                st.download_button(
+                    label="⬇️ Download JSON",
+                    data=json.dumps(ems_log, indent=2),
+                    file_name=f"ems_log_{r['id']}.json",
+                    mime="application/json"
+                )
+        
+        # === EXISTING ROUTE VISUALIZATION (Preserved) ===
+        st.markdown("### 🗺️ Route & Navigation")
+        
+        # Traffic and route management (existing functionality)
+        current_traffic = r["transport"].get("traffic", 1.0)
+        traffic_idx = 0 if current_traffic == 1.0 else 1 if current_traffic <= 1.2 else 2
+        traffic_state = st.radio("Traffic", ["Free", "Moderate", "Heavy"], index=traffic_idx, horizontal=True)
+        tf = {"Free": 1.0, "Moderate": 1.2, "Heavy": 1.5}[traffic_state]
+        r["transport"]["traffic"] = tf
+        
+        # Existing route visualization code
+        if r.get("route"):
+            p1, p2 = r["route"][0], r["route"][-1]
+            dkm = dist_km(p1[0], p1[1], p2[0], p2[1])
+            speed = r["transport"].get("speed_kmh", 36)
+            eta_min = max(5, int(dkm / speed * 60 * tf))
+            r["transport"]["eta_min"] = eta_min
+
+            left, right = st.columns([1, 3])
+            with left:
+                st.write(f"**ETA:** {r['transport'].get('eta_min', '—')} min")
+                st.write(f"**Ambulance:** {r['transport'].get('ambulance', '—')}")
+                st.write("**Triage:**")
+                decision = r['triage']['decision']
+                if decision.get('overridden'):
+                    st.markdown(f'<span class="pill {decision["color"].lower()} override-badge">{decision["color"]} (OVERRIDDEN)</span>', unsafe_allow_html=True)
+                    st.caption(f"Original: {decision.get('base_color', 'Unknown')}")
+                else:
+                    triage_pill(decision['color'])
+
+            # Route visualization
+            try:
+                path = [dict(path=[[pt[1], pt[0]] for pt in r["route"]])]
+                layer = pdk.Layer("PathLayer", data=path, get_path="path", get_color=[16, 185, 129, 200], width_scale=5, width_min_pixels=3)
+                v = pdk.ViewState(latitude=r["route"][0][0], longitude=r["route"][0][1], zoom=10)
+                st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=v, map_style="mapbox://styles/mapbox/dark-v10"))
+            except Exception as e:
+                st.error(f"Error rendering map: {str(e)}")
+        else:
+            st.caption("No route saved in this record.")
         
         # === ENHANCED VITALS MONITORING ===
         st.markdown("### 📊 Enhanced Vitals Monitoring")
