@@ -2575,24 +2575,24 @@ with tabs[1]:
     st.subheader("🚑 Enhanced Ambulance / EMT Dashboard")
     
     # Ambulance availability
-    avail = st.radio("Ambulance availability", ["Available", "Unavailable"], horizontal=True, key="amb_availability")
+    avail = st.radio("Ambulance availability", ["Available", "Unavailable"], horizontal=True, key="amb_availability_radio")
     
     # === TRIP TIMELINE PROGRESS ===
     st.markdown("### 🕒 Trip Timeline")
     timeline_cols = st.columns(6)
     
     with timeline_cols[0]:
-        accept_btn = st.button("✅ Accept", key="accept_btn", use_container_width=True)
+        accept_btn = st.button("✅ Accept", key="accept_btn_main", use_container_width=True)
     with timeline_cols[1]:
-        enroute_btn = st.button("🚗 En Route", key="enroute_btn", use_container_width=True)
+        enroute_btn = st.button("🚗 En Route", key="enroute_btn_main", use_container_width=True)
     with timeline_cols[2]:
-        onscene_btn = st.button("🏥 On Scene", key="onscene_btn", use_container_width=True)
+        onscene_btn = st.button("🏥 On Scene", key="onscene_btn_main", use_container_width=True)
     with timeline_cols[3]:
-        depart_btn = st.button("📤 Depart", key="depart_btn", use_container_width=True)
+        depart_btn = st.button("📤 Depart", key="depart_btn_main", use_container_width=True)
     with timeline_cols[4]:
-        arrived_btn = st.button("🏁 Arrived", key="arrived_btn", use_container_width=True)
+        arrived_btn = st.button("🏁 Arrived", key="arrived_btn_main", use_container_width=True)
     with timeline_cols[5]:
-        handover_btn = st.button("🤝 Handover", key="handover_btn", use_container_width=True)
+        handover_btn = st.button("🤝 Handover", key="handover_btn_main", use_container_width=True)
     
     # Active case selection
     active = [r for r in st.session_state.referrals if r["status"] in
@@ -2608,7 +2608,7 @@ with tabs[1]:
             st.write("**Rani Devi, 28F** - Maternal hemorrhage • RED triage")
             st.write("From: CHC Sarai • To: Civil Hospital Shillong")
         with demo_col2:
-            if st.button("Load Demo Case", key="load_demo_case"):
+            if st.button("Load Demo Case", key="load_demo_case_main"):
                 # Create demo case
                 demo_case = {
                     "id": "DEMO001",
@@ -2630,7 +2630,7 @@ with tabs[1]:
     else:
         # Case selection
         ids = [f"{r['id']} • {r['patient']['name']} • {r['triage']['complaint']} • {r['triage']['decision']['color']}" for r in active]
-        pick = st.selectbox("Select active case", ids, index=0, key="case_selector")
+        pick = st.selectbox("Select active case", ids, index=0, key="case_selector_main")
         selected_index = ids.index(pick) if pick in ids else 0
         r = active[selected_index]
         
@@ -2753,7 +2753,7 @@ with tabs[1]:
         selected_interventions = []
         for i, intervention in enumerate(interventions_list):
             col_idx = i % 5
-            if quick_cols[col_idx].checkbox(intervention, key=f"{case_key}_intervention_{intervention}"):
+            if quick_cols[col_idx].checkbox(intervention, key=f"{case_key}_intervention_{i}"):
                 selected_interventions.append(intervention)
         
         # EMT Notes
@@ -2783,28 +2783,27 @@ Notes: {emt_notes}
         with doc_col2:
             if st.button("📱 Copy Pre-alert", key=f"{case_key}_prealert_btn"):
                 prealert_text = f"PRE-ALERT: {r['dest']} - {r['patient']['name']} - {r['triage']['complaint']} - {r['triage']['decision']['color']} triage - ETA 15min"
-                st.success("Pre-alert text copied to clipboard")
-                # In production, this would use pyperclip or similar
+                st.code(prealert_text, language="text")
+                st.success("Pre-alert text ready - copy from above")
         
         with doc_col3:
-            if st.button("💾 Download EMS Log", key=f"{case_key}_download_btn"):
-                # Create EMS log JSON
-                ems_log = {
-                    "case_id": r['id'],
-                    "patient": r['patient'],
-                    "triage": r['triage'],
-                    "vitals_history": r.get('vitals_history', []),
-                    "interventions": selected_interventions,
-                    "emt_notes": emt_notes,
-                    "timestamp": now_ts()
-                }
-                st.download_button(
-                    label="⬇️ Download JSON",
-                    data=json.dumps(ems_log, indent=2),
-                    file_name=f"ems_log_{r['id']}.json",
-                    mime="application/json",
-                    key=f"{case_key}_download_json"
-                )
+            # Create EMS log JSON
+            ems_log = {
+                "case_id": r['id'],
+                "patient": r['patient'],
+                "triage": r['triage'],
+                "vitals_history": r.get('vitals_history', []),
+                "interventions": selected_interventions,
+                "emt_notes": emt_notes,
+                "timestamp": now_ts()
+            }
+            st.download_button(
+                label="💾 Download EMS Log",
+                data=json.dumps(ems_log, indent=2),
+                file_name=f"ems_log_{r['id']}.json",
+                mime="application/json",
+                key=f"{case_key}_download_json"
+            )
         
         # === EXISTING ROUTE VISUALIZATION (Preserved) ===
         st.markdown("### 🗺️ Route & Navigation")
