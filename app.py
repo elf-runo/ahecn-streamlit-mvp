@@ -3403,3 +3403,314 @@ with tabs[3]:
             file_name="executive_summary.json",
             mime="application/json"
         )
+# ======== DATA / ADMIN TAB ========
+with tabs[4]:
+    st.subheader("🗄️ Data / Admin")
+
+    # ---------- Helpers (scoped to this tab) ----------
+    def flatten_referrals_for_table(refs):
+        rows = []
+        for r in refs:
+            try:
+                pdx = r.get("provisionalDx", {}) or {}
+                rows.append({
+                    "id": r.get("id",""),
+                    "first_contact": datetime.fromtimestamp(r.get("times",{}).get("first_contact_ts", now_ts())).strftime("%Y-%m-%d %H:%M"),
+                    "case_type": r.get("triage",{}).get("complaint",""),
+                    "triage": r.get("triage",{}).get("decision",{}).get("color",""),
+                    "icd_code": pdx.get("code",""),
+                    "icd_label": pdx.get("label",""),
+                    "dest": r.get("dest",""),
+                    "priority": r.get("transport",{}).get("priority",""),
+                    "ambulance": r.get("transport",{}).get("ambulance",""),
+                    "status": r.get("status",""),
+                })
+            except Exception:
+                continue
+        return pd.DataFrame(rows)
+
+    def referrals_to_csv(df):
+        return df.to_csv(index=False).encode("utf-8")
+
+    def anonymize_referrals_inplace():
+        # Mask names/IDs to demo safely
+        for i, r in enumerate(st.session_state.referrals):
+            if "patient" in r:
+                r["patient"]["name"] = f"Patient-{i:04d}"
+                r["patient"]["id"] = f"PID-{i:06d}"
+
+    # ---------- Data controls ----------
+    st.markdown("#### Demo Data Controls")
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        add_n = st.number_input("Append synthetic referrals", 10, 2000, 100, step=10, key="admin_add_n")
+        if st.button("➕ Append", key="admin_append_refs"):
+            # Append more without wiping
+            before = len(st.session_state.referrals)
+            seed_referrals(n=add_n, rng_seed=random.randint(1, 999999))
+            st.success(f"Appended. Total referrals: {len(st.session_state.referrals)} (was {before}).")
+    with c2:
+        reseed_n = st.number_input("Wipe & reseed", 100, 5000, 500, step=100, key="admin_reseed_n")
+        if st.button("🧹 Wipe & Reseed", key="admin_wipe_reseed"):
+            st.session_state.referrals = []
+            seed_referrals(n=reseed_n, rng_seed=42)
+            st.success(f"Reseeded {reseed_n} referrals.")
+    with c3:
+        if st.button("🙈 Anonymize names/IDs", key="admin_anonymize"):
+            anonymize_referrals_inplace()
+            st.success("All patient names/IDs masked for demo.")
+    with c4:
+        if st.button("🧽 Clear Route Cache", key="admin_clear_cache"):
+            DISTANCE_CACHE.clear()
+            st.success("Route cache cleared.")
+
+    # ---------- Quick filters + table ----------
+    st.markdown("#### Referrals Table (filtered)")
+    f1, f2, f3 = st.columns(3)
+    with f1:
+        pick_tri = st.multiselect("Filter by triage", ["RED","YELLOW","GREEN"], default=[])
+    with f2:
+        pick_case = st.multiselect("Filter by case type", ["Maternal","Trauma","Stroke","Cardiac","Sepsis","Other"], default=[])
+    with f3:
+        pick_status = st.multiselect("Filter by status", ["PREALERT","DISPATCHED","ENROUTE_SCENE","ARRIVE_SCENE","DEPART_SCENE","ARRIVE_DEST","HANDOVER"], default=[])
+
+    ref_df = flatten_referrals_for_table(st.session_state.referrals)
+    if pick_tri:   ref_df = ref_df[ref_df["triage"].isin(pick_tri)]
+    if pick_case:  ref_df = ref_df[ref_df["case_type"].isin(pick_case)]
+    if pick_status:ref_df = ref_df[ref_df["status"].isin(pick_status)]
+
+    st.dataframe(ref_df, use_container_width=True, height=360)
+
+    # ---------- Downloads / Uploads ----------
+    st.markdown("#### Import/Export")
+    d1, d2, d3 = st.columns(3)
+    with d1:
+        st.download_button("⬇️ CSV (filtered)", data=referrals_to_csv(ref_df) if not ref_df.empty else "", file_name="referrals_filtered.csv", mime="text/csv", disabled=ref_df.empty)
+    with d2:
+        # Full JSON export (all referrals as-is)
+        st.download_button("⬇️ JSON (all)", data=json.dumps(st.session_state.referrals, indent=2), file_name="referrals_all.json", mime="application/json", disabled=(len(st.session_state.referrals)==0))
+    with d3:
+        up_json = st.file_uploader("⬆️ Import referrals (JSON)", type=["json"], key="admin_up_json")
+        if up_json is not None:
+            try:
+                data = json.load(up_json)
+                assert isinstance(data, list)
+                # Normalize each record lightly and append
+                for r in data:
+                    r = dict(r)
+                    r.setdefault("times", {})
+                    r.setdefault("triage", {"decision":{"color":"GREEN"}})
+                    st.session_state.referrals.insert(0, r)
+                st.success(f"Imported {len(data)} referrals.")
+            except Exception as e:
+                st.error(f"Import failed: {e}")
+
+    st.markdown("---")
+
+    # ---------- ICD Catalogue Admin (optional but useful for demo) ----------
+    st.markdown("### 📚 ICD Catalogue Admin")
+    ic1, ic2, ic3 = st.columns(3)
+    with ic1:
+        icd_up = st.file_uploader("Upload icd_catalogue.csv", type=["csv"], key="icd_up")
+        if icd_up is not None:
+            try:
+                df = pd.read_csv(icd_up)
+                df.to_csv("icd_catalogue.csv", index=False)  # persist for your loader
+                # Refresh in-memory LUT
+                ICD_LUT = load_icd_catalogue()
+                st.success(f"icd_catalogue.csv saved. Items: {len(ICD_LUT)}")
+            except Exception as e:
+                st.error(f"Failed to save: {e}")
+    with ic2:
+        try:
+            # Attempt to show current file if present
+            if os.path.exists("icd_catalogue.csv"):
+                df_show = pd.read_csv("icd_catalogue.csv").head(15)
+                st.caption("Preview of current icd_catalogue.csv (top 15)")
+                st.dataframe(df_show, use_container_width=True)
+            else:
+                st.info("No icd_catalogue.csv on disk yet.")
+        except Exception as e:
+            st.error(f"Preview error: {e}")
+    with ic3:
+        # Export current LUT (best-effort)
+        try:
+            if ICD_LUT:
+                df = pd.DataFrame(ICD_LUT)
+                st.download_button("⬇️ Export current ICD LUT", data=df.to_csv(index=False), file_name="icd_catalogue_export.csv", mime="text/csv")
+            else:
+                st.caption("ICD LUT empty (using fallback).")
+        except Exception:
+            pass
+
+    # ---------- Rides providers (for GREEN/YELLOW demo) ----------
+    st.markdown("---")
+    st.markdown("### 🚕 Healthcare Rides Registry (Demo)")
+    if "rides_providers" not in st.session_state:
+        st.session_state.rides_providers = [
+            {"name":"Local Cab – East Hub","contact":"+91-90000-11111","service_area_km":25,"eta_min":20,"active":True},
+            {"name":"Private Taxi – Shillong","contact":"+91-90000-22222","service_area_km":40,"eta_min":30,"active":True},
+            {"name":"NGO Transport – Rural","contact":"+91-90000-33333","service_area_km":60,"eta_min":45,"active":True},
+        ]
+    rp_df = pd.DataFrame(st.session_state.rides_providers)
+    rp_edit = st.data_editor(rp_df, num_rows="dynamic", use_container_width=True, key="rides_edit")
+    if st.button("💾 Save Rides Registry", key="save_rides"):
+        st.session_state.rides_providers = rp_edit.to_dict(orient="records")
+        st.success("Saved.")
+
+    st.caption("Tip: In Referrer flow, GREEN/YELLOW cases can be diverted to these providers to preserve ambulances.")
+# ======== FACILITY ADMIN TAB ========
+with tabs[5]:
+    st.subheader("🏥 Facility Admin")
+
+    # ---------- Helpers (scoped) ----------
+    FLAT_CAPS = [f"cap_{c}" for c in REQ_CAPS]
+    FLAT_SPECS = [f"spec_{s}" for s in SPECIALTIES]
+    FLAT_EQP = [f"eq_{e}" for e in INTERVENTIONS]
+
+    def flatten_facilities_for_edit(flist):
+        rows = []
+        for f in flist:
+            row = {
+                "name": f.get("name",""),
+                "type": f.get("type","PHC"),
+                "lat": float(f.get("lat", 25.58)),
+                "lon": float(f.get("lon", 91.89)),
+                "ICU_open": int(f.get("ICU_open",0)),
+                "acceptanceRate": float(f.get("acceptanceRate",0.75)),
+            }
+            for c in REQ_CAPS:
+                row[f"cap_{c}"] = bool(f.get("caps",{}).get(c,0))
+            for s in SPECIALTIES:
+                row[f"spec_{s}"] = bool(f.get("specialties",{}).get(s,0))
+            for e in INTERVENTIONS:
+                row[f"eq_{e}"] = bool(f.get("highend",{}).get(e,0))
+            rows.append(row)
+        return pd.DataFrame(rows)
+
+    def pack_facilities_from_df(df):
+        out = []
+        for _, r in df.iterrows():
+            f = {
+                "name": str(r["name"]).strip() or "Unnamed Facility",
+                "type": str(r["type"]).strip() or "PHC",
+                "lat": float(r["lat"]),
+                "lon": float(r["lon"]),
+                "ICU_open": int(r["ICU_open"]),
+                "acceptanceRate": float(r["acceptanceRate"]),
+                "caps": {c: int(bool(r[f"cap_{c}"])) for c in REQ_CAPS},
+                "specialties": {s: int(bool(r[f"spec_{s}"])) for s in SPECIALTIES},
+                "highend": {e: int(bool(r[f"eq_{e}"])) for e in INTERVENTIONS},
+            }
+            out.append(normalize_facility(f))
+        return out
+
+    def facilities_to_csv(df):
+        return df.to_csv(index=False).encode("utf-8")
+
+    # ---------- Seed/reset ----------
+    st.markdown("#### Demo Facilities Controls")
+    fc1, fc2, fc3 = st.columns(3)
+    with fc1:
+        if st.button("🔁 Reset to Default 15", key="fac_reset"):
+            st.session_state.facilities = default_facilities(count=15)
+            st.session_state.facilities = [normalize_facility(x) for x in st.session_state.facilities]
+            st.success("Facilities reset to default 15.")
+    with fc2:
+        gen_n = st.number_input("Generate facilities", 10, 200, 30, step=5, key="fac_gen_n")
+        if st.button("🎲 Generate New Set", key="fac_generate"):
+            st.session_state.facilities = default_facilities(count=int(gen_n))
+            st.session_state.facilities = [normalize_facility(x) for x in st.session_state.facilities]
+            st.success(f"Generated {gen_n} demo facilities.")
+    with fc3:
+        up_fac = st.file_uploader("⬆️ Upload facilities CSV", type=["csv"], key="fac_up")
+        if up_fac is not None:
+            try:
+                df_up = pd.read_csv(up_fac)
+                st.session_state.facilities = pack_facilities_from_df(df_up)
+                st.success(f"Imported {len(st.session_state.facilities)} facilities from CSV.")
+            except Exception as e:
+                st.error(f"Import failed: {e}")
+
+    # ---------- Editor ----------
+    st.markdown("#### Edit Facilities (inline)")
+    flat_df = flatten_facilities_for_edit(st.session_state.facilities)
+    edited_df = st.data_editor(
+        flat_df,
+        use_container_width=True,
+        num_rows="dynamic",
+        column_config={
+            "acceptanceRate": st.column_config.NumberColumn(format="%.2f", help="0.00–1.00"),
+            "lat": st.column_config.NumberColumn(format="%.6f"),
+            "lon": st.column_config.NumberColumn(format="%.6f"),
+            **{k: st.column_config.CheckboxColumn() for k in (FLAT_CAPS + FLAT_SPECS + FLAT_EQP)}
+        },
+        key="fac_editor"
+    )
+    e1, e2, e3 = st.columns(3)
+    with e1:
+        if st.button("💾 Save Changes", key="fac_save"):
+            st.session_state.facilities = pack_facilities_from_df(edited_df)
+            st.success(f"Saved {len(st.session_state.facilities)} facilities.")
+    with e2:
+        st.download_button("⬇️ Export CSV (editable)", data=facilities_to_csv(edited_df), file_name="facilities_editable.csv", mime="text/csv")
+    with e3:
+        # Quick bulk ops
+        if st.button("➕ Add 1 ICU bed to all District/Tertiary", key="fac_bulk_icu"):
+            for f in st.session_state.facilities:
+                if f["type"] in ["District Hospital","Tertiary"]:
+                    f["ICU_open"] = int(f["ICU_open"]) + 1
+            st.success("Bulk ICU increment applied.")
+
+    st.markdown("---")
+
+    # ---------- Map ----------
+    st.markdown("#### Map Preview")
+    try:
+        map_points = [{"lon": f["lon"], "lat": f["lat"], "name": f["name"], "type": f["type"], "ICU": f["ICU_open"]} for f in st.session_state.facilities]
+        layer = pdk.Layer(
+            "ScatterplotLayer",
+            data=map_points,
+            get_position="[lon, lat]",
+            get_radius=180,
+            get_fill_color=[59, 130, 246, 200],
+            pickable=True,
+        )
+        st.pydeck_chart(pdk.Deck(
+            layers=[layer],
+            initial_view_state=pdk.ViewState(latitude=np.mean([p["lat"] for p in map_points]), longitude=np.mean([p["lon"] for p in map_points]), zoom=9),
+            tooltip={"text": "{name}\n{type} • ICU:{ICU}"},
+            map_style="mapbox://styles/mapbox/dark-v10",
+        ))
+    except Exception as e:
+        st.warning(f"Map not shown: {e}")
+
+    st.markdown("---")
+
+    # ---------- Quick Match Sandbox (prove routing + scoring end-to-end) ----------
+    st.markdown("#### 🎯 Quick Match Sandbox")
+    sm1, sm2, sm3, sm4 = st.columns(4)
+    with sm1:
+        origin_lat = st.number_input("Origin Lat", value=25.580000, format="%.6f", key="qa_lat")
+    with sm2:
+        origin_lon = st.number_input("Origin Lon", value=91.890000, format="%.6f", key="qa_lon")
+    with sm3:
+        qa_case = st.selectbox("Case type", ["Maternal","Trauma","Stroke","Cardiac","Sepsis","Other"], index=0, key="qa_case")
+    with sm4:
+        qa_tri = st.selectbox("Triage", ["RED","YELLOW","GREEN"], index=0, key="qa_tri")
+
+    qa_caps = st.multiselect("Required capabilities", REQ_CAPS, default=["ICU"] if qa_tri=="RED" else [])
+    if st.button("Run facility match (top 5)", key="qa_run"):
+        ranked = rank_facilities_with_free_routing(
+            origin_coords=(origin_lat, origin_lon),
+            required_caps=qa_caps,
+            case_type=qa_case,
+            triage_color=qa_tri,
+            top_k=5
+        )
+        if not ranked:
+            st.warning("No facilities matched the capability threshold. Relax filters and try again.")
+        else:
+            st.success(f"Top {len(ranked)} matches")
+            for i, r in enumerate(ranked, 1):
+                _ = enhanced_facility_card(r, rank=i)
