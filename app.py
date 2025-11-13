@@ -3454,19 +3454,28 @@ with tabs[3]:
         ) 
 # ======== DATA / ADMIN TAB ========
 with tabs[4]:
-# --- Synthetic realtime feed controller ---
-st.markdown("### ⚙️ Demo Controls")
-enable_feed = st.toggle("Enable Synthetic Real-time Feed", value=True, help="Simulate background activity (comments, status changes, routing updates).")
-if enable_feed:
-    # Starts a background thread once; safe due to cache_resource
-    st.session_state.setdefault("feed_stop", start_demo_feeder())
-else:
-    if "feed_stop" in st.session_state and st.session_state["feed_stop"]:
-        st.session_state["feed_stop"].set()
-        st.session_state["feed_stop"] = None
-# --- end synthetic feed ---
-    
     st.subheader("🗄️ Data / Admin")
+
+    # --- Synthetic realtime feed controller ---
+    st.markdown("### ⚙️ Demo Controls")
+    enable_feed = st.toggle(
+        "Enable Synthetic Real-time Feed",
+        value=True,
+        help="Simulate background activity (comments, status changes, routing updates)."
+    )
+
+    if enable_feed:
+        # Start once; only if not already running
+        if "feed_stop" not in st.session_state or st.session_state["feed_stop"] is None:
+            st.session_state["feed_stop"] = start_demo_feeder()
+            st.success("Synthetic feed started")
+    else:
+        # Stop if running
+        if st.session_state.get("feed_stop"):
+            st.session_state["feed_stop"].set()
+            st.session_state["feed_stop"] = None
+            st.info("Synthetic feed stopped")
+    # --- end synthetic feed ---
 
     # ---------- Helpers (scoped to this tab) ----------
     def flatten_referrals_for_table(refs):
@@ -3476,7 +3485,9 @@ else:
                 pdx = r.get("provisionalDx", {}) or {}
                 rows.append({
                     "id": r.get("id",""),
-                    "first_contact": datetime.fromtimestamp(r.get("times",{}).get("first_contact_ts", now_ts())).strftime("%Y-%m-%d %H:%M"),
+                    "first_contact": datetime.fromtimestamp(
+                        r.get("times",{}).get("first_contact_ts", now_ts())
+                    ).strftime("%Y-%m-%d %H:%M"),
                     "case_type": r.get("triage",{}).get("complaint",""),
                     "triage": r.get("triage",{}).get("decision",{}).get("color",""),
                     "icd_code": pdx.get("code",""),
@@ -3503,23 +3514,32 @@ else:
     # ---------- Data controls ----------
     st.markdown("#### Demo Data Controls")
     c1, c2, c3, c4 = st.columns(4)
+
     with c1:
-        add_n = st.number_input("Append synthetic referrals", 10, 2000, 100, step=10, key="admin_add_n")
+        add_n = st.number_input(
+            "Append synthetic referrals", 10, 2000, 100, step=10, key="admin_add_n"
+        )
         if st.button("➕ Append", key="admin_append_refs"):
-            # Append more without wiping
             before = len(st.session_state.referrals)
             seed_referrals(n=add_n, rng_seed=random.randint(1, 999999))
-            st.success(f"Appended. Total referrals: {len(st.session_state.referrals)} (was {before}).")
+            st.success(
+                f"Appended. Total referrals: {len(st.session_state.referrals)} (was {before})."
+            )
+
     with c2:
-        reseed_n = st.number_input("Wipe & reseed", 100, 5000, 500, step=100, key="admin_reseed_n")
+        reseed_n = st.number_input(
+            "Wipe & reseed", 100, 5000, 500, step=100, key="admin_reseed_n"
+        )
         if st.button("🧹 Wipe & Reseed", key="admin_wipe_reseed"):
             st.session_state.referrals = []
             seed_referrals(n=reseed_n, rng_seed=42)
             st.success(f"Reseeded {reseed_n} referrals.")
+
     with c3:
         if st.button("🙈 Anonymize names/IDs", key="admin_anonymize"):
             anonymize_referrals_inplace()
             st.success("All patient names/IDs masked for demo.")
+
     with c4:
         if st.button("🧽 Clear Route Cache", key="admin_clear_cache"):
             DISTANCE_CACHE.clear()
@@ -3531,25 +3551,48 @@ else:
     with f1:
         pick_tri = st.multiselect("Filter by triage", ["RED","YELLOW","GREEN"], default=[])
     with f2:
-        pick_case = st.multiselect("Filter by case type", ["Maternal","Trauma","Stroke","Cardiac","Sepsis","Other"], default=[])
+        pick_case = st.multiselect(
+            "Filter by case type", ["Maternal","Trauma","Stroke","Cardiac","Sepsis","Other"], default=[]
+        )
     with f3:
-        pick_status = st.multiselect("Filter by status", ["PREALERT","DISPATCHED","ENROUTE_SCENE","ARRIVE_SCENE","DEPART_SCENE","ARRIVE_DEST","HANDOVER"], default=[])
+        pick_status = st.multiselect(
+            "Filter by status",
+            ["PREALERT","DISPATCHED","ENROUTE_SCENE","ARRIVE_SCENE","DEPART_SCENE","ARRIVE_DEST","HANDOVER"],
+            default=[]
+        )
 
     ref_df = flatten_referrals_for_table(st.session_state.referrals)
-    if pick_tri:   ref_df = ref_df[ref_df["triage"].isin(pick_tri)]
-    if pick_case:  ref_df = ref_df[ref_df["case_type"].isin(pick_case)]
-    if pick_status:ref_df = ref_df[ref_df["status"].isin(pick_status)]
+    if pick_tri:
+        ref_df = ref_df[ref_df["triage"].isin(pick_tri)]
+    if pick_case:
+        ref_df = ref_df[ref_df["case_type"].isin(pick_case)]
+    if pick_status:
+        ref_df = ref_df[ref_df["status"].isin(pick_status)]
 
     st.dataframe(ref_df, use_container_width=True, height=360)
 
     # ---------- Downloads / Uploads ----------
     st.markdown("#### Import/Export")
     d1, d2, d3 = st.columns(3)
+
     with d1:
-        st.download_button("⬇️ CSV (filtered)", data=referrals_to_csv(ref_df) if not ref_df.empty else "", file_name="referrals_filtered.csv", mime="text/csv", disabled=ref_df.empty)
+        st.download_button(
+            "⬇️ CSV (filtered)",
+            data=referrals_to_csv(ref_df) if not ref_df.empty else "",
+            file_name="referrals_filtered.csv",
+            mime="text/csv",
+            disabled=ref_df.empty
+        )
+
     with d2:
-        # Full JSON export (all referrals as-is)
-        st.download_button("⬇️ JSON (all)", data=json.dumps(st.session_state.referrals, indent=2), file_name="referrals_all.json", mime="application/json", disabled=(len(st.session_state.referrals)==0))
+        st.download_button(
+            "⬇️ JSON (all)",
+            data=json.dumps(st.session_state.referrals, indent=2),
+            file_name="referrals_all.json",
+            mime="application/json",
+            disabled=(len(st.session_state.referrals) == 0)
+        )
+
     with d3:
         up_json = st.file_uploader("⬆️ Import referrals (JSON)", type=["json"], key="admin_up_json")
         if up_json is not None:
@@ -3560,7 +3603,7 @@ else:
                 for r in data:
                     r = dict(r)
                     r.setdefault("times", {})
-                    r.setdefault("triage", {"decision":{"color":"GREEN"}})
+                    r.setdefault("triage", {"decision": {"color": "GREEN"}})
                     st.session_state.referrals.insert(0, r)
                 st.success(f"Imported {len(data)} referrals.")
             except Exception as e:
@@ -3568,9 +3611,10 @@ else:
 
     st.markdown("---")
 
-    # ---------- ICD Catalogue Admin (optional but useful for demo) ----------
+    # ---------- ICD Catalogue Admin ----------
     st.markdown("### 📚 ICD Catalogue Admin")
     ic1, ic2, ic3 = st.columns(3)
+
     with ic1:
         icd_up = st.file_uploader("Upload icd_catalogue.csv", type=["csv"], key="icd_up")
         if icd_up is not None:
@@ -3582,9 +3626,9 @@ else:
                 st.success(f"icd_catalogue.csv saved. Items: {len(ICD_LUT)}")
             except Exception as e:
                 st.error(f"Failed to save: {e}")
+
     with ic2:
         try:
-            # Attempt to show current file if present
             if os.path.exists("icd_catalogue.csv"):
                 df_show = pd.read_csv("icd_catalogue.csv").head(15)
                 st.caption("Preview of current icd_catalogue.csv (top 15)")
@@ -3593,12 +3637,17 @@ else:
                 st.info("No icd_catalogue.csv on disk yet.")
         except Exception as e:
             st.error(f"Preview error: {e}")
+
     with ic3:
-        # Export current LUT (best-effort)
         try:
             if ICD_LUT:
                 df = pd.DataFrame(ICD_LUT)
-                st.download_button("⬇️ Export current ICD LUT", data=df.to_csv(index=False), file_name="icd_catalogue_export.csv", mime="text/csv")
+                st.download_button(
+                    "⬇️ Export current ICD LUT",
+                    data=df.to_csv(index=False),
+                    file_name="icd_catalogue_export.csv",
+                    mime="text/csv"
+                )
             else:
                 st.caption("ICD LUT empty (using fallback).")
         except Exception:
@@ -3620,6 +3669,8 @@ else:
         st.success("Saved.")
 
     st.caption("Tip: In Referrer flow, GREEN/YELLOW cases can be diverted to these providers to preserve ambulances.")
+
+
 # ======== FACILITY ADMIN TAB ========
 with tabs[5]:
     st.subheader("🏥 Facility Admin")
