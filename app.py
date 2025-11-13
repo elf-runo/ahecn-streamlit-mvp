@@ -32,6 +32,89 @@ ORS_BASE_URL = "https://api.openrouteservice.org"
 DISTANCE_CACHE = {}
 CACHE_DURATION = timedelta(hours=24)
 
+# === CSS AND STYLING (MOVED UP) ===
+st.markdown("""
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ok:#10b981; --warn:#f59e0b; --bad:#ef4444; --muted:#9ca3af; --chip:#1f2937; --card:#0f172a;
+}
+html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+.block-container{ padding-top:1.2rem; padding-bottom:3rem; }
+h1,h2,h3{ letter-spacing:0.2px; }
+.badge{display:inline-block;padding:4px 10px;border-radius:999px;font-size:0.78rem;
+       background:#1f2937;color:#e5e7eb;margin-right:6px;margin-bottom:6px}
+.badge.ok{ background:rgba(16,185,129,.15); color:#34d399; border:1px solid rgba(16,185,129,.35)}
+.badge.warn{background:rgba(245,158,11,.15); color:#fbbf24; border:1px solid rgba(245,158,11,.35)}
+.badge.bad{ background:rgba(239,68,68,.15); color:#f87171; border:1px solid rgba(239,68,68,.35)}
+.pill{display:inline-flex;align-items:center;gap:.5rem;padding:.35rem .7rem;border-radius:999px;
+      font-weight:600; font-size:.85rem}
+.pill.red{ background:rgba(239,68,68,.18); color:#fca5a5; border:1px solid rgba(239,68,68,.35)}
+.pill.yellow{background:rgba(245,158,11,.18); color:#fcd34d; border:1px solid rgba(245,158,11,.35)}
+.pill.green{background:rgba(16,185,129,.18); color:#6ee7b7; border:1px solid rgba(16,185,129,.35)}
+.card{ background:var(--card); border:1px solid #1f2937; border-radius:16px; padding:14px 16px;
+       box-shadow:0 6px 16px rgba(0,0,0,.25); margin-bottom:12px}
+.card h4{ margin:0 0 6px 0; }
+.kpi{ background:#0d1b2a; border:1px solid #1f2937; border-radius:14px; padding:14px; }
+.kpi .label{ color:#9ca3af; font-size:.8rem; }
+.kpi .value{ font-size:1.6rem; font-weight:700; margin-top:4px}
+hr.soft{ border:none; height:1px; background:#1f2937; margin:10px 0 14px }
+.btnline > div > button{ width:100% }
+.small{ color:#9ca3af; font-size:.85rem }
+.required{ color:#ef4444; }
+.override-badge { background: rgba(139, 92, 246, 0.15); color: #a78bfa; border: 1px solid rgba(139, 92, 246, 0.35); }
+.audit-log { background: #1e293b; padding: 8px 12px; border-radius: 8px; border-left: 4px solid #8b5cf6; margin: 4px 0; }
+.priority-badge { background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.35); }
+.alternate-badge { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.35); }
+.match-score { font-size: 0.75rem; color: #9ca3af; margin-top: 4px; }
+.analytics-card { background: #1e293b; border-radius: 10px; padding: 15px; margin: 10px 0; border-left: 4px solid #3b82f6; }
+</style>
+""", unsafe_allow_html=True)
+
+# === CORE HELPERS ===
+def _num(x):
+    """Convert to float or return None if blank/invalid."""
+    if x is None: return None
+    s = str(x).strip()
+    if s == "": return None
+    try: return float(s)
+    except Exception: return None
+
+def _int(x, default=1):
+    try: return int(str(x).strip())
+    except Exception: return default
+
+def _clip(v, lo, hi):
+    x = _num(v)
+    if x is None: return None
+    return max(lo, min(hi, x))
+
+def validate_vitals(hr, rr, sbp, temp, spo2):
+    return dict(
+        hr   = _clip(hr,   20, 240),
+        rr   = _clip(rr,    5,  60),
+        sbp  = _clip(sbp,  50, 260),
+        temp = _clip(temp, 32,  42),
+        spo2 = _clip(spo2, 50, 100),
+    )
+
+def now_ts():
+    """Get current timestamp."""
+    return time.time()
+
+def cap_badges(list_or_csv):
+    """Display capability badges"""
+    if isinstance(list_or_csv, str):
+        items = [x.strip() for x in list_or_csv.split(",") if x.strip() and x.strip()!="—"]
+    else:
+        items = list_or_csv or []
+    if not items:
+        st.markdown('<span class="badge">—</span>', unsafe_allow_html=True)
+        return
+    cols = st.columns(min(4, max(1, len(items))))
+    for i,cap in enumerate(items[:12]):
+        cols[i%len(cols)].markdown(f'<span class="badge">{cap}</span>', unsafe_allow_html=True)
+
 # === REAL-TIME EVENT SYSTEM ===
 class RealTimeEventSystem:
     def __init__(self):
@@ -647,19 +730,6 @@ def show_free_routing_configuration():
     return provider, enable_traffic
 
 # === ENHANCED FACILITY CARD WITH ROUTING INFO ===
-def cap_badges(list_or_csv):
-    """Display capability badges"""
-    if isinstance(list_or_csv, str):
-        items = [x.strip() for x in list_or_csv.split(",") if x.strip() and x.strip()!="—"]
-    else:
-        items = list_or_csv or []
-    if not items:
-        st.markdown('<span class="badge">—</span>', unsafe_allow_html=True)
-        return
-    cols = st.columns(min(4, max(1, len(items))))
-    for i,cap in enumerate(items[:12]):
-        cols[i%len(cols)].markdown(f'<span class="badge">{cap}</span>', unsafe_allow_html=True)
-
 def enhanced_facility_card(row, rank, is_primary=False, is_alternate=False):
     """
     Enhanced facility card with routing information
@@ -814,222 +884,6 @@ def icd_options_for(case_type: str, age_years: float):
     df = df.copy()
     df["display"] = df["label"] + "  ·  " + df["icd_code"]
     return df["display"].tolist(), df
-
-# === CSS AND STYLING ===
-st.markdown("""
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-<style>
-:root{
-  --ok:#10b981; --warn:#f59e0b; --bad:#ef4444; --muted:#9ca3af; --chip:#1f2937; --card:#0f172a;
-}
-html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
-.block-container{ padding-top:1.2rem; padding-bottom:3rem; }
-h1,h2,h3{ letter-spacing:0.2px; }
-.badge{display:inline-block;padding:4px 10px;border-radius:999px;font-size:0.78rem;
-       background:#1f2937;color:#e5e7eb;margin-right:6px;margin-bottom:6px}
-.badge.ok{ background:rgba(16,185,129,.15); color:#34d399; border:1px solid rgba(16,185,129,.35)}
-.badge.warn{background:rgba(245,158,11,.15); color:#fbbf24; border:1px solid rgba(245,158,11,.35)}
-.badge.bad{ background:rgba(239,68,68,.15); color:#f87171; border:1px solid rgba(239,68,68,.35)}
-.pill{display:inline-flex;align-items:center;gap:.5rem;padding:.35rem .7rem;border-radius:999px;
-      font-weight:600; font-size:.85rem}
-.pill.red{ background:rgba(239,68,68,.18); color:#fca5a5; border:1px solid rgba(239,68,68,.35)}
-.pill.yellow{background:rgba(245,158,11,.18); color:#fcd34d; border:1px solid rgba(245,158,11,.35)}
-.pill.green{background:rgba(16,185,129,.18); color:#6ee7b7; border:1px solid rgba(16,185,129,.35)}
-.card{ background:var(--card); border:1px solid #1f2937; border-radius:16px; padding:14px 16px;
-       box-shadow:0 6px 16px rgba(0,0,0,.25); margin-bottom:12px}
-.card h4{ margin:0 0 6px 0; }
-.kpi{ background:#0d1b2a; border:1px solid #1f2937; border-radius:14px; padding:14px; }
-.kpi .label{ color:#9ca3af; font-size:.8rem; }
-.kpi .value{ font-size:1.6rem; font-weight:700; margin-top:4px}
-hr.soft{ border:none; height:1px; background:#1f2937; margin:10px 0 14px }
-.btnline > div > button{ width:100% }
-.small{ color:#9ca3af; font-size:.85rem }
-.required{ color:#ef4444; }
-.override-badge { background: rgba(139, 92, 246, 0.15); color: #a78bfa; border: 1px solid rgba(139, 92, 246, 0.35); }
-.audit-log { background: #1e293b; padding: 8px 12px; border-radius: 8px; border-left: 4px solid #8b5cf6; margin: 4px 0; }
-.priority-badge { background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.35); }
-.alternate-badge { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.35); }
-.match-score { font-size: 0.75rem; color: #9ca3af; margin-top: 4px; }
-.analytics-card { background: #1e293b; border-radius: 10px; padding: 15px; margin: 10px 0; border-left: 4px solid #3b82f6; }
-</style>
-""", unsafe_allow_html=True)
-
-# === CORE HELPERS ===
-def _num(x):
-    """Convert to float or return None if blank/invalid."""
-    if x is None: return None
-    s = str(x).strip()
-    if s == "": return None
-    try: return float(s)
-    except Exception: return None
-
-def _int(x, default=1):
-    try: return int(str(x).strip())
-    except Exception: return default
-
-def _clip(v, lo, hi):
-    x = _num(v)
-    if x is None: return None
-    return max(lo, min(hi, x))
-
-def validate_vitals(hr, rr, sbp, temp, spo2):
-    return dict(
-        hr   = _clip(hr,   20, 240),
-        rr   = _clip(rr,    5,  60),
-        sbp  = _clip(sbp,  50, 260),
-        temp = _clip(temp, 32,  42),
-        spo2 = _clip(spo2, 50, 100),
-    )
-
-def now_ts():
-    """Get current timestamp."""
-    return time.time()
-
-# === ANALYTICS & VISUALIZATION FUNCTIONS ===
-def create_time_series_analysis(referrals):
-    """Create time series analysis of referrals by hour/day"""
-    if not referrals:
-        return pd.DataFrame()
-    
-    df_data = []
-    for ref in referrals:
-        if 'times' in ref:
-            ts = ref['times'].get('first_contact_ts')
-            if ts:
-                try:
-                    dt = datetime.fromtimestamp(ts)
-                    df_data.append({
-                        'datetime': dt,
-                        'date': dt.date(),
-                        'hour': dt.hour,
-                        'day_of_week': dt.strftime('%A'),
-                        'referral': 1,
-                        'dispatched': 1 if ref['times'].get('dispatch_ts') else 0,
-                        'arrived': 1 if ref['times'].get('arrive_dest_ts') else 0,
-                        'triage_color': ref['triage']['decision']['color'],
-                        'case_type': ref['triage']['complaint'],
-                        'facility': ref.get('dest', 'Unknown')
-                    })
-                except (ValueError, TypeError):
-                    continue
-    
-    if not df_data:
-        return pd.DataFrame()
-        
-    df = pd.DataFrame(df_data)
-    return df
-
-def create_funnel_analysis(referrals):
-    """Create funnel analysis from referral to handover"""
-    if not referrals:
-        return {}
-    
-    stages = {
-        'Referrals': len(referrals),
-        'Dispatched': len([r for r in referrals if r['times'].get('dispatch_ts')]),
-        'Arrived': len([r for r in referrals if r['times'].get('arrive_dest_ts')]),
-        'Handover': len([r for r in referrals if r['times'].get('handover_ts')])
-    }
-    return stages
-
-def create_sla_analysis(referrals):
-    """Calculate SLA distributions for key time intervals"""
-    sla_data = []
-    
-    for ref in referrals:
-        try:
-            times = ref.get('times', {})
-            
-            # Decision to Dispatch
-            if times.get('decision_ts') and times.get('dispatch_ts'):
-                decision_dispatch = (times['dispatch_ts'] - times['decision_ts']) / 60  # minutes
-            else:
-                decision_dispatch = None
-                
-            # Dispatch to Arrival
-            if times.get('dispatch_ts') and times.get('arrive_dest_ts'):
-                dispatch_arrival = (times['arrive_dest_ts'] - times['dispatch_ts']) / 60
-            else:
-                dispatch_arrival = None
-                
-            # Arrival to Handover
-            if times.get('arrive_dest_ts') and times.get('handover_ts'):
-                arrival_handover = (times['handover_ts'] - times['arrive_dest_ts']) / 60
-            else:
-                arrival_handover = None
-                
-            if any([decision_dispatch, dispatch_arrival, arrival_handover]):
-                sla_data.append({
-                    'case_id': ref['id'],
-                    'triage_color': ref['triage']['decision']['color'],
-                    'decision_dispatch': decision_dispatch,
-                    'dispatch_arrival': dispatch_arrival,
-                    'arrival_handover': arrival_handover
-                })
-        except (KeyError, TypeError, ValueError):
-            continue
-    
-    return pd.DataFrame(sla_data) if sla_data else pd.DataFrame()
-
-def create_triage_mix_analysis(referrals):
-    """Analyze triage mix by facility and case type"""
-    mix_data = []
-    
-    for ref in referrals:
-        try:
-            mix_data.append({
-                'facility': ref.get('dest', 'Unknown'),
-                'case_type': ref['triage']['complaint'],
-                'triage_color': ref['triage']['decision']['color'],
-                'used_ambulance': ref.get('transport', {}).get('ambulance') in ['BLS', 'ALS', 'ALS + Vent']
-            })
-        except (KeyError, TypeError):
-            continue
-    
-    return pd.DataFrame(mix_data) if mix_data else pd.DataFrame()
-
-def create_geo_analysis(referrals):
-    """Create geographic analysis for heatmaps"""
-    geo_data = []
-    
-    for ref in referrals:
-        try:
-            patient = ref.get('patient', {})
-            location = patient.get('location', {})
-            if location.get('lat') and location.get('lon'):
-                geo_data.append({
-                    'lat': float(location['lat']),
-                    'lon': float(location['lon']),
-                    'triage_color': ref['triage']['decision']['color'],
-                    'case_type': ref['triage']['complaint'],
-                    'facility': ref.get('dest', 'Unknown'),
-                    'timestamp': ref['times'].get('first_contact_ts')
-                })
-        except (KeyError, TypeError, ValueError):
-            continue
-    
-    return pd.DataFrame(geo_data) if geo_data else pd.DataFrame()
-
-def create_ambulance_usage_analysis(referrals):
-    """Analyze avoidable ambulance usage"""
-    usage_data = []
-    
-    for ref in referrals:
-        try:
-            transport = ref.get('transport', {})
-            used_ambulance = transport.get('ambulance') in ['BLS', 'ALS', 'ALS + Vent']
-            triage_color = ref['triage']['decision']['color']
-            
-            usage_data.append({
-                'triage_color': triage_color,
-                'used_ambulance': used_ambulance,
-                'case_type': ref['triage']['complaint'],
-                'avoidable': used_ambulance and triage_color in ['GREEN', 'YELLOW']
-            })
-        except (KeyError, TypeError):
-            continue
-    
-    return pd.DataFrame(usage_data) if usage_data else pd.DataFrame()
 
 # === SCORING ENGINES ===
 def calc_NEWS2(rr, spo2, sbp, hr, temp, avpu, o2_device="Air", spo2_scale=1):
@@ -2874,158 +2728,3 @@ with tabs[0]:
         triage_color, triage_details = triage_decision(vit, context)
         
         # Apply override if active
-        if st.session_state.triage_override_active and st.session_state.triage_override_color:
-            triage_color = st.session_state.triage_override_color
-        
-        # Create referral object
-        ref = dict(
-            id=f"R{int(time.time())}",
-            patient=dict(
-                name=p_name, age=p_age, sex=p_sex, id=p_id,
-                location=dict(lat=p_lat, lon=p_lon)
-            ),
-            referrer=dict(
-                name=r_name, facility=r_fac, role=referrer_role
-            ),
-            provisionalDx=dx_payload,
-            interventions=all_interventions,
-            triage=dict(
-                complaint=complaint,
-                decision=dict(color=triage_color),
-                hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu
-            ),
-            clinical=dict(summary=ocr),
-            severity=triage_color,
-            reasons=dict(
-                severity=ref_severity,
-                bedOrICUUnavailable=ref_beds,
-                specialTest=ref_tests,
-                requiredCapabilities=need_caps
-            ),
-            dest=primary,
-            alternates=alternates,
-            transport=dict(
-                eta_min=0,  # Will be calculated
-                traffic=1.0,
-                speed_kmh=40,
-                ambulance=amb_type,
-                priority=priority
-            ),
-            route=[],
-            times=dict(
-                first_contact_ts=now_ts(),
-                decision_ts=now_ts(),
-                dispatch_ts=None,
-                arrive_dest_ts=None,
-                handover_ts=None
-            ),
-            status="PREALERT",
-            ambulance_available=True,
-            audit_log=[]
-        )
-        
-        # Add override info if applied
-        if st.session_state.triage_override_active:
-            ref["audit_log"].append({
-                "timestamp": now_ts(),
-                "user": r_name,
-                "action": "TRIAGE_OVERRIDE",
-                "details": {
-                    "original_color": triage_details,
-                    "override_color": triage_color,
-                    "reason": st.session_state.triage_override_reason
-                }
-            })
-        
-        st.session_state.referrals.insert(0, ref)
-        
-        # === ADD REAL-TIME EVENT: Case Created ===
-        event_system.publish_event(
-            event_type="CASE_CREATED",
-            data={
-                "patient_name": p_name,
-                "complaint": complaint,
-                "triage_color": triage_color,
-                "referrer": r_name,
-                "facility": primary
-            },
-            user=r_name,
-            facility=r_fac
-        )
-        
-        return ref["id"]
-
-    # Create referral button
-    if st.button("Create referral", type="primary"):
-        ref_id = _save_referral(dispatch=False)
-        if ref_id:
-            st.success(f"Referral {ref_id} created!")
-            st.balloons()
-            st.session_state.matched_primary = None
-            st.session_state.matched_alts = set()
-            st.rerun()
-
-# ======== Real-time Dashboard Tab ========
-with tabs[6]:
-    st.header("🚨 Real-time Emergency Coordination Dashboard")
-    
-    # Dashboard overview
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Active Cases", len(st.session_state.live_cases))
-    with col2:
-        unread_count = len([n for n in st.session_state.notifications if not n.get('read', False)])
-        st.metric("Unread Notifications", unread_count)
-    with col3:
-        active_count = len([a for a in st.session_state.system_activities if a.get('timestamp', 0) > time.time() - 3600])
-        st.metric("Last Hour Activity", active_count)
-    with col4:
-        dispatched_count = len([c for c in st.session_state.live_cases.values() if c.get('status') in ['DISPATCHED', 'ENROUTE_SCENE']])
-        st.metric("Ambulances Dispatched", dispatched_count)
-    
-    # Main real-time components
-    tab1, tab2, tab3 = st.tabs(["Live Activity Feed", "Notification Center", "Live Case Tracker"])
-    
-    with tab1:
-        show_realtime_activity_feed()
-    
-    with tab2:
-        show_notification_center()
-    
-    with tab3:
-        show_live_case_tracker()
-
-# ======== Other Tabs (Placeholders) ========
-with tabs[1]:
-    st.header("Ambulance / EMT Dashboard")
-    st.info("Ambulance coordination and dispatch interface coming soon...")
-    
-    # Quick dispatch demo
-    if st.button("🚑 Simulate Ambulance Dispatch"):
-        if st.session_state.referrals:
-            latest_ref = st.session_state.referrals[0]
-            publish_ambulance_dispatch_event(
-                latest_ref['id'],
-                "ALS",
-                latest_ref.get('dest', 'Unknown Facility')
-            )
-            st.success("Ambulance dispatch simulated!")
-
-with tabs[2]:
-    st.header("Receiving Hospital Dashboard")
-    st.info("Hospital acceptance and case management interface coming soon...")
-
-with tabs[3]:
-    st.header("Government Analytics Dashboard")
-    st.info("Regional analytics and performance monitoring coming soon...")
-
-with tabs[4]:
-    st.header("Data / Admin Dashboard")
-    st.info("System administration and data management coming soon...")
-
-with tabs[5]:
-    st.header("Facility Admin Dashboard")
-    st.info("Facility management and capacity monitoring coming soon...")
-
-# === Integrate real-time events with existing workflow ===
-integrate_realtime_events()
