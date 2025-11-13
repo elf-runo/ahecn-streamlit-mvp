@@ -3678,7 +3678,6 @@ with tabs[4]:
                 df = pd.read_csv(icd_up)
                 df.to_csv("icd_catalogue.csv", index=False)
                 # Refresh in-memory LUT
-                global ICD_LUT
                 ICD_LUT = load_icd_catalogue()
                 st.success(f"icd_catalogue.csv saved. Items: {len(ICD_LUT)}")
             except Exception as e:
