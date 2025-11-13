@@ -12,31 +12,6 @@ import altair as alt
 import os
 import requests
 import urllib.parse
-from presence import heartbeat, acquire_lock, release_lock
-from realtime import realtime_bus
-from storage import get_db, publish_event, list_events
-from demo_feeder import start_demo_feeder
-
-# --- realtime storage/event bus (fallback stubs if storage.py is missing) ---
-try:
-    from storage import get_db, publish_event
-except Exception:
-    import threading, time
-    import streamlit as st
-
-    def get_db():
-        # Placeholder for a DB handle; not used by the demo
-        return None
-
-    def publish_event(event: dict):
-        """Append event to a session-scoped list so other tabs can read it."""
-        evt = dict(event or {})
-        evt.setdefault("ts", time.time())
-        st.session_state.setdefault("events", []).append(evt)
-        # Keep list bounded for demo
-        if len(st.session_state["events"]) > 1000:
-            st.session_state["events"] = st.session_state["events"][-1000:]
-
 # Clear any cached widget states (development only)
 if 'widget_key_reset' not in st.session_state:
     st.session_state.widget_key_reset = True
@@ -1787,18 +1762,6 @@ if len(st.session_state.referrals) < 100:
 
 # === MAIN APP UI ===
 st.title("AHECN – Streamlit MVP v1.9 (Enhanced Analytics Dashboard)")
-# --- Realtime presence + event toasts (sidebar) ---
-if "user" not in st.session_state:
-    # Use any identifier; for demo keep simple or read from a text_input if you prefer.
-    st.session_state.user = "DemoUser"
-if "role" not in st.session_state:
-    st.session_state.role = "Operator"
-
-with st.sidebar:
-    st.markdown("### Realtime")
-    realtime_bus(st.session_state.user, st.session_state.role)
-# --- end realtime presence ---
-
 tabs = st.tabs(["Referrer","Ambulance / EMT","Receiving Hospital","Government Analytics","Data / Admin","Facility Admin"])
 
 # ======== Referrer Tab ========
@@ -2389,35 +2352,14 @@ with tabs[0]:
     if col1.button("Create referral"):
         if _save_referral(dispatch=False):
             st.success(f"Referral created → {primary}")
-            # NEW: emit event (case id = most recent inserted record at index 0)
-            try:
-                case_id = st.session_state.referrals[0]['id']
-                publish_event(
-                    get_db(),
-                    etype="REFERRAL_CREATED",
-                    case_id=case_id,
-                    actor=st.session_state.user,
-                    payload={"dest": primary, "alternates": alternates}
-            )
-            except Exception:
-                pass
-            # Reset override state (already in your code)...
+            # Reset override after successful referral
             st.session_state.triage_override_active = False
             st.session_state.triage_override_color = None
             st.session_state.triage_override_reason = ""
     if col2.button("Create & dispatch now"):
         if _save_referral(dispatch=True):
             st.success(f"Referral created and DISPATCHED → {primary}")
-            # NEW: emit events
-            try:
-                case_id = st.session_state.referrals[0]['id']
-                publish_event(get_db(), "REFERRAL_CREATED", case_id, st.session_state.user,
-                          payload={"dest": primary, "alternates": alternates})
-                publish_event(get_db(), "CASE_STATUS_CHANGED", case_id, st.session_state.user,
-                          payload={"status": "DISPATCHED"})
-            except Exception:
-                pass
-            # Reset override state (already in your code)...
+            # Reset override after successful referral
             st.session_state.triage_override_active = False
             st.session_state.triage_override_color = None
             st.session_state.triage_override_reason = ""
@@ -2700,44 +2642,32 @@ with tabs[1]:
             r["status"] = "DISPATCHED"
             r["times"]["dispatch_ts"] = now_ts()
             st.success("Case accepted - dispatched to scene")
-            publish_event(get_db(), "CASE_STATUS_CHANGED", r["id"], st.session_state.user, payload={"status": "DISPATCHED"})
             st.rerun()
-
         elif enroute_btn:
             r["status"] = "ENROUTE_SCENE"
             r["times"]["enroute_ts"] = now_ts()
             st.success("En route to pickup location")
-            publish_event(get_db(), "CASE_STATUS_CHANGED", r["id"], st.session_state.user, payload={"status": "ENROUTE_SCENE"})
             st.rerun()
-
         elif onscene_btn:
             r["status"] = "ARRIVE_SCENE"
             r["times"]["arrive_scene_ts"] = now_ts()
             st.success("Arrived at scene with patient")
-            publish_event(get_db(), "CASE_STATUS_CHANGED", r["id"], st.session_state.user, payload={"status": "ARRIVE_SCENE"})
             st.rerun()
-
         elif depart_btn:
             r["status"] = "DEPART_SCENE"
             r["times"]["depart_scene_ts"] = now_ts()
             st.success("Departing scene for destination")
-            publish_event(get_db(), "CASE_STATUS_CHANGED", r["id"], st.session_state.user, payload={"status": "DEPART_SCENE"})
             st.rerun()
-
         elif arrived_btn:
             r["status"] = "ARRIVE_DEST"
             r["times"]["arrive_dest_ts"] = now_ts()
             st.success("Arrived at destination facility")
-            publish_event(get_db(), "CASE_STATUS_CHANGED", r["id"], st.session_state.user, payload={"status": "ARRIVE_DEST"})
             st.rerun()
-
         elif handover_btn:
             r["status"] = "HANDOVER"
             r["times"]["handover_ts"] = now_ts()
             st.success("Handover completed - case closed")
-            publish_event(get_db(), "CASE_STATUS_CHANGED", r["id"], st.session_state.user, payload={"status": "HANDOVER"})
             st.rerun()
-
         
         # === ENHANCED VITALS MONITORING ===
         st.markdown("### 📊 Enhanced Vitals Monitoring")
@@ -3475,30 +3405,6 @@ with tabs[3]:
         ) 
 # ======== DATA / ADMIN TAB ========
 with tabs[4]:
-    # --- Synthetic realtime feed controller ---
-    st.markdown("### ⚙️ Demo Controls")
-
-    # Ensure the stopper is in session_state
-    if "feed_stop" not in st.session_state:
-        st.session_state["feed_stop"] = None
-
-    enable_feed = st.toggle(
-        "Enable Synthetic Real-time Feed",
-        value=True,
-        help="Simulate background activity (comments, status changes, routing updates)."
-    )
-    if enable_feed:
-        # Start only once
-        if st.session_state["feed_stop"] is None:
-            st.session_state["feed_stop"] = start_demo_feeder()
-            st.success("Synthetic feed started.")
-    else:
-        # Stop if running
-        if st.session_state["feed_stop"] is not None:
-            st.session_state["feed_stop"].set()
-            st.session_state["feed_stop"] = None
-            st.info("Synthetic feed stopped.")
-
     st.subheader("🗄️ Data / Admin")
 
     # ---------- Helpers (scoped to this tab) ----------
@@ -3508,18 +3414,16 @@ with tabs[4]:
             try:
                 pdx = r.get("provisionalDx", {}) or {}
                 rows.append({
-                    "id": r.get("id", ""),
-                    "first_contact": datetime.fromtimestamp(
-                        r.get("times", {}).get("first_contact_ts", now_ts())
-                    ).strftime("%Y-%m-%d %H:%M"),
-                    "case_type": r.get("triage", {}).get("complaint", ""),
-                    "triage": r.get("triage", {}).get("decision", {}).get("color", ""),
-                    "icd_code": pdx.get("code", ""),
-                    "icd_label": pdx.get("label", ""),
-                    "dest": r.get("dest", ""),
-                    "priority": r.get("transport", {}).get("priority", ""),
-                    "ambulance": r.get("transport", {}).get("ambulance", ""),
-                    "status": r.get("status", ""),
+                    "id": r.get("id",""),
+                    "first_contact": datetime.fromtimestamp(r.get("times",{}).get("first_contact_ts", now_ts())).strftime("%Y-%m-%d %H:%M"),
+                    "case_type": r.get("triage",{}).get("complaint",""),
+                    "triage": r.get("triage",{}).get("decision",{}).get("color",""),
+                    "icd_code": pdx.get("code",""),
+                    "icd_label": pdx.get("label",""),
+                    "dest": r.get("dest",""),
+                    "priority": r.get("transport",{}).get("priority",""),
+                    "ambulance": r.get("transport",{}).get("ambulance",""),
+                    "status": r.get("status",""),
                 })
             except Exception:
                 continue
@@ -3535,12 +3439,13 @@ with tabs[4]:
                 r["patient"]["name"] = f"Patient-{i:04d}"
                 r["patient"]["id"] = f"PID-{i:06d}"
 
-    # ---------- Demo Data Controls ----------
+    # ---------- Data controls ----------
     st.markdown("#### Demo Data Controls")
     c1, c2, c3, c4 = st.columns(4)
     with c1:
         add_n = st.number_input("Append synthetic referrals", 10, 2000, 100, step=10, key="admin_add_n")
         if st.button("➕ Append", key="admin_append_refs"):
+            # Append more without wiping
             before = len(st.session_state.referrals)
             seed_referrals(n=add_n, rng_seed=random.randint(1, 999999))
             st.success(f"Appended. Total referrals: {len(st.session_state.referrals)} (was {before}).")
@@ -3559,108 +3464,42 @@ with tabs[4]:
             DISTANCE_CACHE.clear()
             st.success("Route cache cleared.")
 
-    # ---------- Realtime self-test (buttons emit events; table shows latest) ----------
-    st.markdown("#### 🔔 Realtime self-test")
-    rt_col1, rt_col2 = st.columns(2)
-    with rt_col1:
-        test_case = st.text_input("Case ID", "TEST-001", key="rt_case")
-    with rt_col2:
-        test_actor = st.text_input("Actor", "admin@demo", key="rt_actor")
-
-    b1, b2, b3 = st.columns(3)
-    with b1:
-        if st.button("Emit test comment"):
-            publish_event({
-                "type": "comment.added",
-                "case_id": test_case,
-                "actor": test_actor,
-                "payload": {"text": "Hello from Admin"}
-            })
-            st.success("Test comment emitted.")
-    with b2:
-        if st.button("Emit status update"):
-            publish_event({
-                "type": "status.updated",
-                "case_id": test_case,
-                "actor": test_actor,
-                "payload": {"status": "DISPATCHED"}
-            })
-            st.success("Status update emitted.")
-    with b3:
-        if st.button("Emit route update"):
-            publish_event({
-                "type": "route.update",
-                "case_id": test_case,
-                "actor": test_actor,
-                "payload": {"eta_min": random.randint(5, 40)}
-            })
-            st.success("Route update emitted.")
-
-    # Show recent events from storage
-    ev = list_events(limit=20)
-    if ev:
-        ev_df = pd.DataFrame([{
-            "id": e["id"],
-            "time": datetime.fromtimestamp(e["ts"]).strftime("%Y-%m-%d %H:%M:%S"),
-            "type": e["type"],
-            "case_id": e["case_id"],
-            "actor": e["actor"],
-            "audience": e["audience"],
-            "payload": json.dumps(e["payload"]),
-        } for e in ev])
-        st.dataframe(ev_df, use_container_width=True, height=240)
-    else:
-        st.info("No events yet. Use the buttons above to emit some.")
-
-    # ---------- Referrals Table (filtered) ----------
+    # ---------- Quick filters + table ----------
     st.markdown("#### Referrals Table (filtered)")
     f1, f2, f3 = st.columns(3)
     with f1:
-        pick_tri = st.multiselect("Filter by triage", ["RED", "YELLOW", "GREEN"], default=[])
+        pick_tri = st.multiselect("Filter by triage", ["RED","YELLOW","GREEN"], default=[])
     with f2:
-        pick_case = st.multiselect("Filter by case type", ["Maternal", "Trauma", "Stroke", "Cardiac", "Sepsis", "Other"], default=[])
+        pick_case = st.multiselect("Filter by case type", ["Maternal","Trauma","Stroke","Cardiac","Sepsis","Other"], default=[])
     with f3:
-        pick_status = st.multiselect("Filter by status", ["PREALERT", "DISPATCHED", "ENROUTE_SCENE", "ARRIVE_SCENE", "DEPART_SCENE", "ARRIVE_DEST", "HANDOVER"], default=[])
+        pick_status = st.multiselect("Filter by status", ["PREALERT","DISPATCHED","ENROUTE_SCENE","ARRIVE_SCENE","DEPART_SCENE","ARRIVE_DEST","HANDOVER"], default=[])
 
     ref_df = flatten_referrals_for_table(st.session_state.referrals)
-    if pick_tri:
-        ref_df = ref_df[ref_df["triage"].isin(pick_tri)]
-    if pick_case:
-        ref_df = ref_df[ref_df["case_type"].isin(pick_case)]
-    if pick_status:
-        ref_df = ref_df[ref_df["status"].isin(pick_status)]
+    if pick_tri:   ref_df = ref_df[ref_df["triage"].isin(pick_tri)]
+    if pick_case:  ref_df = ref_df[ref_df["case_type"].isin(pick_case)]
+    if pick_status:ref_df = ref_df[ref_df["status"].isin(pick_status)]
 
     st.dataframe(ref_df, use_container_width=True, height=360)
 
-    # ---------- Import/Export ----------
+    # ---------- Downloads / Uploads ----------
     st.markdown("#### Import/Export")
     d1, d2, d3 = st.columns(3)
     with d1:
-        st.download_button(
-            "⬇️ CSV (filtered)",
-            data=referrals_to_csv(ref_df) if not ref_df.empty else "",
-            file_name="referrals_filtered.csv",
-            mime="text/csv",
-            disabled=ref_df.empty
-        )
+        st.download_button("⬇️ CSV (filtered)", data=referrals_to_csv(ref_df) if not ref_df.empty else "", file_name="referrals_filtered.csv", mime="text/csv", disabled=ref_df.empty)
     with d2:
-        st.download_button(
-            "⬇️ JSON (all)",
-            data=json.dumps(st.session_state.referrals, indent=2),
-            file_name="referrals_all.json",
-            mime="application/json",
-            disabled=(len(st.session_state.referrals) == 0)
-        )
+        # Full JSON export (all referrals as-is)
+        st.download_button("⬇️ JSON (all)", data=json.dumps(st.session_state.referrals, indent=2), file_name="referrals_all.json", mime="application/json", disabled=(len(st.session_state.referrals)==0))
     with d3:
         up_json = st.file_uploader("⬆️ Import referrals (JSON)", type=["json"], key="admin_up_json")
         if up_json is not None:
             try:
                 data = json.load(up_json)
                 assert isinstance(data, list)
+                # Normalize each record lightly and append
                 for r in data:
                     r = dict(r)
                     r.setdefault("times", {})
-                    r.setdefault("triage", {"decision": {"color": "GREEN"}})
+                    r.setdefault("triage", {"decision":{"color":"GREEN"}})
                     st.session_state.referrals.insert(0, r)
                 st.success(f"Imported {len(data)} referrals.")
             except Exception as e:
@@ -3668,7 +3507,7 @@ with tabs[4]:
 
     st.markdown("---")
 
-    # ---------- ICD Catalogue Admin ----------
+    # ---------- ICD Catalogue Admin (optional but useful for demo) ----------
     st.markdown("### 📚 ICD Catalogue Admin")
     ic1, ic2, ic3 = st.columns(3)
     with ic1:
@@ -3676,7 +3515,7 @@ with tabs[4]:
         if icd_up is not None:
             try:
                 df = pd.read_csv(icd_up)
-                df.to_csv("icd_catalogue.csv", index=False)
+                df.to_csv("icd_catalogue.csv", index=False)  # persist for your loader
                 # Refresh in-memory LUT
                 ICD_LUT = load_icd_catalogue()
                 st.success(f"icd_catalogue.csv saved. Items: {len(ICD_LUT)}")
@@ -3684,6 +3523,7 @@ with tabs[4]:
                 st.error(f"Failed to save: {e}")
     with ic2:
         try:
+            # Attempt to show current file if present
             if os.path.exists("icd_catalogue.csv"):
                 df_show = pd.read_csv("icd_catalogue.csv").head(15)
                 st.caption("Preview of current icd_catalogue.csv (top 15)")
@@ -3693,15 +3533,11 @@ with tabs[4]:
         except Exception as e:
             st.error(f"Preview error: {e}")
     with ic3:
+        # Export current LUT (best-effort)
         try:
             if ICD_LUT:
                 df = pd.DataFrame(ICD_LUT)
-                st.download_button(
-                    "⬇️ Export current ICD LUT",
-                    data=df.to_csv(index=False),
-                    file_name="icd_catalogue_export.csv",
-                    mime="text/csv"
-                )
+                st.download_button("⬇️ Export current ICD LUT", data=df.to_csv(index=False), file_name="icd_catalogue_export.csv", mime="text/csv")
             else:
                 st.caption("ICD LUT empty (using fallback).")
         except Exception:
@@ -3712,9 +3548,9 @@ with tabs[4]:
     st.markdown("### 🚕 Healthcare Rides Registry (Demo)")
     if "rides_providers" not in st.session_state:
         st.session_state.rides_providers = [
-            {"name": "Local Cab – East Hub", "contact": "+91-90000-11111", "service_area_km": 25, "eta_min": 20, "active": True},
-            {"name": "Private Taxi – Shillong", "contact": "+91-90000-22222", "service_area_km": 40, "eta_min": 30, "active": True},
-            {"name": "NGO Transport – Rural", "contact": "+91-90000-33333", "service_area_km": 60, "eta_min": 45, "active": True},
+            {"name":"Local Cab – East Hub","contact":"+91-90000-11111","service_area_km":25,"eta_min":20,"active":True},
+            {"name":"Private Taxi – Shillong","contact":"+91-90000-22222","service_area_km":40,"eta_min":30,"active":True},
+            {"name":"NGO Transport – Rural","contact":"+91-90000-33333","service_area_km":60,"eta_min":45,"active":True},
         ]
     rp_df = pd.DataFrame(st.session_state.rides_providers)
     rp_edit = st.data_editor(rp_df, num_rows="dynamic", use_container_width=True, key="rides_edit")
@@ -3723,9 +3559,6 @@ with tabs[4]:
         st.success("Saved.")
 
     st.caption("Tip: In Referrer flow, GREEN/YELLOW cases can be diverted to these providers to preserve ambulances.")
-
-
-
 # ======== FACILITY ADMIN TAB ========
 with tabs[5]:
     st.subheader("🏥 Facility Admin")
