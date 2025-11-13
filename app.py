@@ -12,6 +12,10 @@ import altair as alt
 import os
 import requests
 import urllib.parse
+from storage import get_db, publish_event
+from presence import heartbeat, acquire_lock, release_lock
+from realtime import realtime_bus
+from demo_feeder import start_demo_feeder
 # Clear any cached widget states (development only)
 if 'widget_key_reset' not in st.session_state:
     st.session_state.widget_key_reset = True
@@ -1762,6 +1766,18 @@ if len(st.session_state.referrals) < 100:
 
 # === MAIN APP UI ===
 st.title("AHECN – Streamlit MVP v1.9 (Enhanced Analytics Dashboard)")
+# --- Realtime presence + event toasts (sidebar) ---
+if "user" not in st.session_state:
+    # Use any identifier; for demo keep simple or read from a text_input if you prefer.
+    st.session_state.user = "DemoUser"
+if "role" not in st.session_state:
+    st.session_state.role = "Operator"
+
+with st.sidebar:
+    st.markdown("### Realtime")
+    realtime_bus(st.session_state.user, st.session_state.role)
+# --- end realtime presence ---
+
 tabs = st.tabs(["Referrer","Ambulance / EMT","Receiving Hospital","Government Analytics","Data / Admin","Facility Admin"])
 
 # ======== Referrer Tab ========
@@ -2352,14 +2368,35 @@ with tabs[0]:
     if col1.button("Create referral"):
         if _save_referral(dispatch=False):
             st.success(f"Referral created → {primary}")
-            # Reset override after successful referral
+            # NEW: emit event (case id = most recent inserted record at index 0)
+            try:
+                case_id = st.session_state.referrals[0]['id']
+                publish_event(
+                    get_db(),
+                    etype="REFERRAL_CREATED",
+                    case_id=case_id,
+                    actor=st.session_state.user,
+                    payload={"dest": primary, "alternates": alternates}
+            )
+            except Exception:
+                pass
+            # Reset override state (already in your code)...
             st.session_state.triage_override_active = False
             st.session_state.triage_override_color = None
             st.session_state.triage_override_reason = ""
     if col2.button("Create & dispatch now"):
         if _save_referral(dispatch=True):
             st.success(f"Referral created and DISPATCHED → {primary}")
-            # Reset override after successful referral
+            # NEW: emit events
+            try:
+                case_id = st.session_state.referrals[0]['id']
+                publish_event(get_db(), "REFERRAL_CREATED", case_id, st.session_state.user,
+                          payload={"dest": primary, "alternates": alternates})
+                publish_event(get_db(), "CASE_STATUS_CHANGED", case_id, st.session_state.user,
+                          payload={"status": "DISPATCHED"})
+            except Exception:
+                pass
+            # Reset override state (already in your code)...
             st.session_state.triage_override_active = False
             st.session_state.triage_override_color = None
             st.session_state.triage_override_reason = ""
@@ -2642,32 +2679,44 @@ with tabs[1]:
             r["status"] = "DISPATCHED"
             r["times"]["dispatch_ts"] = now_ts()
             st.success("Case accepted - dispatched to scene")
+            publish_event(get_db(), "CASE_STATUS_CHANGED", r["id"], st.session_state.user, payload={"status": "DISPATCHED"})
             st.rerun()
+
         elif enroute_btn:
             r["status"] = "ENROUTE_SCENE"
             r["times"]["enroute_ts"] = now_ts()
             st.success("En route to pickup location")
+            publish_event(get_db(), "CASE_STATUS_CHANGED", r["id"], st.session_state.user, payload={"status": "ENROUTE_SCENE"})
             st.rerun()
+
         elif onscene_btn:
             r["status"] = "ARRIVE_SCENE"
             r["times"]["arrive_scene_ts"] = now_ts()
             st.success("Arrived at scene with patient")
+            publish_event(get_db(), "CASE_STATUS_CHANGED", r["id"], st.session_state.user, payload={"status": "ARRIVE_SCENE"})
             st.rerun()
+
         elif depart_btn:
             r["status"] = "DEPART_SCENE"
             r["times"]["depart_scene_ts"] = now_ts()
             st.success("Departing scene for destination")
+            publish_event(get_db(), "CASE_STATUS_CHANGED", r["id"], st.session_state.user, payload={"status": "DEPART_SCENE"})
             st.rerun()
+
         elif arrived_btn:
             r["status"] = "ARRIVE_DEST"
             r["times"]["arrive_dest_ts"] = now_ts()
             st.success("Arrived at destination facility")
+            publish_event(get_db(), "CASE_STATUS_CHANGED", r["id"], st.session_state.user, payload={"status": "ARRIVE_DEST"})
             st.rerun()
+
         elif handover_btn:
             r["status"] = "HANDOVER"
             r["times"]["handover_ts"] = now_ts()
             st.success("Handover completed - case closed")
+            publish_event(get_db(), "CASE_STATUS_CHANGED", r["id"], st.session_state.user, payload={"status": "HANDOVER"})
             st.rerun()
+
         
         # === ENHANCED VITALS MONITORING ===
         st.markdown("### 📊 Enhanced Vitals Monitoring")
@@ -3405,6 +3454,18 @@ with tabs[3]:
         ) 
 # ======== DATA / ADMIN TAB ========
 with tabs[4]:
+# --- Synthetic realtime feed controller ---
+st.markdown("### ⚙️ Demo Controls")
+enable_feed = st.toggle("Enable Synthetic Real-time Feed", value=True, help="Simulate background activity (comments, status changes, routing updates).")
+if enable_feed:
+    # Starts a background thread once; safe due to cache_resource
+    st.session_state.setdefault("feed_stop", start_demo_feeder())
+else:
+    if "feed_stop" in st.session_state and st.session_state["feed_stop"]:
+        st.session_state["feed_stop"].set()
+        st.session_state["feed_stop"] = None
+# --- end synthetic feed ---
+    
     st.subheader("🗄️ Data / Admin")
 
     # ---------- Helpers (scoped to this tab) ----------
