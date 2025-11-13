@@ -16,6 +16,26 @@ from storage import get_db, publish_event
 from presence import heartbeat, acquire_lock, release_lock
 from realtime import realtime_bus
 from demo_feeder import start_demo_feeder
+# --- realtime storage/event bus (fallback stubs if storage.py is missing) ---
+try:
+    from storage import get_db, publish_event
+except Exception:
+    import threading, time
+    import streamlit as st
+
+    def get_db():
+        # Placeholder for a DB handle; not used by the demo
+        return None
+
+    def publish_event(event: dict):
+        """Append event to a session-scoped list so other tabs can read it."""
+        evt = dict(event or {})
+        evt.setdefault("ts", time.time())
+        st.session_state.setdefault("events", []).append(evt)
+        # Keep list bounded for demo
+        if len(st.session_state["events"]) > 1000:
+            st.session_state["events"] = st.session_state["events"][-1000:]
+
 # Clear any cached widget states (development only)
 if 'widget_key_reset' not in st.session_state:
     st.session_state.widget_key_reset = True
