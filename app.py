@@ -153,271 +153,6 @@ class RealTimeEventSystem:
 event_system = RealTimeEventSystem()
 
 # === REAL-TIME COMPONENT FUNCTIONS ===
-def show_realtime_activity_feed():
-    """Main real-time activity feed component"""
-    st.markdown("### 🔴 Live System Activity")
-    
-    # Auto-refresh toggle
-    col1, col2, col3 = st.columns([2, 1, 1])
-    with col1:
-        auto_refresh = st.checkbox("🔄 Auto-refresh every 10s", value=True)
-    with col2:
-        if st.button("Clear Read"):
-            mark_all_notifications_read()
-            st.rerun()
-    with col3:
-        if st.button("Simulate Activity"):
-            generate_demo_activities()
-            st.rerun()
-    
-    # Auto-refresh logic
-    if auto_refresh:
-        time.sleep(10)
-        st.rerun()
-    
-    # Show unread notifications count
-    unread_count = len([n for n in st.session_state.notifications if not n.get('read', False)])
-    if unread_count > 0:
-        st.error(f"🚨 {unread_count} unread notifications requiring attention")
-    
-    # Activity feed
-    activities = st.session_state.system_activities[:15]
-    
-    if not activities:
-        st.info("No recent activity. System monitoring for new events...")
-        return
-    
-    for activity in activities:
-        render_activity_item(activity)
-
-def render_activity_item(activity):
-    """Render individual activity item"""
-    timestamp = datetime.fromtimestamp(activity["timestamp"]).strftime("%H:%M:%S")
-    
-    icons = {
-        "CASE_CREATED": "🆕",
-        "CASE_DISPATCHED": "🚑", 
-        "CASE_ACCEPTED": "✅",
-        "CASE_REJECTED": "❌",
-        "TRIAGE_OVERRIDE": "⚡",
-        "AMBULANCE_ARRIVED": "🏥",
-        "HANDOVER_COMPLETE": "🤝",
-        "CRITICAL_ALERT": "🚨",
-        "RESOURCE_LOW": "⚠️",
-        "SYSTEM_ALERT": "🔧"
-    }
-    
-    colors = {
-        "CASE_CREATED": "#3B82F6",
-        "CASE_DISPATCHED": "#F59E0B", 
-        "CASE_ACCEPTED": "#10B981",
-        "CASE_REJECTED": "#EF4444",
-        "TRIAGE_OVERRIDE": "#8B5CF6",
-        "AMBULANCE_ARRIVED": "#06B6D4",
-        "HANDOVER_COMPLETE": "#84CC16",
-        "CRITICAL_ALERT": "#DC2626",
-        "RESOURCE_LOW": "#D97706",
-        "SYSTEM_ALERT": "#6B7280"
-    }
-    
-    icon = icons.get(activity["type"], "🔔")
-    color = colors.get(activity["type"], "#6B7280")
-    
-    with st.container():
-        col1, col2 = st.columns([1, 4])
-        
-        with col1:
-            st.markdown(f"<h3 style='color: {color}; margin: 0;'>{icon}</h3>", unsafe_allow_html=True)
-            st.caption(timestamp)
-        
-        with col2:
-            st.markdown(f"**{activity.get('user', 'System')}**")
-            st.write(f"{activity['data'].get('message', activity['type'])}")
-            
-            if activity.get('facility'):
-                st.caption(f"📍 {activity['facility']}")
-            
-            if activity["type"] in ["CASE_REJECTED", "CRITICAL_ALERT"]:
-                col_a, col_b = st.columns(2)
-                with col_a:
-                    if st.button("Acknowledge", key=f"ack_{activity['id']}"):
-                        acknowledge_event(activity['id'])
-                        st.rerun()
-                with col_b:
-                    if st.button("View Details", key=f"view_{activity['id']}"):
-                        show_event_details(activity)
-        
-        st.markdown("---")
-
-def show_notification_center():
-    """Dedicated notification center"""
-    st.markdown("### 📋 Notification Center")
-    
-    notifications = st.session_state.notifications
-    
-    if not notifications:
-        st.info("No notifications at this time")
-        return
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        show_all = st.checkbox("Show all", value=True)
-    with col2:
-        show_unread = st.checkbox("Unread only", value=False)
-    with col3:
-        priority_filter = st.selectbox("Priority", ["All", "HIGH", "MEDIUM", "LOW"])
-    
-    filtered_notifications = notifications
-    
-    if show_unread:
-        filtered_notifications = [n for n in filtered_notifications if not n.get('read', False)]
-    
-    if priority_filter != "All":
-        filtered_notifications = [n for n in filtered_notifications if n.get('priority') == priority_filter]
-    
-    for notification in filtered_notifications[:20]:
-        render_notification_item(notification)
-
-def render_notification_item(notification):
-    """Render individual notification item"""
-    timestamp = datetime.fromtimestamp(notification["timestamp"]).strftime("%H:%M:%S")
-    
-    priority_styles = {
-        "HIGH": "🔴",
-        "MEDIUM": "🟡", 
-        "LOW": "🟢"
-    }
-    
-    priority_icon = priority_styles.get(notification.get('priority', 'LOW'), '⚪')
-    
-    with st.container():
-        col1, col2, col3 = st.columns([3, 1, 1])
-        
-        with col1:
-            read_status = "✓ " if notification.get('read') else ""
-            st.markdown(f"**{priority_icon} {read_status}{notification['title']}**")
-        
-        with col2:
-            st.caption(timestamp)
-        
-        with col3:
-            if notification.get('action_required') and not notification.get('read'):
-                st.error("Action Required")
-            else:
-                st.info("Acknowledged")
-        
-        st.write(notification['message'])
-        
-        if notification.get('facility'):
-            st.caption(f"Facility: {notification['facility']}")
-        
-        if not notification.get('read'):
-            col_a, col_b, col_c = st.columns([1, 1, 2])
-            with col_a:
-                if st.button("Mark Read", key=f"read_{notification['id']}"):
-                    mark_notification_read(notification['id'])
-                    st.rerun()
-            with col_b:
-                if st.button("View Event", key=f"event_{notification['id']}"):
-                    event = next((e for e in st.session_state.system_activities 
-                                if e['id'] == notification['event_id']), None)
-                    if event:
-                        show_event_details(event)
-        
-        st.markdown("---")
-
-def show_live_case_tracker():
-    """Live case tracking dashboard"""
-    st.markdown("### 🚨 Live Case Tracker")
-    
-    if not st.session_state.live_cases:
-        initialize_demo_cases()
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        status_filter = st.selectbox("Case Status", ["All", "DISPATCHED", "ENROUTE", "ARRIVED", "HANDOVER"])
-    with col2:
-        triage_filter = st.selectbox("Triage Level", ["All", "RED", "YELLOW", "GREEN"])
-    with col3:
-        facility_filter = st.selectbox("Facility", ["All"] + list(set(
-            case['facility'] for case in st.session_state.live_cases.values()
-            if case.get('facility')
-        )))
-    
-    filtered_cases = st.session_state.live_cases.copy()
-    
-    if status_filter != "All":
-        filtered_cases = {k: v for k, v in filtered_cases.items() 
-                         if v.get('status') == status_filter}
-    
-    if triage_filter != "All":
-        filtered_cases = {k: v for k, v in filtered_cases.items() 
-                         if v.get('triage_color') == triage_filter}
-    
-    if facility_filter != "All":
-        filtered_cases = {k: v for k, v in filtered_cases.items() 
-                         if v.get('facility') == facility_filter}
-    
-    for case_id, case in list(filtered_cases.items())[:10]:
-        render_live_case(case_id, case)
-
-def render_live_case(case_id, case):
-    """Render individual live case"""
-    with st.container():
-        col1, col2, col3 = st.columns([2, 2, 1])
-        
-        with col1:
-            st.markdown(f"#### {case.get('patient_name', 'Unknown Patient')}")
-            st.write(f"**{case.get('complaint', 'Unknown')}** • {case.get('age', 'N/A')} {case.get('gender', '')}")
-            
-            triage_color = case.get('triage_color', 'GREEN')
-            badge_color = {
-                'RED': '🔴', 
-                'YELLOW': '🟡',
-                'GREEN': '🟢'
-            }.get(triage_color, '⚪')
-            
-            st.markdown(f"{badge_color} **{triage_color}** triage")
-        
-        with col2:
-            status = case.get('status', 'UNKNOWN')
-            progress_data = {
-                "DISPATCHED": 25,
-                "ENROUTE_SCENE": 50, 
-                "ARRIVE_SCENE": 60,
-                "DEPART_SCENE": 75,
-                "ARRIVE_DEST": 90,
-                "HANDOVER": 100
-            }
-            
-            progress = progress_data.get(status, 0)
-            st.progress(progress/100)
-            st.caption(f"Status: {status.replace('_', ' ').title()}")
-            
-            if case.get('eta'):
-                st.write(f"**ETA:** {case['eta']} min")
-        
-        with col3:
-            if status in ["DISPATCHED", "ENROUTE_SCENE"]:
-                if st.button("Update ETA", key=f"eta_{case_id}"):
-                    update_case_eta(case_id)
-                    st.rerun()
-            
-            if st.button("View Details", key=f"details_{case_id}"):
-                show_case_details(case)
-        
-        if case.get('latest_vitals'):
-            vitals = case['latest_vitals']
-            vitals_cols = st.columns(5)
-            vitals_cols[0].metric("HR", vitals.get('hr', '--'))
-            vitals_cols[1].metric("SBP", vitals.get('sbp', '--'))
-            vitals_cols[2].metric("SpO2", f"{vitals.get('spo2', '--')}%")
-            vitals_cols[3].metric("RR", vitals.get('rr', '--'))
-            vitals_cols[4].metric("Temp", f"{vitals.get('temp', '--')}°C")
-        
-        st.markdown("---")    
-
-# === REAL-TIME HELPER FUNCTIONS ===
 def mark_notification_read(notification_id):
     """Mark notification as read"""
     for notification in st.session_state.notifications:
@@ -530,6 +265,270 @@ def initialize_demo_cases():
             "latest_vitals": {"hr": 88, "sbp": 150, "rr": 18, "spo2": 96, "temp": 36.5}
         }
     }
+
+def render_activity_item(activity):
+    """Render individual activity item"""
+    timestamp = datetime.fromtimestamp(activity["timestamp"]).strftime("%H:%M:%S")
+    
+    icons = {
+        "CASE_CREATED": "🆕",
+        "CASE_DISPATCHED": "🚑", 
+        "CASE_ACCEPTED": "✅",
+        "CASE_REJECTED": "❌",
+        "TRIAGE_OVERRIDE": "⚡",
+        "AMBULANCE_ARRIVED": "🏥",
+        "HANDOVER_COMPLETE": "🤝",
+        "CRITICAL_ALERT": "🚨",
+        "RESOURCE_LOW": "⚠️",
+        "SYSTEM_ALERT": "🔧"
+    }
+    
+    colors = {
+        "CASE_CREATED": "#3B82F6",
+        "CASE_DISPATCHED": "#F59E0B", 
+        "CASE_ACCEPTED": "#10B981",
+        "CASE_REJECTED": "#EF4444",
+        "TRIAGE_OVERRIDE": "#8B5CF6",
+        "AMBULANCE_ARRIVED": "#06B6D4",
+        "HANDOVER_COMPLETE": "#84CC16",
+        "CRITICAL_ALERT": "#DC2626",
+        "RESOURCE_LOW": "#D97706",
+        "SYSTEM_ALERT": "#6B7280"
+    }
+    
+    icon = icons.get(activity["type"], "🔔")
+    color = colors.get(activity["type"], "#6B7280")
+    
+    with st.container():
+        col1, col2 = st.columns([1, 4])
+        
+        with col1:
+            st.markdown(f"<h3 style='color: {color}; margin: 0;'>{icon}</h3>", unsafe_allow_html=True)
+            st.caption(timestamp)
+        
+        with col2:
+            st.markdown(f"**{activity.get('user', 'System')}**")
+            st.write(f"{activity['data'].get('message', activity['type'])}")
+            
+            if activity.get('facility'):
+                st.caption(f"📍 {activity['facility']}")
+            
+            if activity["type"] in ["CASE_REJECTED", "CRITICAL_ALERT"]:
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    if st.button("Acknowledge", key=f"ack_{activity['id']}"):
+                        acknowledge_event(activity['id'])
+                        st.rerun()
+                with col_b:
+                    if st.button("View Details", key=f"view_{activity['id']}"):
+                        show_event_details(activity)
+        
+        st.markdown("---")
+
+def show_realtime_activity_feed():
+    """Main real-time activity feed component"""
+    st.markdown("### 🔴 Live System Activity")
+    
+    # Auto-refresh toggle
+    col1, col2, col3 = st.columns([2, 1, 1])
+    with col1:
+        auto_refresh = st.checkbox("🔄 Auto-refresh every 10s", value=True)
+    with col2:
+        if st.button("Clear Read"):
+            mark_all_notifications_read()
+            st.rerun()
+    with col3:
+        if st.button("Simulate Activity"):
+            generate_demo_activities()
+            st.rerun()
+    
+    # Auto-refresh logic
+    if auto_refresh:
+        time.sleep(10)
+        st.rerun()
+    
+    # Show unread notifications count
+    unread_count = len([n for n in st.session_state.notifications if not n.get('read', False)])
+    if unread_count > 0:
+        st.error(f"🚨 {unread_count} unread notifications requiring attention")
+    
+    # Activity feed
+    activities = st.session_state.system_activities[:15]
+    
+    if not activities:
+        st.info("No recent activity. System monitoring for new events...")
+        return
+    
+    for activity in activities:
+        render_activity_item(activity)
+
+def render_notification_item(notification):
+    """Render individual notification item"""
+    timestamp = datetime.fromtimestamp(notification["timestamp"]).strftime("%H:%M:%S")
+    
+    priority_styles = {
+        "HIGH": "🔴",
+        "MEDIUM": "🟡", 
+        "LOW": "🟢"
+    }
+    
+    priority_icon = priority_styles.get(notification.get('priority', 'LOW'), '⚪')
+    
+    with st.container():
+        col1, col2, col3 = st.columns([3, 1, 1])
+        
+        with col1:
+            read_status = "✓ " if notification.get('read') else ""
+            st.markdown(f"**{priority_icon} {read_status}{notification['title']}**")
+        
+        with col2:
+            st.caption(timestamp)
+        
+        with col3:
+            if notification.get('action_required') and not notification.get('read'):
+                st.error("Action Required")
+            else:
+                st.info("Acknowledged")
+        
+        st.write(notification['message'])
+        
+        if notification.get('facility'):
+            st.caption(f"Facility: {notification['facility']}")
+        
+        if not notification.get('read'):
+            col_a, col_b, col_c = st.columns([1, 1, 2])
+            with col_a:
+                if st.button("Mark Read", key=f"read_{notification['id']}"):
+                    mark_notification_read(notification['id'])
+                    st.rerun()
+            with col_b:
+                if st.button("View Event", key=f"event_{notification['id']}"):
+                    event = next((e for e in st.session_state.system_activities 
+                                if e['id'] == notification['event_id']), None)
+                    if event:
+                        show_event_details(event)
+        
+        st.markdown("---")
+
+def show_notification_center():
+    """Dedicated notification center"""
+    st.markdown("### 📋 Notification Center")
+    
+    notifications = st.session_state.notifications
+    
+    if not notifications:
+        st.info("No notifications at this time")
+        return
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        show_all = st.checkbox("Show all", value=True)
+    with col2:
+        show_unread = st.checkbox("Unread only", value=False)
+    with col3:
+        priority_filter = st.selectbox("Priority", ["All", "HIGH", "MEDIUM", "LOW"])
+    
+    filtered_notifications = notifications
+    
+    if show_unread:
+        filtered_notifications = [n for n in filtered_notifications if not n.get('read', False)]
+    
+    if priority_filter != "All":
+        filtered_notifications = [n for n in filtered_notifications if n.get('priority') == priority_filter]
+    
+    for notification in filtered_notifications[:20]:
+        render_notification_item(notification)
+
+def render_live_case(case_id, case):
+    """Render individual live case"""
+    with st.container():
+        col1, col2, col3 = st.columns([2, 2, 1])
+        
+        with col1:
+            st.markdown(f"#### {case.get('patient_name', 'Unknown Patient')}")
+            st.write(f"**{case.get('complaint', 'Unknown')}** • {case.get('age', 'N/A')} {case.get('gender', '')}")
+            
+            triage_color = case.get('triage_color', 'GREEN')
+            badge_color = {
+                'RED': '🔴', 
+                'YELLOW': '🟡',
+                'GREEN': '🟢'
+            }.get(triage_color, '⚪')
+            
+            st.markdown(f"{badge_color} **{triage_color}** triage")
+        
+        with col2:
+            status = case.get('status', 'UNKNOWN')
+            progress_data = {
+                "DISPATCHED": 25,
+                "ENROUTE_SCENE": 50, 
+                "ARRIVE_SCENE": 60,
+                "DEPART_SCENE": 75,
+                "ARRIVE_DEST": 90,
+                "HANDOVER": 100
+            }
+            
+            progress = progress_data.get(status, 0)
+            st.progress(progress/100)
+            st.caption(f"Status: {status.replace('_', ' ').title()}")
+            
+            if case.get('eta'):
+                st.write(f"**ETA:** {case['eta']} min")
+        
+        with col3:
+            if status in ["DISPATCHED", "ENROUTE_SCENE"]:
+                if st.button("Update ETA", key=f"eta_{case_id}"):
+                    update_case_eta(case_id)
+                    st.rerun()
+            
+            if st.button("View Details", key=f"details_{case_id}"):
+                show_case_details(case)
+        
+        if case.get('latest_vitals'):
+            vitals = case['latest_vitals']
+            vitals_cols = st.columns(5)
+            vitals_cols[0].metric("HR", vitals.get('hr', '--'))
+            vitals_cols[1].metric("SBP", vitals.get('sbp', '--'))
+            vitals_cols[2].metric("SpO2", f"{vitals.get('spo2', '--')}%")
+            vitals_cols[3].metric("RR", vitals.get('rr', '--'))
+            vitals_cols[4].metric("Temp", f"{vitals.get('temp', '--')}°C")
+        
+        st.markdown("---")
+
+def show_live_case_tracker():
+    """Live case tracking dashboard"""
+    st.markdown("### 🚨 Live Case Tracker")
+    
+    if not st.session_state.live_cases:
+        initialize_demo_cases()
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        status_filter = st.selectbox("Case Status", ["All", "DISPATCHED", "ENROUTE", "ARRIVED", "HANDOVER"])
+    with col2:
+        triage_filter = st.selectbox("Triage Level", ["All", "RED", "YELLOW", "GREEN"])
+    with col3:
+        facility_filter = st.selectbox("Facility", ["All"] + list(set(
+            case['facility'] for case in st.session_state.live_cases.values()
+            if case.get('facility')
+        )))
+    
+    filtered_cases = st.session_state.live_cases.copy()
+    
+    if status_filter != "All":
+        filtered_cases = {k: v for k, v in filtered_cases.items() 
+                         if v.get('status') == status_filter}
+    
+    if triage_filter != "All":
+        filtered_cases = {k: v for k, v in filtered_cases.items() 
+                         if v.get('triage_color') == triage_filter}
+    
+    if facility_filter != "All":
+        filtered_cases = {k: v for k, v in filtered_cases.items() 
+                         if v.get('facility') == facility_filter}
+    
+    for case_id, case in list(filtered_cases.items())[:10]:
+        render_live_case(case_id, case)
 
 def integrate_realtime_events():
     """Hook real-time events into existing workflow"""
@@ -648,6 +647,19 @@ def show_free_routing_configuration():
     return provider, enable_traffic
 
 # === ENHANCED FACILITY CARD WITH ROUTING INFO ===
+def cap_badges(list_or_csv):
+    """Display capability badges"""
+    if isinstance(list_or_csv, str):
+        items = [x.strip() for x in list_or_csv.split(",") if x.strip() and x.strip()!="—"]
+    else:
+        items = list_or_csv or []
+    if not items:
+        st.markdown('<span class="badge">—</span>', unsafe_allow_html=True)
+        return
+    cols = st.columns(min(4, max(1, len(items))))
+    for i,cap in enumerate(items[:12]):
+        cols[i%len(cols)].markdown(f'<span class="badge">{cap}</span>', unsafe_allow_html=True)
+
 def enhanced_facility_card(row, rank, is_primary=False, is_alternate=False):
     """
     Enhanced facility card with routing information
@@ -1252,17 +1264,6 @@ def kpi_tile(label, value, help_text=None):
     st.markdown(f'<div class="kpi"><div class="label">{label}</div><div class="value">{value}</div></div>',
                 unsafe_allow_html=True)
     if help_text: st.caption(help_text)
-
-def cap_badges(list_or_csv):
-    if isinstance(list_or_csv, str):
-        items = [x.strip() for x in list_or_csv.split(",") if x.strip() and x.strip()!="—"]
-    else:
-        items = list_or_csv or []
-    if not items:
-        st.markdown('<span class="badge">—</span>', unsafe_allow_html=True); return
-    cols = st.columns(min(4, max(1, len(items))))
-    for i,cap in enumerate(items[:12]):
-        cols[i%len(cols)].markdown(f'<span class="badge">{cap}</span>', unsafe_allow_html=True)
 
 def render_triage_banner(hr, rr, sbp, temp, spo2, avpu, complaint, override_applied=False):
     vitals = dict(
