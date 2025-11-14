@@ -12,10 +12,6 @@ import altair as alt
 import os
 import requests
 import urllib.parse
-# Clear any cached widget states (development only)
-if 'widget_key_reset' not in st.session_state:
-    st.session_state.widget_key_reset = True
-    st.experimental_rerun()
 
 # === PAGE CONFIG MUST BE FIRST STREAMLIT COMMAND ===
 st.set_page_config(
@@ -23,6 +19,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed"
 )
+
 # === FREE ROUTING CONFIGURATION ===
 # Choose your free routing provider: 'osrm' (recommended) or 'openrouteservice'
 ROUTING_PROVIDER = 'osrm'
@@ -65,7 +62,7 @@ def show_free_routing_configuration():
     # Cache management
     col1, col2 = st.sidebar.columns(2)
     with col1:
-        if st.button("🔄 Clear Cache"):
+        if st.button("🔄 Clear Cache", key="clear_route_cache_sidebar"):
             DISTANCE_CACHE.clear()
             st.success("Route cache cleared!")
     with col2:
@@ -113,7 +110,7 @@ def enhanced_facility_card(row, rank, is_primary=False, is_alternate=False):
         
         # Enhanced info with real routing data
         if isinstance(row['eta_min'], (int, float)):
-            traffic_info = f" (Traffic: {row['traffic_factor']}x)" if row.get('traffic_factor', 1.0) > 1.0 else ""
+            traffic_info = f" (Traffic: {row.get('traffic_factor')}x)" if row.get('traffic_factor', 1.0) > 1.0 else ""
             provider_info = f" • {row.get('routing_provider', '')}"
             sub = f"ETA ~ {row['eta_min']} min{traffic_info}{provider_info} • {row['km']} km • ICU beds: {row['ICU_open']} • Acceptance: {row['accept']}%"
         else:
@@ -152,7 +149,7 @@ def enhanced_facility_card(row, rank, is_primary=False, is_alternate=False):
         
         st.markdown('</div>', unsafe_allow_html=True)
         return pick, alt
-    
+
 # === LOAD ICD CATALOG FROM CSV ===
 def load_icd_catalogue():
     """Load ICD catalog from CSV file with robust error handling."""
@@ -1142,6 +1139,7 @@ def get_route_info_free(origin_lat, origin_lon, dest_lat, dest_lon, provider=Non
     }
     
     return result
+
 # === ENHANCED ANALYTICS FUNCTIONS ===
 def create_enhanced_time_series(referrals):
     """Enhanced time series analysis with trends"""
@@ -1285,7 +1283,8 @@ def analyze_ambulance_utilization(referrals):
         except (KeyError, TypeError):
             continue
     
-    return utilization_data    
+    return utilization_data
+
 # === ENHANCED FACILITY MATCHING WITH FREE ROUTING ===
 def calculate_enhanced_facility_score_free(facility, required_caps, route_data, case_type, triage_color):
     """
@@ -1370,7 +1369,7 @@ def calculate_enhanced_facility_score_free(facility, required_caps, route_data, 
     
     return final_score, scoring_details
 
-def rank_facilities_with_free_routing(origin_coords, required_caps, case_type, triage_color, top_k=8):
+def rank_facilities_with_free_routing(origin_coords, required_caps, case_type, triage_color, top_k=8, provider=None):
     """
     Enhanced facility ranking with free routing data
     """
@@ -1402,10 +1401,11 @@ def rank_facilities_with_free_routing(origin_coords, required_caps, case_type, t
             if not facility or 'lat' not in facility or 'lon' not in facility:
                 continue
             
-            # Get free route information
+            # Get free route information (respect selected provider)
             route_data = get_route_info_free(
                 origin_coords[0], origin_coords[1],
-                float(facility["lat"]), float(facility["lon"])
+                float(facility["lat"]), float(facility["lon"]),
+                provider=provider
             )
             
             # Calculate enhanced score with routing data
@@ -1461,7 +1461,7 @@ EH_BASE = dict(lat_min=25.45, lat_max=25.65, lon_min=91.80, lon_max=91.95)
 
 def rand_geo(rng):
     return (EH_BASE["lat_min"]+rng.random()*(EH_BASE["lat_max"]-EH_BASE["lat_min"]),
-            EH_BASE["lon_min"]+rng.random()*(EH_BASE["lon_max"]-EH_BASE["lon_min"]))
+            EH_BASE["lon_min"]+rng.random()*(EH_BASE["lon_min"]*-0 + (EH_BASE["lon_max"]-EH_BASE["lon_min"])))
 
 SPECIALTIES = ["Obstetrics","Paediatrics","Cardiology","Neurology","Orthopaedics","General Surgery","Anaesthesia","ICU"]
 INTERVENTIONS = ["CathLab","OBGYN_OT","CT","MRI","Dialysis","Thrombolysis","Ventilator","BloodBank","OR","Neurosurgery"]
@@ -1540,14 +1540,17 @@ def facilities_df():
 # === ENHANCED SYNTHETIC DATA SEEDING ===
 RESUS = ["Airway positioning","Oxygen","IV fluids","Uterotonics","TXA","Bleeding control","Antibiotics","Nebulization","Immobilization","AED/CPR"]
 
-def seed_referrals(n=500, rng_seed=42):
-    """Enhanced synthetic data seeding with proper structure"""
+def seed_referrals(n=500, rng_seed=42, append=False):
+    """Enhanced synthetic data seeding with proper structure.
+       Set append=True to append to existing data instead of wiping.
+    """
     rng = random.Random(rng_seed)
     facs = st.session_state.facilities
     conds = ["Maternal", "Trauma", "Stroke", "Cardiac", "Sepsis", "Other"]
     
-    # Clear existing referrals
-    st.session_state.referrals = []
+    # Clear existing referrals unless in append mode
+    if not append:
+        st.session_state.referrals = []
     
     # Define medically appropriate case profiles
     case_profiles = {
@@ -1758,7 +1761,7 @@ st.session_state.facilities = [normalize_facility(x) for x in st.session_state.f
 
 # Auto-seed on first run (ensures ≥100)
 if len(st.session_state.referrals) < 100:
-    seed_referrals(n=500)
+    seed_referrals(n=500, append=False)
 
 # === MAIN APP UI ===
 st.title("AHECN – Streamlit MVP v1.9 (Enhanced Analytics Dashboard)")
@@ -2036,7 +2039,7 @@ with tabs[0]:
     
     # Auto-suggest capabilities based on ICD selection
     auto_suggested_caps = []
-    if chosen_icd and row is not None:
+    if (referrer_role == "Doctor/Physician") and chosen_icd and row is not None:
         auto_suggested_caps = row.get("default_caps", [])
         st.info(f"**Auto-suggested capabilities:** {', '.join(auto_suggested_caps) if auto_suggested_caps else 'None'}")
     
@@ -2087,7 +2090,8 @@ with tabs[0]:
                     required_caps=need_caps,
                     case_type=complaint,
                     triage_color=triage_color,
-                    top_k=8
+                    top_k=8,
+                    provider=current_provider
                 )
 
             if not ranked_facilities:
@@ -2461,7 +2465,7 @@ with tabs[2]:
                                     <em>Reason: {audit['details']['reason']}</em>
                                 </div>
                                 """, unsafe_allow_html=True)
-                                            # Enhanced Interventions Display for Receiving Hospital
+                    # Enhanced Interventions Display for Receiving Hospital
                     st.markdown("#### 📋 Interventions Timeline")
                     interventions = r.get("interventions", [])
                     if interventions:
@@ -2476,7 +2480,7 @@ with tabs[2]:
                                 st.markdown(f"""
                                 <div style="background: #1e293b; padding: 6px 10px; border-radius: 6px; margin: 2px 0; border-left: 3px solid #3b82f6;">
                                     <div style="font-weight: 500;">{iv['name']}</div>
-                                    <div style="font-size: 0.75rem; color: #9ca3af;">{timestamp} • {iv.get('type', 'custom').replace('_', ' ').title()}</div>
+                                    <div style="font-size: 0.75rem; color: #9ca3af;">{timestamp} • {iv.get("type", 'custom').replace('_', ' ').title()}</div>
                                 </div>
                                 """, unsafe_allow_html=True)
                         
@@ -2875,16 +2879,16 @@ with tabs[3]:
     
     if uploaded_csv:
         try:
-            facilities_df = pd.read_csv(uploaded_csv)
-            st.session_state.enhanced_facilities = facilities_df
-            st.success(f"✅ Loaded {len(facilities_df)} facilities")
+            facilities_csv_df = pd.read_csv(uploaded_csv)  # avoid name clash with facilities_df() function
+            st.session_state.enhanced_facilities = facilities_csv_df
+            st.success(f"✅ Loaded {len(facilities_csv_df)} facilities")
         except Exception as e:
             st.error(f"Error loading CSV: {str(e)}")
-            facilities_df = pd.DataFrame()
+            facilities_csv_df = pd.DataFrame()
     else:
-        facilities_df = pd.DataFrame()
+        facilities_csv_df = pd.DataFrame()
 
-    # Enhanced analytics functions
+    # Enhanced analytics functions (scoped)
     def create_enhanced_time_series(referrals):
         """Enhanced time series analysis with trends"""
         if not referrals:
@@ -3048,7 +3052,7 @@ with tabs[3]:
     
     with col2:
         red_cases = len([r for r in referrals_data if r['triage']['decision']['color'] == 'RED'])
-        st.metric("Critical Cases", red_cases, f"{red_cases/total_refs*100:.1f}%" if total_refs else "0%")
+        st.metric("Critical Cases", red_cases, f"{(red_cases/total_refs*100):.1f}%" if total_refs else "0%")
     
     with col3:
         avg_dispatch = sla_df['decision_dispatch'].mean() if not sla_df.empty else 0
@@ -3056,7 +3060,7 @@ with tabs[3]:
     
     with col4:
         ambulance_usage = len([r for r in referrals_data if r.get('transport', {}).get('ambulance') in ['BLS', 'ALS', 'ALS + Vent']])
-        st.metric("Ambulance Utilization", ambulance_usage, f"{ambulance_usage/total_refs*100:.1f}%" if total_refs else "0%")
+        st.metric("Ambulance Utilization", ambulance_usage, f"{(ambulance_usage/total_refs*100):.1f}%" if total_refs else "0%")
 
     # Enhanced Visualizations Section
     st.markdown("---")
@@ -3291,7 +3295,6 @@ with tabs[3]:
     with insights_col1:
         st.markdown("#### 🚨 Critical Findings")
         
-        # Generate dynamic insights
         insights = []
         
         # High acuity insight
@@ -3314,7 +3317,6 @@ with tabs[3]:
             dominant_case = max(case_type_breakdown.items(), key=lambda x: x[1])
             insights.append(f"**Dominant Emergency Type**: {dominant_case[0]} ({dominant_case[1]} cases, {dominant_case[1]/total_refs*100:.1f}%) - targeted training & referral protocols")
         
-        # Display insights
         for insight in insights:
             st.info(insight)
     
@@ -3335,7 +3337,8 @@ with tabs[3]:
             if green_als > 10:
                 recommendations.append(f"**Optimize Ambulance Use**: {green_als} ALS ambulances used for GREEN cases - consider BLS protocol for non-urgent transfers")
         
-        if time_series_df.empty:
+        # Corrected: only compute peak hour when data exists
+        if not time_series_df.empty:
             peak_hour = time_series_df.groupby('hour').size().idxmax()
             if peak_hour in [8, 9, 17, 18]:
                 recommendations.append(f"**Peak Hour Capacity**: Highest demand at {peak_hour}:00 - consider shift scheduling and resource allocation")
@@ -3403,6 +3406,7 @@ with tabs[3]:
             file_name="executive_summary.json",
             mime="application/json"
         )
+
 # ======== DATA / ADMIN TAB ========
 with tabs[4]:
     st.subheader("🗄️ Data / Admin")
@@ -3445,15 +3449,14 @@ with tabs[4]:
     with c1:
         add_n = st.number_input("Append synthetic referrals", 10, 2000, 100, step=10, key="admin_add_n")
         if st.button("➕ Append", key="admin_append_refs"):
-            # Append more without wiping
             before = len(st.session_state.referrals)
-            seed_referrals(n=add_n, rng_seed=random.randint(1, 999999))
+            seed_referrals(n=add_n, rng_seed=random.randint(1, 999999), append=True)
             st.success(f"Appended. Total referrals: {len(st.session_state.referrals)} (was {before}).")
     with c2:
         reseed_n = st.number_input("Wipe & reseed", 100, 5000, 500, step=100, key="admin_reseed_n")
         if st.button("🧹 Wipe & Reseed", key="admin_wipe_reseed"):
             st.session_state.referrals = []
-            seed_referrals(n=reseed_n, rng_seed=42)
+            seed_referrals(n=reseed_n, rng_seed=42, append=False)
             st.success(f"Reseeded {reseed_n} referrals.")
     with c3:
         if st.button("🙈 Anonymize names/IDs", key="admin_anonymize"):
@@ -3559,6 +3562,7 @@ with tabs[4]:
         st.success("Saved.")
 
     st.caption("Tip: In Referrer flow, GREEN/YELLOW cases can be diverted to these providers to preserve ambulances.")
+
 # ======== FACILITY ADMIN TAB ========
 with tabs[5]:
     st.subheader("🏥 Facility Admin")
@@ -3706,11 +3710,13 @@ with tabs[5]:
             required_caps=qa_caps,
             case_type=qa_case,
             triage_color=qa_tri,
-            top_k=5
+            top_k=5,
+            provider=None  # use default
         )
         if not ranked:
             st.warning("No facilities matched the capability threshold. Relax filters and try again.")
         else:
             st.success(f"Top {len(ranked)} matches")
             for i, r in enumerate(ranked, 1):
-                _ = enhanced_facility_card(r, rank=i)
+                # Safely ignore return values; we only want to render
+                _pick, _alt = enhanced_facility_card(r, rank=i)
