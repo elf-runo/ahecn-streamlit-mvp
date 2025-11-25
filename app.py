@@ -17,6 +17,54 @@ import urllib.parse
 from pathlib import Path
 import joblib
 
+# === AI TRIAGE MODEL (Random Forest v1) ===
+
+BASE_DIR = Path(__file__).parent
+MODEL_PATH = BASE_DIR / "models" / "triage_model_rf_v1.pkl"
+
+
+@st.cache_resource
+def load_triage_model():
+    """Load RF triage model once and cache it."""
+    if not MODEL_PATH.exists():
+        st.warning(
+            f"⚠️ AI triage model not found at {MODEL_PATH}. "
+            "App will fall back to rule-based / demo scores only."
+        )
+        return None
+
+    try:
+        model = joblib.load(MODEL_PATH)
+        return model
+    except Exception as e:
+        st.error(f"Error loading triage model: {e}")
+        return None
+
+
+triage_model = load_triage_model()
+
+
+def ai_triage_predict(feature_row: dict) -> dict:
+    """
+    Run the AI triage model on a single case.
+    `feature_row` should be a dict of numeric features.
+    """
+    if triage_model is None:
+        return {"risk_bucket": "N/A", "probability": None}
+
+    X = pd.DataFrame([feature_row])
+    # assumes binary classifier with proba for positive class at [:, 1]
+    proba = float(triage_model.predict_proba(X)[0, 1])
+
+    if proba >= 0.7:
+        bucket = "High"
+    elif proba >= 0.4:
+        bucket = "Moderate"
+    else:
+        bucket = "Low"
+
+    return {"risk_bucket": bucket, "probability": proba}
+
 
 # === PAGE CONFIG MUST BE FIRST STREAMLIT COMMAND ===
 st.set_page_config(
