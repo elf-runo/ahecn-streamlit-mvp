@@ -30,62 +30,25 @@ import joblib
 
 # === AI TRIAGE MODEL (Random Forest v1) ===
 BASE_DIR = Path(__file__).parent
-
-# Try converted model first, then fall back to original
-MODEL_PATHS = [
-    BASE_DIR / "models" / "triage_model_rf_v1_converted.pkl",
-    BASE_DIR / "models" / "triage_model_rf_v1 (1).pkl"
-]
-
-def load_model_with_downgrade(model_path):
-    """Attempt to load model with various compatibility strategies"""
-    try:
-        # Strategy 1: Normal load
-        return joblib.load(model_path)
-    except Exception as e:
-        st.warning(f"Normal load failed: {e}")
-        
-        try:
-            # Strategy 2: Load with specific encoding for older sklearn
-            with open(model_path, 'rb') as f:
-                import pickle
-                return pickle.load(f)
-        except Exception as e2:
-            st.warning(f"Pickle load failed: {e2}")
-            
-            try:
-                # Strategy 3: Use compatibility wrapper
-                from sklearn.utils._joblib import Joblib
-                return Joblib.load(model_path)
-            except Exception as e3:
-                st.error(f"All loading strategies failed: {e3}")
-                return None
+MODEL_PATH = BASE_DIR / "models" / "triage_model_rf_v1 (1).pkl"
 
 @st.cache_resource
 def load_triage_model():
-    """Load RF triage model with comprehensive fallback strategy"""
+    """Load RF triage model once and cache it."""
+    import sklearn
+    st.write(f"Current scikit-learn version: {sklearn.__version__}")
     
-    for model_path in MODEL_PATHS:
-        if model_path.exists():
-            st.info(f"🔄 Attempting to load model: {model_path.name}")
-            model = load_model_with_downgrade(model_path)
-            if model is not None:
-                st.success(f"✅ Successfully loaded: {model_path.name}")
-                return model
-            else:
-                st.warning(f"❌ Failed to load: {model_path.name}")
-    
-    st.error("""
-    ❌ All model loading attempts failed. 
-    
-    **Possible solutions:**
-    1. Retrain the model with scikit-learn 1.3.x
-    2. Use the model conversion script
-    3. Run with rule-based triage only
-    
-    Falling back to rule-based triage for now.
-    """)
-    return None
+    if not MODEL_PATH.exists():
+        st.warning(f"⚠️ AI triage model not found at {MODEL_PATH}")
+        return None
+
+    try:
+        model = joblib.load(MODEL_PATH)
+        st.success("✅ AI triage model loaded successfully!")
+        return model
+    except Exception as e:
+        st.error(f"Error loading triage model: {e}")
+        return None
 
 triage_model = load_triage_model()
 
