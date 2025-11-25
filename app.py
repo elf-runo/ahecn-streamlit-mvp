@@ -1,4 +1,12 @@
 # AHECN – Streamlit MVP v1.9 (Enhanced Analytics & Demo Visualizations)
+# === PAGE CONFIG MUST BE FIRST STREAMLIT COMMAND ===
+st.set_page_config(
+    page_title="AHECN MVP v1.9",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
+# THEN import other libraries and define functions
 import math
 import json
 import time
@@ -18,10 +26,8 @@ from pathlib import Path
 import joblib
 
 # === AI TRIAGE MODEL (Random Forest v1) ===
-
 BASE_DIR = Path(__file__).parent
-MODEL_PATH = BASE_DIR / "models" / "triage_model_rf_v1.pkl"
-
+MODEL_PATH = BASE_DIR / "models" / "triage_model_rf_v1 (1).pkl"  # Fixed file name
 
 @st.cache_resource
 def load_triage_model():
@@ -40,31 +46,7 @@ def load_triage_model():
         st.error(f"Error loading triage model: {e}")
         return None
 
-
 triage_model = load_triage_model()
-
-
-def ai_triage_predict(feature_row: dict) -> dict:
-    """
-    Run the AI triage model on a single case.
-    `feature_row` should be a dict of numeric features.
-    """
-    if triage_model is None:
-        return {"risk_bucket": "N/A", "probability": None}
-
-    X = pd.DataFrame([feature_row])
-    # assumes binary classifier with proba for positive class at [:, 1]
-    proba = float(triage_model.predict_proba(X)[0, 1])
-
-    if proba >= 0.7:
-        bucket = "High"
-    elif proba >= 0.4:
-        bucket = "Moderate"
-    else:
-        bucket = "Low"
-
-    return {"risk_bucket": bucket, "probability": proba}
-
 
 # === PAGE CONFIG MUST BE FIRST STREAMLIT COMMAND ===
 st.set_page_config(
@@ -1933,7 +1915,14 @@ if "pews_behavior" not in st.session_state:
     st.session_state.pews_behavior = "Normal"
 if "triage_mode" not in st.session_state:
     st.session_state.triage_mode = "rules"  # 'rules' | 'ai' | 'hybrid'
-
+    
+# Initialize AI model in session state if not already there
+if "triage_model" not in st.session_state:
+    st.session_state.triage_model = triage_model
+if "triage_features" not in st.session_state:
+    # You'll need to set this based on your model's expected features
+    st.session_state.triage_features = []
+    
 # Triage override state
 if "triage_override_active" not in st.session_state:
     st.session_state.triage_override_active = False
@@ -2543,14 +2532,16 @@ with tabs[0]:
             resuscitation=resus_done,
 
             triage=dict(
-            complaint=complaint,
-            decision=dict(
-                color=triage_color,
-                score=triage_score,
-                system=triage_system,
+                complaint=complaint,
+                decision=dict(
+                    color=final_colour,
+                    overridden=(final_colour != base_colour),
+                    base_color=base_colour,
+                    ai_color=ai_color,
+                    triage_mode=triage_mode
+                ),
+                hr=hr, sbp=sbp, rr=rr, temp=temp, spo2=spo2, avpu=avpu
             ),
-            system=triage_system,
-        ),
         clinical=dict(
             summary=" ".join(ocr.split()[:60]) if ocr else ""
         ),
