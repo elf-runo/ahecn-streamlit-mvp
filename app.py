@@ -28,29 +28,104 @@ import urllib.parse
 from pathlib import Path
 import joblib
 
-# === AI TRIAGE MODEL (Random Forest v1) ===
+# === AI TRIAGE MODEL - FORCE COMPATIBLE VERSION ===
 BASE_DIR = Path(__file__).parent
 MODEL_PATH = BASE_DIR / "models" / "triage_model_rf_v1 (1).pkl"
 
-@st.cache_resource
-def load_triage_model():
-    """Load RF triage model once and cache it."""
+def verify_environment():
+    """Verify we have the correct environment for the model"""
     import sklearn
-    st.write(f"Current scikit-learn version: {sklearn.__version__}")
+    import sys
+    
+    st.sidebar.markdown("### Environment Check")
+    st.sidebar.write(f"Python: {sys.version.split()[0]}")
+    st.sidebar.write(f"scikit-learn: {sklearn.__version__}")
+    st.sidebar.write(f"Model requires: 1.1.3")
+    
+    if sklearn.__version__ != '1.1.3':
+        st.error(f"❌ VERSION MISMATCH: Need scikit-learn 1.1.3, got {sklearn.__version__}")
+        return False
     
     if not MODEL_PATH.exists():
-        st.warning(f"⚠️ AI triage model not found at {MODEL_PATH}")
-        return None
+        st.error(f"❌ Model file not found: {MODEL_PATH}")
+        return False
+        
+    st.success("✅ Environment compatible!")
+    return True
 
+@st.cache_resource
+def load_triage_model():
+    """Load the actual AI model with comprehensive error handling"""
+    
+    # First verify environment
+    if not verify_environment():
+        return None
+    
     try:
+        st.info("🔄 Loading AI triage model...")
+        
+        # Method 1: Direct load
         model = joblib.load(MODEL_PATH)
         st.success("✅ AI triage model loaded successfully!")
+        
+        # Test the model works
+        try:
+            # Create dummy data to test prediction
+            dummy_X = np.random.random((1, 17))  # Adjust based on your feature count
+            _ = model.predict_proba(dummy_X)
+            st.success("✅ Model predictions working!")
+        except Exception as test_error:
+            st.warning(f"Model test failed: {test_error}")
+            return None
+            
         return model
+        
     except Exception as e:
-        st.error(f"Error loading triage model: {e}")
+        st.error(f"❌ Model loading failed: {str(e)}")
+        
+        # Show detailed error for debugging
+        with st.expander("Technical Details"):
+            st.code(f"""
+Error type: {type(e).__name__}
+Error message: {str(e)}
+
+Model path: {MODEL_PATH}
+Model exists: {MODEL_PATH.exists()}
+Model size: {MODEL_PATH.stat().st_size if MODEL_PATH.exists() else 'N/A'} bytes
+
+scikit-learn: {sklearn.__version__}
+numpy: {np.__version__}
+joblib: {joblib.__version__}
+            """)
+        
         return None
 
+# Load the actual model
 triage_model = load_triage_model()
+
+# If model fails, show clear instructions
+if triage_model is None:
+    st.error("""
+    🚨 AI Model Failed to Load
+    
+    **Immediate Actions Required:**
+    
+    1. **Check requirements.txt** - Ensure it has `scikit-learn==1.1.3`
+    2. **Check runtime.txt** - Ensure it has `python-3.9.18`  
+    3. **Redeploy** - Push changes and wait for rebuild
+    4. **Verify dependencies** - Check deployment logs for package versions
+    
+    **File Structure Check:**
+    ```
+    your-repo/
+    ├── requirements.txt  # with scikit-learn==1.1.3
+    ├── runtime.txt       # with python-3.9.18  
+    ├── app.py
+    └── models/
+        └── triage_model_rf_v1 (1).pkl
+    ```
+    """)
+    st.stop()
 
 # Initialize session state for AI model
 if "triage_model" not in st.session_state:
@@ -3937,6 +4012,39 @@ with tabs[4]:
                 st.caption("ICD LUT empty (using fallback).")
         except Exception:
             pass
+    
+    # ======== ADD DEBUG DEPLOYMENT SECTION HERE ========
+    st.markdown("---")
+    st.markdown("### 🔧 Deployment Environment Debug")
+    
+    with st.expander("View Package Versions & Environment", expanded=True):
+        import pkg_resources
+        import sklearn
+        import sys
+        
+        st.write("**Package Versions:**")
+        packages = ['streamlit', 'scikit-learn', 'pandas', 'numpy', 'joblib', 'altair', 'pydeck']
+        for pkg in packages:
+            try:
+                version = pkg_resources.get_distribution(pkg).version
+                st.write(f"- {pkg}: {version}")
+            except:
+                st.write(f"- {pkg}: NOT FOUND")
+        
+        st.write("**System Info:**")
+        st.write(f"- Python: {sys.version}")
+        st.write(f"- Model path: {MODEL_PATH}")
+        st.write(f"- Model exists: {MODEL_PATH.exists()}")
+        if MODEL_PATH.exists():
+            st.write(f"- Model size: {MODEL_PATH.stat().st_size} bytes")
+        
+        # Test model loading
+        st.write("**Model Loading Test:**")
+        try:
+            model = joblib.load(MODEL_PATH)
+            st.success("✅ Model loads successfully!")
+        except Exception as e:
+            st.error(f"❌ Model load fails: {str(e)[:200]}")       
 
     # ---------- Rides providers (for GREEN/YELLOW demo) ----------
     st.markdown("---")
@@ -3954,7 +4062,7 @@ with tabs[4]:
         st.success("Saved.")
 
     st.caption("Tip: In Referrer flow, GREEN/YELLOW cases can be diverted to these providers to preserve ambulances.")
-
+  
 # ======== FACILITY ADMIN TAB ========
 with tabs[5]:
     st.subheader("🏥 Facility Admin")
