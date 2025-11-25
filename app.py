@@ -2541,38 +2541,42 @@ with tabs[0]:
             provisionalDx=dx_payload,
             interventions=all_interventions,
             resuscitation=resus_done,
-            triage=dict(
-                complaint=complaint,
-                decision=dict(
-                    color=final_colour,
-                    base_color=base_colour,
-                    ai_color=ai_color,
-                    triage_mode=triage_mode,
-                    overridden=(final_colour != base_colour)
-                ),
-                hr=hr, sbp=sbp, rr=rr, temp=temp, spo2=spo2, avpu=avpu,
-                scores={
-                    **score_details,
-                    "ai_probs": ai_probs.tolist() if ai_probs is not None else None,
-                }
-            ),
 
+            triage=dict(
+            complaint=complaint,
+            decision=dict(
+                color=triage_color,
+                score=triage_score,
+                system=triage_system,
             ),
-            clinical=dict(summary=" ".join(ocr.split()[:60])),
-            reasons=dict(
-                severity=True, 
-                bedOrICUUnavailable=ref_beds, 
-                specialTest=ref_tests, 
-                requiredCapabilities=need_caps
-            ),
-            dest=primary,
-            alternates=alternates,
-            transport=dict(priority=priority, ambulance=amb_type, consent=bool(consent)),
-            times=dict(first_contact_ts=now_ts(), decision_ts=now_ts()),
-            status="PREALERT",
-            ambulance_available=None,
-            audit_log=audit_log
-        )
+            system=triage_system,
+        ),
+        clinical=dict(
+            summary=" ".join(ocr.split()[:60]) if ocr else ""
+        ),
+        reasons=dict(
+            severity=True,
+            bedorICUUnavailable=ref_beds,
+            specialTest=ref_tests,
+            requiredCapabilities=need_caps,
+        ),
+        dest=primary,
+        alternates=alternates,
+        transport=dict(
+            priority=priority,
+            ambulance=amb_type,
+            consent=bool(consent),
+        ),
+        times=dict(
+            first_contact_ts=now_ts(),
+            decision_ts=now_ts(),
+        ),
+        status="PREALERT",
+        ambulance_available=None,
+        audit_log=audit_log,
+    )
+
+
         
         if dispatch:
             ref["times"]["dispatch_ts"] = now_ts()
