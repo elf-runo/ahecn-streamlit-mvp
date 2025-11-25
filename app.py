@@ -30,59 +30,62 @@ import joblib
 
 # === AI TRIAGE MODEL (Random Forest v1) ===
 BASE_DIR = Path(__file__).parent
-MODEL_PATH = BASE_DIR / "models" / "triage_model_rf_v1 (1).pkl"
 
-def load_model_with_fallback(model_path):
-    """Load model with comprehensive compatibility handling"""
+# Try converted model first, then fall back to original
+MODEL_PATHS = [
+    BASE_DIR / "models" / "triage_model_rf_v1_converted.pkl",
+    BASE_DIR / "models" / "triage_model_rf_v1 (1).pkl"
+]
+
+def load_model_with_downgrade(model_path):
+    """Attempt to load model with various compatibility strategies"""
     try:
-        # First try normal loading
-        model = joblib.load(model_path)
-        st.success("✅ AI triage model loaded successfully!")
-        return model
-    except ValueError as e:
-        if "expected" in str(e) and "got" in str(e):
-            st.warning("🔄 Attempting model compatibility fix...")
-            try:
-                # Try loading with older sklearn compatibility
-                import sklearn
-                st.info(f"Current scikit-learn version: {sklearn.__version__}")
-                
-                # Use a more compatible loading approach
-                with open(model_path, 'rb') as f:
-                    model = joblib.load(f)
-                st.success("✅ AI triage model loaded with compatibility fix!")
-                return model
-            except Exception as compat_error:
-                st.error(f"❌ Model compatibility fix failed: {compat_error}")
-                return None
-        else:
-            st.error(f"❌ Model loading error: {e}")
-            return None
+        # Strategy 1: Normal load
+        return joblib.load(model_path)
     except Exception as e:
-        st.error(f"❌ Unexpected error loading model: {e}")
-        return None
+        st.warning(f"Normal load failed: {e}")
+        
+        try:
+            # Strategy 2: Load with specific encoding for older sklearn
+            with open(model_path, 'rb') as f:
+                import pickle
+                return pickle.load(f)
+        except Exception as e2:
+            st.warning(f"Pickle load failed: {e2}")
+            
+            try:
+                # Strategy 3: Use compatibility wrapper
+                from sklearn.utils._joblib import Joblib
+                return Joblib.load(model_path)
+            except Exception as e3:
+                st.error(f"All loading strategies failed: {e3}")
+                return None
 
 @st.cache_resource
 def load_triage_model():
-    """Load RF triage model once and cache it."""
-    if not MODEL_PATH.exists():
-        st.warning(
-            f"⚠️ AI triage model not found at {MODEL_PATH}. "
-            "App will fall back to rule-based / demo scores only."
-        )
-        return None
-
-    st.info("🔄 Loading AI triage model...")
-    model = load_model_with_fallback(MODEL_PATH)
+    """Load RF triage model with comprehensive fallback strategy"""
     
-    if model is None:
-        st.error(
-            "❌ Failed to load AI triage model. "
-            "Please check that the model file exists and is compatible. "
-            "Falling back to rule-based triage for now."
-        )
+    for model_path in MODEL_PATHS:
+        if model_path.exists():
+            st.info(f"🔄 Attempting to load model: {model_path.name}")
+            model = load_model_with_downgrade(model_path)
+            if model is not None:
+                st.success(f"✅ Successfully loaded: {model_path.name}")
+                return model
+            else:
+                st.warning(f"❌ Failed to load: {model_path.name}")
     
-    return model
+    st.error("""
+    ❌ All model loading attempts failed. 
+    
+    **Possible solutions:**
+    1. Retrain the model with scikit-learn 1.3.x
+    2. Use the model conversion script
+    3. Run with rule-based triage only
+    
+    Falling back to rule-based triage for now.
+    """)
+    return None
 
 triage_model = load_triage_model()
 
