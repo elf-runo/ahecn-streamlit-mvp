@@ -73,7 +73,20 @@ if "triage_features" not in st.session_state:
         'on_oxygen', 'sex_M', 'avpu_ord', 'case_type_cardiac', 'case_type_maternal',
         'case_type_sepsis', 'case_type_stroke', 'case_type_trauma', 'case_type_other'
     ]
+# ======== TEMPORARY DEBUG CODE ========
+st.sidebar.markdown("### 🔍 Model Debug Info")
+st.sidebar.write(f"New model path: {MODEL_PATH}")
+st.sidebar.write(f"New model exists: {MODEL_PATH.exists()}")
+st.sidebar.write(f"Old model exists: {(BASE_DIR / 'models' / 'triage_model_rf_v1 (1).pkl').exists()}")
 
+if triage_model is not None:
+    st.sidebar.success("✅ New medically accurate model loaded!")
+else:
+    st.sidebar.error("❌ No model loaded - check errors above")
+
+import sklearn
+st.sidebar.write(f"Current scikit-learn: {sklearn.__version__}")
+# ======== END DEBUG CODE ========
 # === PAGE CONFIG MUST BE FIRST STREAMLIT COMMAND ===
 st.set_page_config(
     page_title="AHECN MVP v1.9",
