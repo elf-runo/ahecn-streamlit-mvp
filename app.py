@@ -756,11 +756,20 @@ def encode_case_for_triage_ai(vitals: dict, context: dict, complaint: str):
     Build feature vector for the AI model with proper error handling
     """
     feature_names = st.session_state.get("triage_features") or []
+    
+    # ADD THIS FALLBACK - if no features in session state, use defaults
+    if not feature_names:
+        feature_names = [
+            'age', 'rr', 'hr', 'sbp', 'spo2', 'temp_c', 'gcs', 'comorbid_count', 
+            'on_oxygen', 'sex_M', 'avpu_ord', 'case_type_cardiac', 'case_type_maternal',
+            'case_type_sepsis', 'case_type_stroke', 'case_type_trauma', 'case_type_other'
+        ]
+    
     model = st.session_state.get("triage_model")
     
-    if model is None or not feature_names:
+    if model is None:
         return None
-
+        
     try:
         age = context.get("age")
         try:
@@ -832,35 +841,45 @@ def triage_with_ai(vitals: dict, context: dict, complaint: str, mode: str = "rul
             "probs": None,
         }
 
-    ai_color, probs = ai_triage_predict(vitals, context, complaint)
-    if ai_color is None:
-        return rules_color, {
-            "mode": "rules_fallback",
-            "rules_color": rules_color,
-            "rules_details": rules_details,
-            "ai_color": None,
-            "probs": None,
-        }
+def ai_triage_predict(vitals: dict, context: dict, complaint: str):
+    """
+    AI triage prediction that works with the new medically accurate model
+    """
+    model = st.session_state.get("triage_model")
+    if model is None:
+        st.warning("AI model not available - using rule-based triage only")
+        return None, None
 
-    color_order = ["GREEN", "YELLOW", "ORANGE", "RED"]
-    rules_idx = color_order.index(rules_color)
-    ai_idx = color_order.index(ai_color)
+    try:
+        X = encode_case_for_triage_ai(vitals, context, complaint)
+        if X is None:
+            return None, None
 
-    if mode == "ai":
-        final_idx = ai_idx
-    else:  # 'hybrid' – AI can only escalate
-        final_idx = max(rules_idx, ai_idx)
+        # Get prediction probabilities from the NEW model
+        probs = model.predict_proba(X)[0]
+        
+        # Handle multi-class classification (GREEN, YELLOW, ORANGE, RED)
+        if len(probs) >= 4:  # Multi-class with 4 categories
+            label = int(np.argmax(probs))
+            color_map = {0: "GREEN", 1: "YELLOW", 2: "ORANGE", 3: "RED"}
+            ai_color = color_map.get(label, "YELLOW")
+            probs_array = probs
+        else:
+            # Fallback for binary classification
+            prob_positive = probs[1] if len(probs) == 2 else probs[0]
+            if prob_positive >= 0.7:
+                ai_color = "RED"
+            elif prob_positive >= 0.4:
+                ai_color = "YELLOW" 
+            else:
+                ai_color = "GREEN"
+            probs_array = probs
 
-    final_color = color_order[final_idx]
-
-    return final_color, {
-        "mode": mode,
-            "rules_color": rules_color,
-            "rules_details": rules_details,
-            "ai_color": ai_color,
-            "probs": probs,
-    }
-
+        return ai_color, probs_array
+        
+    except Exception as e:
+        st.warning(f"AI prediction failed: {str(e)} - using fallback rules")
+        return None, None
 
 # === UI HELPERS ===
 def triage_pill(color:str, overridden=False):
@@ -886,6 +905,12 @@ def cap_badges(list_or_csv):
     cols = st.columns(min(4, max(1, len(items))))
     for i,cap in enumerate(items[:12]):
         cols[i%len(cols)].markdown(f'<span class="badge">{cap}</span>', unsafe_allow_html=True)
+
+
+# TEMPORARY DEBUG - add this before the failing render_triage_banner call
+st.sidebar.markdown("### 🐛 AI Debug Info")
+st.sidebar.write(f"Model in session state: {st.session_state.get('triage_model') is not None}")
+st.sidebar.write(f"Features count: {len(st.session_state.get('triage_features', []))}")
 
 def render_triage_banner(hr, rr, sbp, temp, spo2, avpu, complaint, override_applied=False):
     vitals = dict(
