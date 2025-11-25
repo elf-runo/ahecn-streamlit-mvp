@@ -30,47 +30,35 @@ import joblib
 
 # === AI TRIAGE MODEL - MEDICALLY ACCURATE ===
 BASE_DIR = Path(__file__).parent
-MODEL_PATH = BASE_DIR / "models" / "triage_model_medically_accurate.pkl"
+MODEL_PATH = BASE_DIR / "models" / "triage_model_medically_accurate.pkl"  # ← CHANGED TO NEW MODEL
 FEATURE_INFO_PATH = BASE_DIR / "models" / "feature_info.pkl"
 
 @st.cache_resource
 def load_triage_model():
     """Load the medically accurate AI model"""
+    
+    # First, check which scikit-learn version we have
+    import sklearn
+    st.sidebar.write(f"Current scikit-learn: {sklearn.__version__}")
+    
     if not MODEL_PATH.exists():
-        st.warning("""
-        ⚠️ Medically accurate AI model not found. 
-        Please run the training script to create a clinically valid model.
-        """)
+        st.error(f"❌ New model not found at: {MODEL_PATH}")
         return None
 
     try:
+        # Load the NEW medically accurate model
         model = joblib.load(MODEL_PATH)
         feature_info = joblib.load(FEATURE_INFO_PATH)
         
         st.session_state.triage_features = feature_info['feature_names']
-        st.success("✅ Medically Accurate AI Model Loaded")
+        st.success("✅ Medically Accurate AI Model Loaded Successfully!")
         st.info(f"Clinical basis: {feature_info['clinical_basis']}")
+        st.info(f"Trained with scikit-learn: {feature_info['sklearn_version']}")
         
         return model
         
     except Exception as e:
-        st.error(f"❌ Failed to load medical model: {e}")
-        
-        # Show detailed error for debugging
-        with st.expander("Technical Details"):
-            st.code(f"""
-Error type: {type(e).__name__}
-Error message: {str(e)}
-
-Model path: {MODEL_PATH}
-Model exists: {MODEL_PATH.exists()}
-Model size: {MODEL_PATH.stat().st_size if MODEL_PATH.exists() else 'N/A'} bytes
-
-scikit-learn: {sklearn.__version__}
-numpy: {np.__version__}
-joblib: {joblib.__version__}
-            """)
-        
+        st.error(f"❌ Failed to load new medical model: {e}")
         return None
 
 triage_model = load_triage_model()
