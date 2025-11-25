@@ -48,7 +48,7 @@ def load_triage_model():
         feature_info = joblib.load(FEATURE_INFO_PATH)
         
         st.session_state.triage_features = feature_info['feature_names']
-        st.success(f"✅ Medically Accurate AI Model Loaded")
+        st.success("✅ Medically Accurate AI Model Loaded")
         st.info(f"Clinical basis: {feature_info['clinical_basis']}")
         
         return model
