@@ -3089,13 +3089,19 @@ with tabs[3]:
     col1, col2 = st.columns(2)
     
     with col1:
-        uploaded_json = st.file_uploader("Upload Referrals JSON", type=['json'], 
-                                       help="Upload referral data for analysis")
+        uploaded_json = st.file_uploader(
+            "Upload Referrals JSON",
+            type=['json'], 
+            help="Upload referral data for analysis"
+        )
     with col2:
-        uploaded_csv = st.file_uploader("Upload Facilities CSV", type=['csv'],
-                                      help="Upload facility capacity data")
+        uploaded_csv = st.file_uploader(
+            "Upload Facilities CSV",
+            type=['csv'],
+            help="Upload facility capacity data"
+        )
     
-    # Load data if provided, otherwise use synthetic data
+    # Load data if provided, otherwise use in-memory data
     if uploaded_json:
         try:
             referrals_data = json.load(uploaded_json)
@@ -3109,7 +3115,7 @@ with tabs[3]:
     
     if uploaded_csv:
         try:
-            facilities_csv_df = pd.read_csv(uploaded_csv)  # avoid name clash with facilities_df() function
+            facilities_csv_df = pd.read_csv(uploaded_csv)  # avoid clash with facilities_df() helper
             st.session_state.enhanced_facilities = facilities_csv_df
             st.success(f"✅ Loaded {len(facilities_csv_df)} facilities")
         except Exception as e:
@@ -3118,7 +3124,7 @@ with tabs[3]:
     else:
         facilities_csv_df = pd.DataFrame()
 
-    # Enhanced analytics functions (scoped)
+    # ---------- Enhanced analytics helpers (scoped to this tab) ----------
     def create_enhanced_time_series(referrals):
         """Enhanced time series analysis with trends"""
         if not referrals:
@@ -3172,7 +3178,6 @@ with tabs[3]:
             except (KeyError, TypeError):
                 continue
         
-        # Calculate rejection rates
         rejection_rates = []
         for facility, stats in facility_rejections.items():
             rate = (stats['rejected'] / stats['total']) * 100 if stats['total'] > 0 else 0
@@ -3234,7 +3239,9 @@ with tabs[3]:
                         specialty_data[cap] = {'total': 0, 'by_case_type': {}}
                     
                     specialty_data[cap]['total'] += 1
-                    specialty_data[cap]['by_case_type'][case_type] = specialty_data[cap]['by_case_type'].get(case_type, 0) + 1
+                    specialty_data[cap]['by_case_type'][case_type] = (
+                        specialty_data[cap]['by_case_type'].get(case_type, 0) + 1
+                    )
                     
             except (KeyError, TypeError):
                 continue
@@ -3250,28 +3257,65 @@ with tabs[3]:
                 triage_color = ref['triage']['decision']['color']
                 transport = ref.get('transport', {})
                 ambulance_type = transport.get('ambulance', 'None')
-                used_ambulance = ambulance_type in ['BLS', 'ALS', 'ALS + Vent', 'Neonatal']
                 
                 if triage_color not in utilization_data:
                     utilization_data[triage_color] = {}
                 
-                # Count by ambulance type
-                utilization_data[triage_color][ambulance_type] = utilization_data[triage_color].get(ambulance_type, 0) + 1
-                
+                utilization_data[triage_color][ambulance_type] = (
+                    utilization_data[triage_color].get(ambulance_type, 0) + 1
+                )
             except (KeyError, TypeError):
                 continue
         
         return utilization_data
 
-    # Generate enhanced analytics data
+    # ---------- Generate enhanced analytics data ----------
     time_series_df = create_enhanced_time_series(referrals_data)
     sla_df = create_sla_analysis(referrals_data)
     rejection_rates_df = calculate_rejection_rates(referrals_data)
     referral_reasons = analyze_referral_reasons(referrals_data)
     specialty_data, case_type_breakdown = analyze_medical_specialties(referrals_data)
     ambulance_utilization = analyze_ambulance_utilization(referrals_data)
-    
-    # Summary KPIs
+
+    # ---------- NEW: AI vs guideline overlay analysis ----------
+    color_order = ["GREEN", "YELLOW", "ORANGE", "RED"]
+    total_ai = 0
+    ai_escalated = 0
+    ai_deescalated = 0
+    ai_same = 0
+    triage_modes = {"guideline": 0, "ai": 0, "hybrid": 0}
+
+    for r in referrals_data:
+        decision = (r.get("triage", {}) or {}).get("decision", {}) or {}
+
+        mode = decision.get("triage_mode") or "guideline"
+        triage_modes[mode] = triage_modes.get(mode, 0) + 1
+
+        base_color = decision.get("base_color")
+        ai_color = decision.get("ai_color")
+
+        # Only compare when both guideline and AI colors are logged
+        if base_color and ai_color:
+            try:
+                base_idx = color_order.index(base_color)
+                ai_idx = color_order.index(ai_color)
+            except ValueError:
+                # Ignore unexpected color labels
+                continue
+
+            total_ai += 1
+            if ai_idx > base_idx:
+                ai_escalated += 1   # AI more conservative (higher acuity)
+            elif ai_idx < base_idx:
+                ai_deescalated += 1 # AI less conservative (lower acuity)
+            else:
+                ai_same += 1        # AI matches guideline
+
+    ai_same_or_lower = ai_same + ai_deescalated
+    ai_escalated_rate = (ai_escalated / total_ai * 100) if total_ai else 0.0
+    ai_same_lower_rate = (ai_same_or_lower / total_ai * 100) if total_ai else 0.0
+
+    # ---------- Summary KPIs ----------
     st.markdown("### 📊 Executive Summary Dashboard")
     
     col1, col2, col3, col4 = st.columns(4)
@@ -3281,22 +3325,79 @@ with tabs[3]:
         st.metric("Total Referrals", total_refs)
     
     with col2:
-        red_cases = len([r for r in referrals_data if r['triage']['decision']['color'] == 'RED'])
-        st.metric("Critical Cases", red_cases, f"{(red_cases/total_refs*100):.1f}%" if total_refs else "0%")
+        red_cases = len([
+            r for r in referrals_data
+            if (r.get('triage', {}) or {}).get('decision', {}).get('color') == 'RED'
+        ])
+        st.metric(
+            "Critical Cases",
+            red_cases,
+            f"{(red_cases/total_refs*100):.1f}%" if total_refs else "0%"
+        )
     
     with col3:
         avg_dispatch = sla_df['decision_dispatch'].mean() if not sla_df.empty else 0
         st.metric("Avg Dispatch Time", f"{avg_dispatch:.1f} min")
     
     with col4:
-        ambulance_usage = len([r for r in referrals_data if r.get('transport', {}).get('ambulance') in ['BLS', 'ALS', 'ALS + Vent']])
-        st.metric("Ambulance Utilization", ambulance_usage, f"{(ambulance_usage/total_refs*100):.1f}%" if total_refs else "0%")
+        ambulance_usage = len([
+            r for r in referrals_data
+            if r.get('transport', {}).get('ambulance') in ['BLS', 'ALS', 'ALS + Vent']
+        ])
+        st.metric(
+            "Ambulance Utilization",
+            ambulance_usage,
+            f"{(ambulance_usage/total_refs*100):.1f}%" if total_refs else "0%"
+        )
 
-    # Enhanced Visualizations Section
+    # ---------- NEW: AI overlay KPI strip just under Executive Summary ----------
+    st.markdown("#### 🤖 AI Triage Overlay Snapshot")
+
+    if total_ai:
+        ai_col1, ai_col2, ai_col3 = st.columns(3)
+
+        with ai_col1:
+            ai_share_all = (total_ai / total_refs * 100) if total_refs else 0.0
+            st.metric(
+                "AI-involved referrals",
+                f"{total_ai}",
+                f"{ai_share_all:.1f}% of all cases"
+            )
+
+        with ai_col2:
+            st.metric(
+                "AI stricter than guideline",
+                ai_escalated,
+                f"{ai_escalated_rate:.1f}% of AI cases"
+            )
+
+        with ai_col3:
+            st.metric(
+                "Same / lower vs guideline",
+                ai_same_or_lower,
+                f"{ai_same_lower_rate:.1f}% of AI cases"
+            )
+
+        # Optional brief mode mix context (only if some non-guideline modes exist)
+        ai_mode_count = triage_modes.get("ai", 0)
+        hybrid_mode_count = triage_modes.get("hybrid", 0)
+        if ai_mode_count + hybrid_mode_count:
+            st.caption(
+                f"Mode mix (all decisions): "
+                f"{triage_modes.get('guideline', 0)} guideline-only, "
+                f"{ai_mode_count} AI-only, "
+                f"{hybrid_mode_count} hybrid decisions logged."
+            )
+    else:
+        st.info(
+            "AI overlay metadata not available yet, or no referrals with both guideline "
+            "and AI colors logged for comparison."
+        )
+
+    # ---------- Enhanced Visualizations Section ----------
     st.markdown("---")
     st.markdown("### 📈 Advanced Analytics")
     
-    # Tabbed interface for different analytics sections
     analytics_tabs = st.tabs([
         "📅 Trends & Volume", 
         "🏥 Facility Performance", 
@@ -3308,7 +3409,6 @@ with tabs[3]:
         st.markdown("#### Referral Volume Trends")
         
         if not time_series_df.empty:
-            # Daily trends
             daily_trends = time_series_df.groupby('date').size().reset_index(name='count')
             
             col1, col2 = st.columns(2)
@@ -3332,9 +3432,13 @@ with tabs[3]:
                 ).properties(width=600, height=300)
                 st.altair_chart(hour_chart, use_container_width=True)
             
-            # Case type trends
             st.markdown("**Case Type Trends Over Time**")
-            case_trends = time_series_df.groupby(['date', 'case_type']).size().reset_index(name='count')
+            case_trends = (
+                time_series_df
+                .groupby(['date', 'case_type'])
+                .size()
+                .reset_index(name='count')
+            )
             case_chart = alt.Chart(case_trends).mark_line(point=True).encode(
                 x='date:T',
                 y='count:Q',
@@ -3352,9 +3456,12 @@ with tabs[3]:
         
         with col1:
             st.markdown("**Triage Distribution by Facility**")
-            
-            # Get triage distribution by facility
-            facility_triage = time_series_df.groupby(['facility', 'triage_color']).size().reset_index(name='count')
+            facility_triage = (
+                time_series_df
+                .groupby(['facility', 'triage_color'])
+                .size()
+                .reset_index(name='count')
+            )
             
             if not facility_triage.empty:
                 triage_chart = alt.Chart(facility_triage).mark_bar().encode(
@@ -3379,7 +3486,6 @@ with tabs[3]:
                 ).properties(width=600, height=400)
                 st.altair_chart(rejection_chart, use_container_width=True)
                 
-                # Display rejection table
                 st.markdown("**Detailed Rejection Metrics**")
                 st.dataframe(rejection_rates_df.sort_values('rejection_rate', ascending=False))
             else:
@@ -3393,7 +3499,6 @@ with tabs[3]:
         with col1:
             st.markdown("**Ambulance Usage by Triage Category**")
             
-            # Prepare data for ambulance utilization chart
             ambulance_data = []
             for triage_color, ambulance_types in ambulance_utilization.items():
                 for amb_type, count in ambulance_types.items():
@@ -3418,7 +3523,6 @@ with tabs[3]:
         with col2:
             st.markdown("**Ambulance Efficiency Metrics**")
             
-            # Calculate ambulance efficiency metrics
             ambulance_times = []
             for ref in referrals_data:
                 try:
@@ -3508,15 +3612,18 @@ with tabs[3]:
             
             st.markdown("**Specialty by Case Type**")
             if specialty_data:
-                # Show top requested capabilities
-                top_caps = sorted(specialty_data.items(), key=lambda x: x[1]['total'], reverse=True)[:5]
+                top_caps = sorted(
+                    specialty_data.items(),
+                    key=lambda x: x[1]['total'],
+                    reverse=True
+                )[:5]
                 
                 for cap, data in top_caps:
                     st.write(f"**{cap}** (Total: {data['total']})")
                     for case_type, count in list(data['by_case_type'].items())[:3]:
                         st.write(f"  - {case_type}: {count}")
 
-    # Policy Insights Section (Enhanced)
+    # ---------- Policy Insights Section (Enhanced) ----------
     st.markdown("---")
     st.markdown("### 🎯 Automated Policy Insights")
     
@@ -3527,25 +3634,50 @@ with tabs[3]:
         
         insights = []
         
-        # High acuity insight
         red_percentage = (red_cases / total_refs * 100) if total_refs else 0
         if red_percentage > 30:
-            insights.append(f"**High Acuity Load**: {red_percentage:.1f}% referrals triaged RED - reinforce ALS ambulances & ICU step-up capacity")
+            insights.append(
+                f"**High Acuity Load**: {red_percentage:.1f}% referrals triaged RED "
+                f"- reinforce ALS ambulances & ICU step-up capacity."
+            )
         
-        # Bed availability insight
-        bed_issue_percentage = (referral_reasons['bed_icu_unavailable'] / total_refs * 100) if total_refs else 0
+        bed_issue_percentage = (
+            referral_reasons['bed_icu_unavailable'] / total_refs * 100
+        ) if total_refs else 0
         if bed_issue_percentage > 25:
-            insights.append(f"**System Constraint**: {bed_issue_percentage:.1f}% referrals due to bed/ICU/OT unavailable - enable surge contracts & real-time bed boards")
+            insights.append(
+                f"**System Constraint**: {bed_issue_percentage:.1f}% referrals due to "
+                f"bed/ICU/OT unavailable - enable surge contracts & real-time bed boards."
+            )
         
-        # Capability insights
         if referral_reasons['capabilities']:
-            top_capability = max(referral_reasons['capabilities'].items(), key=lambda x: x[1])
-            insights.append(f"**Most Requested Capability**: {top_capability[0]} ({top_capability[1]} cases) - prioritize investments & on-call rosters")
+            top_capability = max(
+                referral_reasons['capabilities'].items(),
+                key=lambda x: x[1]
+            )
+            insights.append(
+                f"**Most Requested Capability**: {top_capability[0]} "
+                f"({top_capability[1]} cases) - prioritize investments & on-call rosters."
+            )
         
-        # Case type insights
         if case_type_breakdown:
-            dominant_case = max(case_type_breakdown.items(), key=lambda x: x[1])
-            insights.append(f"**Dominant Emergency Type**: {dominant_case[0]} ({dominant_case[1]} cases, {dominant_case[1]/total_refs*100:.1f}%) - targeted training & referral protocols")
+            dominant_case = max(
+                case_type_breakdown.items(),
+                key=lambda x: x[1]
+            )
+            insights.append(
+                f"**Dominant Emergency Type**: {dominant_case[0]} "
+                f"({dominant_case[1]} cases, {dominant_case[1]/total_refs*100:.1f}%) "
+                f"- targeted training & referral protocols."
+            )
+
+        # NEW: AI overlay as a safety-net insight
+        if total_ai and ai_escalated_rate > 0:
+            insights.append(
+                f"**AI Safety Net**: In {ai_escalated_rate:.1f}% of AI-handled referrals, "
+                f"the AI suggested a higher-acuity color than guideline-only triage — "
+                f"useful for catching borderline deteriorating patients."
+            )
         
         for insight in insights:
             st.info(insight)
@@ -3559,24 +3691,46 @@ with tabs[3]:
             high_rejection = rejection_rates_df[rejection_rates_df['rejection_rate'] > 20]
             if not high_rejection.empty:
                 for _, row in high_rejection.iterrows():
-                    recommendations.append(f"**Address High Rejection at {row['facility']}**: {row['rejection_rate']}% rejection rate - review capacity and referral criteria")
+                    recommendations.append(
+                        f"**Address High Rejection at {row['facility']}**: "
+                        f"{row['rejection_rate']}% rejection rate - review capacity "
+                        f"and referral criteria."
+                    )
         
         if ambulance_utilization:
             green_ambulance = ambulance_utilization.get('GREEN', {})
-            green_als = sum(count for amb_type, count in green_ambulance.items() if amb_type in ['ALS', 'ALS + Vent'])
+            green_als = sum(
+                count for amb_type, count in green_ambulance.items()
+                if amb_type in ['ALS', 'ALS + Vent']
+            )
             if green_als > 10:
-                recommendations.append(f"**Optimize Ambulance Use**: {green_als} ALS ambulances used for GREEN cases - consider BLS protocol for non-urgent transfers")
+                recommendations.append(
+                    f"**Optimize Ambulance Use**: {green_als} ALS ambulances used for "
+                    f"GREEN cases - consider BLS protocol for non-urgent transfers."
+                )
         
-        # Corrected: only compute peak hour when data exists
         if not time_series_df.empty:
             peak_hour = time_series_df.groupby('hour').size().idxmax()
             if peak_hour in [8, 9, 17, 18]:
-                recommendations.append(f"**Peak Hour Capacity**: Highest demand at {peak_hour}:00 - consider shift scheduling and resource allocation")
+                recommendations.append(
+                    f"**Peak Hour Capacity**: Highest demand at {peak_hour}:00 - "
+                    f"consider shift scheduling and resource allocation."
+                )
+
+        # Optional: flag if AI de-escalations are non-trivial
+        if total_ai and ai_deescalated > 0:
+            deesc_rate = ai_deescalated / total_ai * 100
+            if deesc_rate > 10:
+                recommendations.append(
+                    f"**Audit AI De-escalations**: {deesc_rate:.1f}% of AI cases were "
+                    f"assigned a lower acuity than guideline baseline — recommend "
+                    f"sample case review and model calibration."
+                )
         
         for recommendation in recommendations:
             st.warning(recommendation)
 
-    # Export and Reporting Section
+    # ---------- Export and Reporting Section ----------
     st.markdown("---")
     st.markdown("### 📤 Reports & Exports")
     
@@ -3610,7 +3764,10 @@ with tabs[3]:
         )
     
     with download_col2:
-        csv_rejection = rejection_rates_df.to_csv(index=False) if not rejection_rates_df.empty else ""
+        csv_rejection = (
+            rejection_rates_df.to_csv(index=False)
+            if not rejection_rates_df.empty else ""
+        )
         st.download_button(
             label="📥 Download Rejection Analysis",
             data=csv_rejection,
@@ -3620,14 +3777,19 @@ with tabs[3]:
         )
     
     with download_col3:
-        # Create summary report
         summary_report = {
             'total_referrals': total_refs,
             'critical_cases': red_cases,
             'critical_percentage': red_percentage,
             'bed_issue_percentage': bed_issue_percentage,
             'ambulance_utilization': ambulance_usage,
-            'avg_dispatch_time': avg_dispatch
+            'avg_dispatch_time': avg_dispatch,
+            # Optional: add AI overlay summary into the JSON as well
+            'ai_involved_referrals': total_ai,
+            'ai_escalated_cases': ai_escalated,
+            'ai_escalated_rate_pct': ai_escalated_rate,
+            'ai_same_or_lower_cases': ai_same_or_lower,
+            'ai_same_or_lower_rate_pct': ai_same_lower_rate,
         }
         summary_json = json.dumps(summary_report, indent=2)
         st.download_button(
