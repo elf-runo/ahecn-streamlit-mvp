@@ -1,4 +1,8 @@
 # AHECN – Streamlit MVP v1.9 (Enhanced Analytics & Demo Visualizations)
+
+# FIRST: Import Streamlit and set page config immediately
+import streamlit as st
+
 # === PAGE CONFIG MUST BE FIRST STREAMLIT COMMAND ===
 st.set_page_config(
     page_title="AHECN MVP v1.9",
@@ -6,7 +10,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# THEN import other libraries and define functions
+# THEN: Import all other libraries
 import math
 import json
 import time
@@ -14,7 +18,6 @@ import random
 from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
-import streamlit as st
 import pydeck as pdk
 import altair as alt
 import os
@@ -27,7 +30,7 @@ import joblib
 
 # === AI TRIAGE MODEL (Random Forest v1) ===
 BASE_DIR = Path(__file__).parent
-MODEL_PATH = BASE_DIR / "models" / "triage_model_rf_v1 (1).pkl"  # Fixed file name
+MODEL_PATH = BASE_DIR / "models" / "triage_model_rf_v1 (1).pkl"
 
 @st.cache_resource
 def load_triage_model():
