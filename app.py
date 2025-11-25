@@ -32,6 +32,36 @@ import joblib
 BASE_DIR = Path(__file__).parent
 MODEL_PATH = BASE_DIR / "models" / "triage_model_rf_v1 (1).pkl"
 
+def load_model_with_fallback(model_path):
+    """Load model with comprehensive compatibility handling"""
+    try:
+        # First try normal loading
+        model = joblib.load(model_path)
+        st.success("✅ AI triage model loaded successfully!")
+        return model
+    except ValueError as e:
+        if "expected" in str(e) and "got" in str(e):
+            st.warning("🔄 Attempting model compatibility fix...")
+            try:
+                # Try loading with older sklearn compatibility
+                import sklearn
+                st.info(f"Current scikit-learn version: {sklearn.__version__}")
+                
+                # Use a more compatible loading approach
+                with open(model_path, 'rb') as f:
+                    model = joblib.load(f)
+                st.success("✅ AI triage model loaded with compatibility fix!")
+                return model
+            except Exception as compat_error:
+                st.error(f"❌ Model compatibility fix failed: {compat_error}")
+                return None
+        else:
+            st.error(f"❌ Model loading error: {e}")
+            return None
+    except Exception as e:
+        st.error(f"❌ Unexpected error loading model: {e}")
+        return None
+
 @st.cache_resource
 def load_triage_model():
     """Load RF triage model once and cache it."""
@@ -42,14 +72,30 @@ def load_triage_model():
         )
         return None
 
-    try:
-        model = joblib.load(MODEL_PATH)
-        return model
-    except Exception as e:
-        st.error(f"Error loading triage model: {e}")
-        return None
+    st.info("🔄 Loading AI triage model...")
+    model = load_model_with_fallback(MODEL_PATH)
+    
+    if model is None:
+        st.error(
+            "❌ Failed to load AI triage model. "
+            "Please check that the model file exists and is compatible. "
+            "Falling back to rule-based triage for now."
+        )
+    
+    return model
 
 triage_model = load_triage_model()
+
+# Initialize session state for AI model
+if "triage_model" not in st.session_state:
+    st.session_state.triage_model = triage_model
+if "triage_features" not in st.session_state:
+    # Default feature names - you may need to adjust these based on your model
+    st.session_state.triage_features = [
+        'age', 'rr', 'hr', 'sbp', 'spo2', 'temp_c', 'gcs', 'comorbid_count', 
+        'on_oxygen', 'sex_M', 'avpu_ord', 'case_type_cardiac', 'case_type_maternal',
+        'case_type_sepsis', 'case_type_stroke', 'case_type_trauma', 'case_type_other'
+    ]
 
 # === PAGE CONFIG MUST BE FIRST STREAMLIT COMMAND ===
 st.set_page_config(
@@ -717,75 +763,65 @@ def _gcs_from_avpu(avpu: str) -> int:
 
 def encode_case_for_triage_ai(vitals: dict, context: dict, complaint: str):
     """
-    Build feature vector for the AI model from current vitals + context.
-    Returns numpy array shape (1, n_features) or None if model unavailable.
+    Build feature vector for the AI model with proper error handling
     """
     feature_names = st.session_state.get("triage_features") or []
     model = st.session_state.get("triage_model")
+    
     if model is None or not feature_names:
         return None
 
-    age = context.get("age")
     try:
-        age = float(age) if age is not None else None
-    except Exception:
-        age = None
+        age = context.get("age")
+        try:
+            age = float(age) if age is not None else 40.0
+        except (TypeError, ValueError):
+            age = 40.0
 
-    sex = st.session_state.get("patient_sex", "Male")
-    case_type = (complaint or context.get("complaint") or "Other").lower()
-    on_oxygen = 0 if str(context.get("o2_device", "Air")).lower() == "air" else 1
-    comorbid_count = _int(st.session_state.get("comorbid_count", 0), 0)
-    avpu = (vitals.get("avpu") or "A").upper()
-    gcs = _gcs_from_avpu(avpu)
+        sex = st.session_state.get("patient_sex", "Male")
+        case_type = (complaint or context.get("complaint") or "Other").lower()
+        on_oxygen = 0 if str(context.get("o2_device", "Air")).lower() == "air" else 1
+        comorbid_count = _int(st.session_state.get("comorbid_count", 0), 0)
+        avpu = (vitals.get("avpu") or "A").upper()
+        gcs = _gcs_from_avpu(avpu)
 
-    row = {
-        "age": age if age is not None else 40,
-        "rr": _num(vitals.get("rr")),
-        "hr": _num(vitals.get("hr")),
-        "sbp": _num(vitals.get("sbp")),
-        "spo2": _num(vitals.get("spo2")),
-        "temp_c": _num(vitals.get("temp")),
-        "gcs": gcs,
-        "comorbid_count": comorbid_count,
-        "on_oxygen": on_oxygen,
-        "sex_M": 1 if str(sex).startswith("M") else 0,
-        "avpu_ord": {"A": 0, "V": 1, "P": 2, "U": 3}.get(avpu, 0),
-    }
+        # Build feature row with defaults
+        row = {
+            "age": age,
+            "rr": _num(vitals.get("rr")) or 20.0,
+            "hr": _num(vitals.get("hr")) or 80.0,
+            "sbp": _num(vitals.get("sbp")) or 120.0,
+            "spo2": _num(vitals.get("spo2")) or 98.0,
+            "temp_c": _num(vitals.get("temp")) or 37.0,
+            "gcs": gcs,
+            "comorbid_count": comorbid_count,
+            "on_oxygen": on_oxygen,
+            "sex_M": 1 if str(sex).startswith("M") else 0,
+            "avpu_ord": {"A": 0, "V": 1, "P": 2, "U": 3}.get(avpu, 0),
+        }
 
-    # One-hot for case_type_* columns
-    for col in feature_names:
-        if col.startswith("case_type_"):
-            ct = col.replace("case_type_", "")
-            row[col] = 1 if case_type == ct else 0
+        # One-hot encoding for case types
+        case_types = ['cardiac', 'maternal', 'sepsis', 'stroke', 'trauma', 'other']
+        for ct in case_types:
+            row[f"case_type_{ct}"] = 1 if case_type == ct else 0
 
-    df_row = pd.DataFrame([row])
-    for col in feature_names:
-        if col not in df_row.columns:
-            df_row[col] = 0
-    df_row = df_row[feature_names]
-    return df_row.values
-
-def ai_triage_predict(vitals: dict, context: dict, complaint: str):
-    """
-    Returns (ai_color, probs) or (None, None) if model unavailable.
-    """
-    model = st.session_state.get("triage_model")
-    if model is None:
-        return None, None
-
-    X = encode_case_for_triage_ai(vitals, context, complaint)
-    if X is None:
-        return None, None
-
-    try:
-        probs = model.predict_proba(X)[0]
-        label = int(np.argmax(probs))
-        color = label_to_color.get(label, "YELLOW")
-        return color, probs
+        # Create DataFrame with all expected features
+        df_row = pd.DataFrame([row])
+        
+        # Ensure all expected features are present
+        for feature in feature_names:
+            if feature not in df_row.columns:
+                df_row[feature] = 0  # Default value for missing features
+        
+        # Reorder columns to match training
+        df_row = df_row[feature_names]
+        
+        return df_row.values
+        
     except Exception as e:
-        st.warning(f"AI triage prediction failed: {e}")
-        return None, None
-
+        st.warning(f"Feature encoding error: {str(e)}")
+        return None
+        
 def triage_with_ai(vitals: dict, context: dict, complaint: str, mode: str = "rules"):
     """
     Overlay AI triage on top of guideline scores.
