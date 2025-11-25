@@ -28,60 +28,33 @@ import urllib.parse
 from pathlib import Path
 import joblib
 
-# === AI TRIAGE MODEL - FORCE COMPATIBLE VERSION ===
+# === AI TRIAGE MODEL - MEDICALLY ACCURATE ===
 BASE_DIR = Path(__file__).parent
-MODEL_PATH = BASE_DIR / "models" / "triage_model_rf_v1 (1).pkl"
-
-def verify_environment():
-    """Verify we have the correct environment for the model"""
-    import sklearn
-    import sys
-    
-    st.sidebar.markdown("### Environment Check")
-    st.sidebar.write(f"Python: {sys.version.split()[0]}")
-    st.sidebar.write(f"scikit-learn: {sklearn.__version__}")
-    st.sidebar.write(f"Model requires: 1.1.3")
-    
-    if sklearn.__version__ != '1.1.3':
-        st.error(f"❌ VERSION MISMATCH: Need scikit-learn 1.1.3, got {sklearn.__version__}")
-        return False
-    
-    if not MODEL_PATH.exists():
-        st.error(f"❌ Model file not found: {MODEL_PATH}")
-        return False
-        
-    st.success("✅ Environment compatible!")
-    return True
+MODEL_PATH = BASE_DIR / "models" / "triage_model_medically_accurate.pkl"
+FEATURE_INFO_PATH = BASE_DIR / "models" / "feature_info.pkl"
 
 @st.cache_resource
 def load_triage_model():
-    """Load the actual AI model with comprehensive error handling"""
-    
-    # First verify environment
-    if not verify_environment():
+    """Load the medically accurate AI model"""
+    if not MODEL_PATH.exists():
+        st.warning("""
+        ⚠️ Medically accurate AI model not found. 
+        Please run the training script to create a clinically valid model.
+        """)
         return None
-    
+
     try:
-        st.info("🔄 Loading AI triage model...")
-        
-        # Method 1: Direct load
         model = joblib.load(MODEL_PATH)
-        st.success("✅ AI triage model loaded successfully!")
+        feature_info = joblib.load(FEATURE_INFO_PATH)
         
-        # Test the model works
-        try:
-            # Create dummy data to test prediction
-            dummy_X = np.random.random((1, 17))  # Adjust based on your feature count
-            _ = model.predict_proba(dummy_X)
-            st.success("✅ Model predictions working!")
-        except Exception as test_error:
-            st.warning(f"Model test failed: {test_error}")
-            return None
-            
+        st.session_state.triage_features = feature_info['feature_names']
+        st.success(f"✅ Medically Accurate AI Model Loaded")
+        st.info(f"Clinical basis: {feature_info['clinical_basis']}")
+        
         return model
         
     except Exception as e:
-        st.error(f"❌ Model loading failed: {str(e)}")
+        st.error(f"❌ Failed to load medical model: {e}")
         
         # Show detailed error for debugging
         with st.expander("Technical Details"):
@@ -100,38 +73,13 @@ joblib: {joblib.__version__}
         
         return None
 
-# Load the actual model
 triage_model = load_triage_model()
-
-# If model fails, show clear instructions
-if triage_model is None:
-    st.error("""
-    🚨 AI Model Failed to Load
-    
-    **Immediate Actions Required:**
-    
-    1. **Check requirements.txt** - Ensure it has `scikit-learn==1.1.3`
-    2. **Check runtime.txt** - Ensure it has `python-3.9.18`  
-    3. **Redeploy** - Push changes and wait for rebuild
-    4. **Verify dependencies** - Check deployment logs for package versions
-    
-    **File Structure Check:**
-    ```
-    your-repo/
-    ├── requirements.txt  # with scikit-learn==1.1.3
-    ├── runtime.txt       # with python-3.9.18  
-    ├── app.py
-    └── models/
-        └── triage_model_rf_v1 (1).pkl
-    ```
-    """)
-    st.stop()
 
 # Initialize session state for AI model
 if "triage_model" not in st.session_state:
     st.session_state.triage_model = triage_model
 if "triage_features" not in st.session_state:
-    # Default feature names - you may need to adjust these based on your model
+    # Default feature names - will be overridden by feature_info.pkl if available
     st.session_state.triage_features = [
         'age', 'rr', 'hr', 'sbp', 'spo2', 'temp_c', 'gcs', 'comorbid_count', 
         'on_oxygen', 'sex_M', 'avpu_ord', 'case_type_cardiac', 'case_type_maternal',
