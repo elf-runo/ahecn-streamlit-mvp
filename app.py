@@ -722,6 +722,134 @@ def tri_color(vit):
     )
     colour, _ = triage_decision(v, context)
     return colour
+# === AI TRIAGE OVERLAY (Random Forest) ===
+
+label_to_color = {0: "GREEN", 1: "YELLOW", 2: "ORANGE", 3: "RED"}
+
+def _gcs_from_avpu(avpu: str) -> int:
+    mapping = {"A": 15, "V": 13, "P": 8, "U": 3}
+    return mapping.get((avpu or "A").upper(), 15)
+
+def encode_case_for_triage_ai(vitals: dict, context: dict, complaint: str):
+    """
+    Build feature vector for the AI model from current vitals + context.
+    Returns numpy array shape (1, n_features) or None if model unavailable.
+    """
+    feature_names = st.session_state.get("triage_features") or []
+    model = st.session_state.get("triage_model")
+    if model is None or not feature_names:
+        return None
+
+    age = context.get("age")
+    try:
+        age = float(age) if age is not None else None
+    except Exception:
+        age = None
+
+    sex = st.session_state.get("patient_sex", "Male")
+    case_type = (complaint or context.get("complaint") or "Other").lower()
+    on_oxygen = 0 if str(context.get("o2_device", "Air")).lower() == "air" else 1
+    comorbid_count = _int(st.session_state.get("comorbid_count", 0), 0)
+    avpu = (vitals.get("avpu") or "A").upper()
+    gcs = _gcs_from_avpu(avpu)
+
+    row = {
+        "age": age if age is not None else 40,
+        "rr": _num(vitals.get("rr")),
+        "hr": _num(vitals.get("hr")),
+        "sbp": _num(vitals.get("sbp")),
+        "spo2": _num(vitals.get("spo2")),
+        "temp_c": _num(vitals.get("temp")),
+        "gcs": gcs,
+        "comorbid_count": comorbid_count,
+        "on_oxygen": on_oxygen,
+        "sex_M": 1 if str(sex).startswith("M") else 0,
+        "avpu_ord": {"A": 0, "V": 1, "P": 2, "U": 3}.get(avpu, 0),
+    }
+
+    # One-hot for case_type_* columns
+    for col in feature_names:
+        if col.startswith("case_type_"):
+            ct = col.replace("case_type_", "")
+            row[col] = 1 if case_type == ct else 0
+
+    df_row = pd.DataFrame([row])
+    for col in feature_names:
+        if col not in df_row.columns:
+            df_row[col] = 0
+    df_row = df_row[feature_names]
+    return df_row.values
+
+def ai_triage_predict(vitals: dict, context: dict, complaint: str):
+    """
+    Returns (ai_color, probs) or (None, None) if model unavailable.
+    """
+    model = st.session_state.get("triage_model")
+    if model is None:
+        return None, None
+
+    X = encode_case_for_triage_ai(vitals, context, complaint)
+    if X is None:
+        return None, None
+
+    try:
+        probs = model.predict_proba(X)[0]
+        label = int(np.argmax(probs))
+        color = label_to_color.get(label, "YELLOW")
+        return color, probs
+    except Exception as e:
+        st.warning(f"AI triage prediction failed: {e}")
+        return None, None
+
+def triage_with_ai(vitals: dict, context: dict, complaint: str, mode: str = "rules"):
+    """
+    Overlay AI triage on top of guideline scores.
+    mode: 'rules' | 'ai' | 'hybrid'
+    Returns (final_color, meta) where meta includes:
+      rules_color, rules_details, ai_color, probs, mode
+    """
+    rules_color, rules_details = triage_decision(vitals, context)
+
+    model = st.session_state.get("triage_model")
+    features = st.session_state.get("triage_features") or []
+    if mode == "rules" or model is None or not features:
+        return rules_color, {
+            "mode": "rules",
+            "rules_color": rules_color,
+            "rules_details": rules_details,
+            "ai_color": None,
+            "probs": None,
+        }
+
+    ai_color, probs = ai_triage_predict(vitals, context, complaint)
+    if ai_color is None:
+        return rules_color, {
+            "mode": "rules_fallback",
+            "rules_color": rules_color,
+            "rules_details": rules_details,
+            "ai_color": None,
+            "probs": None,
+        }
+
+    color_order = ["GREEN", "YELLOW", "ORANGE", "RED"]
+    rules_idx = color_order.index(rules_color)
+    ai_idx = color_order.index(ai_color)
+
+    if mode == "ai":
+        final_idx = ai_idx
+    else:  # 'hybrid' – AI can only escalate
+        final_idx = max(rules_idx, ai_idx)
+
+    final_color = color_order[final_idx]
+
+    return final_color, {
+        "mode": mode,
+            "rules_color": rules_color,
+            "rules_details": rules_details,
+            "ai_color": ai_color,
+            "probs": probs,
+    }
+
 
 # === UI HELPERS ===
 def triage_pill(color:str, overridden=False):
@@ -765,29 +893,43 @@ def render_triage_banner(hr, rr, sbp, temp, spo2, avpu, complaint, override_appl
         spo2_scale=spo2_scale,
         behavior=behavior
     )
-    
-    # Calculate base color from scores
-    base_colour, details = triage_decision(vitals, context)
-    
-    # Apply override if present
-    final_colour = base_colour
+
+    triage_mode = st.session_state.get("triage_mode", "rules")
+
+    # Combine guideline scores with AI overlay
+    final_colour_ai, meta = triage_with_ai(vitals, context, complaint, triage_mode)
+    base_colour = meta["rules_color"]
+    details = meta["rules_details"]
+
+    # Apply clinician override last
+    final_colour = final_colour_ai
     override_reason = ""
     if override_applied and st.session_state.get("triage_override_active", False):
-        final_colour = st.session_state.get("triage_override_color", base_colour)
+        final_colour = st.session_state.get("triage_override_color", final_colour_ai)
         override_reason = st.session_state.get("triage_override_reason", "")
 
     st.markdown("### Triage decision")
     triage_pill(final_colour, overridden=(final_colour != base_colour))
 
     # Show override info if applied
-    if final_colour != base_colour:
+    if final_colour != base_colour and override_reason:
         st.warning(f"**Override applied**: {override_reason}")
-        st.info(f"Original score-based triage: **{base_colour}**")
+        st.info(f"Original guideline triage: **{base_colour}**")
 
+    # Explain why (guideline-based rationale)
     why = details["reasons"]
-    st.caption("Why: " + (", ".join(why) if why else "All scores within normal thresholds"))
+    st.caption("Why (guideline scores): " + (", ".join(why) if why else "All scores within normal thresholds"))
 
-    with st.expander("Score details"):
+    # Show AI meta if actually used
+    if meta.get("ai_color") and meta.get("probs") is not None and triage_mode != "rules":
+        probs = meta["probs"]
+        st.caption(
+            f"AI suggestion: **{meta['ai_color']}** | "
+            f"Probabilities – G={probs[0]:.2f}, Y={probs[1]:.2f}, "
+            f"O={probs[2]:.2f}, R={probs[3]:.2f} (mode: {triage_mode})"
+        )
+
+    with st.expander("Score details (guideline engines)"):
         st.write(details)
 
 # === ENHANCED FACILITY MATCHING SYSTEM ===
@@ -1789,6 +1931,8 @@ if "spo2_scale" not in st.session_state:
     st.session_state.spo2_scale = 1
 if "pews_behavior" not in st.session_state: 
     st.session_state.pews_behavior = "Normal"
+if "triage_mode" not in st.session_state:
+    st.session_state.triage_mode = "rules"  # 'rules' | 'ai' | 'hybrid'
 
 # Triage override state
 if "triage_override_active" not in st.session_state:
@@ -1830,6 +1974,8 @@ with tabs[0]:
         p_name = st.text_input("Patient name", "John Doe")
         p_age = st.number_input("Age", 0, 120, 35)
         p_sex = st.selectbox("Sex", ["Male", "Female", "Other"])
+        st.session_state.patient_sex = p_sex
+
     with c2:
         p_id = st.text_input("Patient ID", "PT-001")
         p_lat = st.number_input("Latitude", value=25.58, format="%.6f")
@@ -1898,6 +2044,19 @@ with tabs[0]:
 
     # Triage decision banner
     render_triage_banner(hr, rr, sbp, temp, spo2, avpu, complaint)
+    # Select how triage is computed (guidelines vs AI vs hybrid)
+    mode_label = st.radio(
+        "Triage mode",
+        ["Guideline only", "AI only", "Hybrid (AI + Guideline)"],
+        index={"rules": 0, "ai": 1, "hybrid": 2}[st.session_state.get("triage_mode", "rules")],
+        horizontal=True,
+    )
+    mode_map = {
+        "Guideline only": "rules",
+        "AI only": "ai",
+        "Hybrid (AI + Guideline)": "hybrid",
+    }
+    st.session_state.triage_mode = mode_map[mode_label]
 
     # === CLINICIAN OVERRIDE CONTROL ===
     st.subheader("Clinician Triage Override")
@@ -2120,7 +2279,7 @@ with tabs[0]:
         elif referrer_role == "ANM/ASHA/EMT" and not dx_payload.get("label"):
             st.error("Please provide a reason for referral to find matching facilities")
         else:
-            # Calculate current triage color for scoring
+            # Calculate triage color (respect selected mode + AI)
             vitals = dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu)
             context = dict(
                 age=p_age,
@@ -2130,11 +2289,14 @@ with tabs[0]:
                 spo2_scale=st.session_state.spo2_scale,
                 behavior=st.session_state.pews_behavior
             )
-            triage_color, _ = triage_decision(vitals, context)
-            
+            triage_mode = st.session_state.get("triage_mode", "rules")
+            triage_color_ai, meta = triage_with_ai(vitals, context, complaint, triage_mode)
+            triage_color = triage_color_ai
+
             # Apply override if active
             if st.session_state.triage_override_active and st.session_state.triage_override_color:
                 triage_color = st.session_state.triage_override_color
+
 
             # Get ranked facilities with free routing
             with st.spinner("Calculating optimal routes with free routing services..."):
@@ -2322,7 +2484,7 @@ with tabs[0]:
                 "status": "completed"
             })
         
-        # Calculate base triage color
+        # Calculate triage (guideline + AI overlay)
         age = _num(p_age)
         context = dict(
             age=age,
@@ -2332,12 +2494,17 @@ with tabs[0]:
             spo2_scale=st.session_state.spo2_scale,
             behavior=st.session_state.pews_behavior
         )
-        base_colour, score_details = triage_decision(vit, context)
-        
-        # Apply override if active
-        final_colour = base_colour
+        triage_mode = st.session_state.get("triage_mode", "rules")
+        final_ai_colour, tri_meta = triage_with_ai(vit, context, complaint, triage_mode)
+        base_colour = tri_meta["rules_color"]
+        score_details = tri_meta["rules_details"]
+        ai_color = tri_meta.get("ai_color")
+        ai_probs = tri_meta.get("probs")
+
+        # Apply override if active (on top of AI/hybrid)
+        final_colour = final_ai_colour
         audit_log = []
-        
+
         if st.session_state.triage_override_active and st.session_state.triage_override_color:
             final_colour = st.session_state.triage_override_color
             audit_entry = {
@@ -2353,10 +2520,13 @@ with tabs[0]:
                         "qSOFA": score_details["qSOFA"]["score"],
                         "MEOWS_red": len(score_details["MEOWS"]["red"]),
                         "PEWS": score_details["PEWS"]["score"]
-                    }
+                    },
+                    "triage_mode": triage_mode,
+                    "ai_color": ai_color,
                 }
             }
             audit_log.append(audit_entry)
+
 
         ref = dict(
             id="R" + str(int(time.time()))[-6:],
@@ -2372,14 +2542,21 @@ with tabs[0]:
             interventions=all_interventions,
             resuscitation=resus_done,
             triage=dict(
-                complaint=complaint, 
+                complaint=complaint,
                 decision=dict(
                     color=final_colour,
                     base_color=base_colour,
+                    ai_color=ai_color,
+                    triage_mode=triage_mode,
                     overridden=(final_colour != base_colour)
-                ), 
+                ),
                 hr=hr, sbp=sbp, rr=rr, temp=temp, spo2=spo2, avpu=avpu,
-                scores=score_details
+                scores={
+                    **score_details,
+                    "ai_probs": ai_probs.tolist() if ai_probs is not None else None,
+                }
+            ),
+
             ),
             clinical=dict(summary=" ".join(ocr.split()[:60])),
             reasons=dict(
