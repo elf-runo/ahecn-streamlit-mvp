@@ -3104,6 +3104,11 @@ Notes: {emt_notes}
 with tabs[3]:
     st.subheader("🏛️ Enhanced Government Analytics Dashboard")
     
+    # GLOBAL FIX: Initialize all possible AI variables to avoid reference errors
+    total_ai = ai_escalated = ai_deescalated = ai_same = ai_same_or_lower = 0
+    ai_escalated_rate = ai_same_lower_rate = 0.0
+    triage_modes = {"guideline": 0, "ai": 0, "hybrid": 0}
+    
     # Data loading section
     st.markdown("### 📁 Data Management")
     col1, col2 = st.columns(2)
@@ -3297,16 +3302,20 @@ with tabs[3]:
     specialty_data, case_type_breakdown = analyze_medical_specialties(referrals_data)
     ambulance_utilization = analyze_ambulance_utilization(referrals_data)
 
-    # ---------- AI OVERLAY SECTION - DISABLED ----------
+    # ---------- NEW: AI OVERLAY SECTION - DISABLED ----------
     st.markdown("#### 🤖 AI Triage Overlay Snapshot")
-    st.info("AI features are temporarily disabled. Analytics showing guideline-based triage only.")
-
-    # Set all AI metrics to zero/empty
+    
+    # Initialize all AI variables to avoid reference errors
     total_ai = 0
     ai_escalated = 0
     ai_deescalated = 0
     ai_same = 0
-
+    ai_same_or_lower = 0
+    ai_escalated_rate = 0.0
+    ai_same_lower_rate = 0.0
+    
+    st.info("AI features are temporarily disabled. Analytics showing guideline-based triage only.")
+    
     ai_col1, ai_col2, ai_col3 = st.columns(3)
     with ai_col1:
         st.metric("AI-involved referrals", "0", "0% of all cases")
@@ -3350,49 +3359,9 @@ with tabs[3]:
             f"{(ambulance_usage/total_refs*100):.1f}%" if total_refs else "0%"
         )
 
-    # ---------- NEW: AI overlay KPI strip just under Executive Summary ----------
+    # ---------- AI TRIAGE OVERLAY - DISABLED ----------
     st.markdown("#### 🤖 AI Triage Overlay Snapshot")
-
-    if total_ai:
-        ai_col1, ai_col2, ai_col3 = st.columns(3)
-
-        with ai_col1:
-            ai_share_all = (total_ai / total_refs * 100) if total_refs else 0.0
-            st.metric(
-                "AI-involved referrals",
-                f"{total_ai}",
-                f"{ai_share_all:.1f}% of all cases"
-            )
-
-        with ai_col2:
-            st.metric(
-                "AI stricter than guideline",
-                ai_escalated,
-                f"{ai_escalated_rate:.1f}% of AI cases"
-            )
-
-        with ai_col3:
-            st.metric(
-                "Same / lower vs guideline",
-                ai_same_or_lower,
-                f"{ai_same_lower_rate:.1f}% of AI cases"
-            )
-
-        # Optional brief mode mix context (only if some non-guideline modes exist)
-        ai_mode_count = triage_modes.get("ai", 0)
-        hybrid_mode_count = triage_modes.get("hybrid", 0)
-        if ai_mode_count + hybrid_mode_count:
-            st.caption(
-                f"Mode mix (all decisions): "
-                f"{triage_modes.get('guideline', 0)} guideline-only, "
-                f"{ai_mode_count} AI-only, "
-                f"{hybrid_mode_count} hybrid decisions logged."
-            )
-    else:
-        st.info(
-            "AI overlay metadata not available yet, or no referrals with both guideline "
-            "and AI colors logged for comparison."
-        )
+    st.info("AI features are temporarily disabled. Analytics showing guideline-based triage only.")
 
     # ---------- Enhanced Visualizations Section ----------
     st.markdown("---")
@@ -3730,74 +3699,75 @@ with tabs[3]:
         for recommendation in recommendations:
             st.warning(recommendation)
 
-    # ---------- Export and Reporting Section ----------
-    st.markdown("---")
-    st.markdown("### 📤 Reports & Exports")
+        # ---------- Export and Reporting Section ----------
+        st.markdown("---")
+        st.markdown("### 📤 Reports & Exports")
     
-    report_col1, report_col2, report_col3 = st.columns(3)
+        report_col1, report_col2, report_col3 = st.columns(3)
     
-    with report_col1:
-        if st.button("📊 Generate Monthly Report"):
-            st.success("Monthly analytics report generated - ready for download")
+        with report_col1:
+            if st.button("📊 Generate Monthly Report"):
+                st.success("Monthly analytics report generated - ready for download")
     
-    with report_col2:
-        if st.button("🚑 Ambulance Utilization Report"):
-            st.success("Ambulance utilization analysis complete")
+        with report_col2:
+            if st.button("🚑 Ambulance Utilization Report"):
+                st.success("Ambulance utilization analysis complete")
     
-    with report_col3:
-        if st.button("🏥 Facility Performance Report"):
-            st.success("Facility performance report generated")
+        with report_col3:
+            if st.button("🏥 Facility Performance Report"):
+                st.success("Facility performance report generated")
 
-    # Data download section
-    st.markdown("#### Download Analytics Data")
+        # Data download section
+        st.markdown("#### Download Analytics Data")
     
-    download_col1, download_col2, download_col3 = st.columns(3)
+        download_col1, download_col2, download_col3 = st.columns(3)
     
-    with download_col1:
-        csv_time = time_series_df.to_csv(index=False) if not time_series_df.empty else ""
-        st.download_button(
-            label="📥 Download Time Series Data",
-            data=csv_time,
-            file_name="referral_timeseries.csv",
-            mime="text/csv",
-            disabled=time_series_df.empty
-        )
+        with download_col1:
+            csv_time = time_series_df.to_csv(index=False) if not time_series_df.empty else ""
+            st.download_button(
+                label="📥 Download Time Series Data",
+                data=csv_time,
+                file_name="referral_timeseries.csv",
+                mime="text/csv",
+                disabled=time_series_df.empty
+             )
     
-    with download_col2:
-        csv_rejection = (
-            rejection_rates_df.to_csv(index=False)
-            if not rejection_rates_df.empty else ""
-        )
-        st.download_button(
-            label="📥 Download Rejection Analysis",
-            data=csv_rejection,
-            file_name="facility_rejection_rates.csv",
-            mime="text/csv",
-            disabled=rejection_rates_df.empty
-        )
+        with download_col2:
+            csv_rejection = (
+                rejection_rates_df.to_csv(index=False)
+                if not rejection_rates_df.empty else ""
+            )
+            st.download_button(
+                label="📥 Download Rejection Analysis",
+                data=csv_rejection,
+                file_name="facility_rejection_rates.csv",
+                mime="text/csv",
+                disabled=rejection_rates_df.empty
+            )
     
-    with download_col3:
-        summary_report = {
-            'total_referrals': total_refs,
-            'critical_cases': red_cases,
-            'critical_percentage': red_percentage,
-            'bed_issue_percentage': bed_issue_percentage,
-            'ambulance_utilization': ambulance_usage,
-            'avg_dispatch_time': avg_dispatch,
-            # Optional: add AI overlay summary into the JSON as well
-            'ai_involved_referrals': total_ai,
-            'ai_escalated_cases': ai_escalated,
-            'ai_escalated_rate_pct': ai_escalated_rate,
-            'ai_same_or_lower_cases': ai_same_or_lower,
-            'ai_same_or_lower_rate_pct': ai_same_lower_rate,
-        }
-        summary_json = json.dumps(summary_report, indent=2)
-        st.download_button(
-            label="📥 Download Executive Summary",
-            data=summary_json,
-            file_name="executive_summary.json",
-            mime="application/json"
-        )
+        with download_col3:
+            # Create summary report with hardcoded zeros for AI metrics
+            summary_report = {
+                'total_referrals': total_refs,
+                'critical_cases': red_cases,
+                'critical_percentage': red_percentage,
+                'bed_issue_percentage': bed_issue_percentage,
+                'ambulance_utilization': ambulance_usage,
+                'avg_dispatch_time': avg_dispatch,
+                # AI metrics hardcoded to zero since AI is disabled
+                'ai_involved_referrals': 0,
+                'ai_escalated_cases': 0,
+                'ai_escalated_rate_pct': 0.0,
+                'ai_same_or_lower_cases': 0,
+                'ai_same_or_lower_rate_pct': 0.0,
+            }
+            summary_json = json.dumps(summary_report, indent=2)
+            st.download_button(
+                label="📥 Download Executive Summary",
+                data=summary_json,
+                file_name="executive_summary.json",
+                mime="application/json"
+            )
 
 # ======== DATA / ADMIN TAB ========
 with tabs[4]:
