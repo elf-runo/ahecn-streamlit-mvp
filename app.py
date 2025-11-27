@@ -1,16 +1,5 @@
 # AHECN – Streamlit MVP v1.9 (Enhanced Analytics & Demo Visualizations)
-
-# FIRST: Import Streamlit and set page config immediately
 import streamlit as st
-
-# === PAGE CONFIG MUST BE FIRST STREAMLIT COMMAND ===
-st.set_page_config(
-    page_title="AHECN MVP v1.9",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
-
-# THEN: Import all other libraries
 import math
 import json
 import time
@@ -18,15 +7,10 @@ import random
 from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
-import pydeck as pdk
 import altair as alt
 import os
 import requests
 import urllib.parse
-
-# ML model utilities
-from pathlib import Path
-import joblib
 
 # === AI TRIAGE MODEL - TEMPORARILY DISABLED ===
 BASE_DIR = Path(__file__).parent
