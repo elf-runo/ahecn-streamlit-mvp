@@ -2387,47 +2387,50 @@ with tabs[0]:
             if st.session_state.triage_override_active and st.session_state.triage_override_color:
                 triage_color = st.session_state.triage_override_color
 
-
             # Get ranked facilities with free routing
             with st.spinner("Calculating optimal routes with free routing services..."):
-                
-            # Use professional ORS routing if available, otherwise fallback
-            ORS_API_KEY = os.getenv('ORS_API_KEY', 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjAzZmM5ZTViYTI5ZjQzNGM5OTY0ODU5ZTJlZThlYjNjIiwiaCI6Im11cm11cjY0In0=')
+            
+                # Use professional ORS routing if available, otherwise fallback
+                ORS_API_KEY = os.getenv('ORS_API_KEY', 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjAzZmM5ZTViYTI5ZjQzNGM5OTY0ODU5ZTJlZThlYjNjIiwiaCI6Im11cm11cjY0In0=')
 
-            if ORS_API_KEY and ORS_API_KEY != "your_free_api_key_here":
-                ranked_facilities = enhanced_facility_ranking_with_ors(
-                    origin_coords=(p_lat, p_lon),
-                    required_caps=need_caps,
-                    case_type=complaint,
-                    triage_color=triage_color,
-                    top_k=8,
-                    api_key=ORS_API_KEY
-                )
-            else:
-                ranked_facilities = rank_facilities_with_free_routing(
-                    origin_coords=(p_lat, p_lon),
-                    required_caps=need_caps,
-                    case_type=complaint,
-                    triage_color=triage_color,
-                    top_k=8,
-                    provider=current_provider
-                )
+                if ORS_API_KEY and ORS_API_KEY != "your_free_api_key_here":
+                    ranked_facilities = enhanced_facility_ranking_with_ors(
+                        origin_coords=(p_lat, p_lon),
+                        required_caps=need_caps,
+                        case_type=complaint,
+                        triage_color=triage_color,
+                        top_k=8,
+                        api_key=ORS_API_KEY
+                    )
+                else:
+                    ranked_facilities = rank_facilities_with_free_routing(
+                        origin_coords=(p_lat, p_lon),
+                        required_caps=need_caps,
+                        case_type=complaint,
+                        triage_color=triage_color,
+                        top_k=8,
+                        provider=current_provider
+                    )
 
+            # This part goes AFTER the with block (no indentation)
             if not ranked_facilities:
                 st.warning("No suitable facilities found. Try relaxing capability requirements.")
             else:
                 # Display routing provider info
-                provider_name = {
-                    "osrm": "OSRM (Free Open Source)",
-                    "graphhopper": "GraphHopper (Free Tier)", 
-                    "openrouteservice": "OpenRouteService (Free)"
-                }[current_provider]
-    
+                if ORS_API_KEY and ORS_API_KEY != "your_free_api_key_here":
+                    provider_name = "OpenRouteService (Professional)"
+                else:
+                    provider_name = {
+                        "osrm": "OSRM (Free Open Source)",
+                        "graphhopper": "GraphHopper (Free Tier)", 
+                        "openrouteservice": "OpenRouteService (Free)"
+                    }[current_provider]
+            
                 st.success(f"✓ Routing completed using {provider_name}")
-                
+            
                 # Display ranked facilities
                 st.markdown(f"#### 🏆 Top {len(ranked_facilities)} Matched Facilities")
-                
+            
                 # Show traffic simulation status
                 if enable_traffic:
                     current_hour = datetime.now().hour
@@ -2435,9 +2438,9 @@ with tabs[0]:
                         st.info("🚗 **Peak hours detected**: Estimated travel times include traffic delays")
                     else:
                         st.info("🛣️ **Off-peak hours**: Normal travel conditions")
-                
+            
                 st.info(f"**Case Type:** {complaint} | **Triage:** {triage_color} | **Required Capabilities:** {', '.join(need_caps) if need_caps else 'None'}")
-                
+            
                 # Reset selection state
                 st.session_state.matched_primary = None
                 st.session_state.matched_alts = set()
