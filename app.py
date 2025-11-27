@@ -36,31 +36,35 @@ FEATURE_INFO_PATH = BASE_DIR / "models" / "feature_info.pkl"
 @st.cache_resource
 def load_triage_model():
     """Load the medically accurate AI model"""
-    
-    # First, check which scikit-learn version we have
-    import sklearn
-    st.sidebar.write(f"Current scikit-learn: {sklearn.__version__}")
-    
-    if not MODEL_PATH.exists():
-        st.error(f"❌ New model not found at: {MODEL_PATH}")
-        return None
-
     try:
-        # Load the NEW medically accurate model
+        if not MODEL_PATH.exists():
+            st.error(f"❌ Model not found at: {MODEL_PATH}")
+            return None
+
+        # Load the medically accurate model
         model = joblib.load(MODEL_PATH)
-        feature_info = joblib.load(FEATURE_INFO_PATH)
         
-        st.session_state.triage_features = feature_info['feature_names']
-        st.success("✅ Medically Accurate AI Model Loaded Successfully!")
-        st.info(f"Clinical basis: {feature_info['clinical_basis']}")
-        st.info(f"Trained with scikit-learn: {feature_info['sklearn_version']}")
+        # Load feature info if available
+        feature_names = []
+        if FEATURE_INFO_PATH.exists():
+            feature_info = joblib.load(FEATURE_INFO_PATH)
+            feature_names = feature_info.get('feature_names', [])
+            st.success("✅ Medically Accurate AI Model Loaded Successfully!")
+        else:
+            # Fallback feature names
+            feature_names = [
+                'age', 'rr', 'hr', 'sbp', 'spo2', 'temp_c', 'gcs', 'comorbid_count', 
+                'on_oxygen', 'sex_M', 'avpu_ord', 'case_type_cardiac', 'case_type_maternal',
+                'case_type_sepsis', 'case_type_stroke', 'case_type_trauma', 'case_type_other'
+            ]
+            st.success("✅ AI Model Loaded (using fallback features)")
         
+        st.session_state.triage_features = feature_names
         return model
         
     except Exception as e:
-        st.error(f"❌ Failed to load new medical model: {e}")
+        st.error(f"❌ Failed to load medical model: {e}")
         return None
-
 triage_model = load_triage_model()
 
 # Initialize session state for AI model
@@ -842,6 +846,32 @@ def encode_case_for_triage_ai(vitals: dict, context: dict, complaint: str):
     except Exception as e:
         st.warning(f"Feature encoding error: {str(e)}")
         return None
+
+def ai_triage_predict(vitals: dict, context: dict, complaint: str):
+    """Make prediction using the AI model"""
+    model = st.session_state.get("triage_model")
+    if model is None:
+        return None, None
+    
+    try:
+        # Encode features for the model
+        features = encode_case_for_triage_ai(vitals, context, complaint)
+        if features is None:
+            return None, None
+            
+        # Make prediction
+        prediction = model.predict(features)[0]
+        probabilities = model.predict_proba(features)[0]
+        
+        # Map to color
+        color_map = {0: "GREEN", 1: "YELLOW", 2: "ORANGE", 3: "RED"}
+        ai_color = color_map.get(prediction, "GREEN")
+        
+        return ai_color, probabilities
+        
+    except Exception as e:
+        st.warning(f"AI prediction failed: {str(e)}")
+        return None, None
         
 def triage_with_ai(vitals: dict, context: dict, complaint: str, mode: str = "rules"):
     """
@@ -4263,4 +4293,6 @@ with tabs[5]:
             st.success(f"Top {len(ranked)} matches")
             for i, r in enumerate(ranked, 1):
                 # Safely ignore return values; we only want to render
-                _pick, _alt = enhanced_facility_card(r, rank=i)
+            with st.container():
+                st.markdown(f"**{i}. {r['name']}** - Score: {r['score']} - ETA: {r['eta_min']} min")
+                st.write(f"Distance: {r['km']} km • ICU beds: {r['ICU_open']}")
