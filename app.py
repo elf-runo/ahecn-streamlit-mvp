@@ -28,50 +28,68 @@ import urllib.parse
 from pathlib import Path
 import joblib
 
-# === AI TRIAGE MODEL - MEDICALLY ACCURATE ===
+# === AI TRIAGE MODEL - COMPATIBLE VERSION ===
 BASE_DIR = Path(__file__).parent
-MODEL_PATH = BASE_DIR / "models" / "triage_model_medically_accurate.pkl"  # ← CHANGED TO NEW MODEL
+MODEL_PATH = BASE_DIR / "models" / "triage_model_medically_accurate.pkl"
 FEATURE_INFO_PATH = BASE_DIR / "models" / "feature_info.pkl"
+FALLBACK_MODEL_PATH = BASE_DIR / "models" / "triage_model_rf_v1 (1).pkl"
 
 @st.cache_resource
 def load_triage_model():
-    """Load the medically accurate AI model"""
-    try:
-        if not MODEL_PATH.exists():
-            st.error(f"❌ Model not found at: {MODEL_PATH}")
-            return None
-
-        # Load the medically accurate model
-        model = joblib.load(MODEL_PATH)
-        
-        # Load feature info if available
-        feature_names = []
-        if FEATURE_INFO_PATH.exists():
-            feature_info = joblib.load(FEATURE_INFO_PATH)
-            feature_names = feature_info.get('feature_names', [])
-            st.success("✅ Medically Accurate AI Model Loaded Successfully!")
-        else:
-            # Fallback feature names
-            feature_names = [
+    """Load AI model with comprehensive fallback handling"""
+    
+    # First, check if we have the medically accurate model
+    if MODEL_PATH.exists():
+        try:
+            model = joblib.load(MODEL_PATH)
+            if FEATURE_INFO_PATH.exists():
+                feature_info = joblib.load(FEATURE_INFO_PATH)
+                st.session_state.triage_features = feature_info['feature_names']
+                st.success("✅ Medically Accurate AI Model Loaded Successfully!")
+            else:
+                # Fallback feature names
+                st.session_state.triage_features = [
+                    'age', 'rr', 'hr', 'sbp', 'spo2', 'temp_c', 'gcs', 'comorbid_count', 
+                    'on_oxygen', 'sex_M', 'avpu_ord', 'case_type_cardiac', 'case_type_maternal',
+                    'case_type_sepsis', 'case_type_stroke', 'case_type_trauma', 'case_type_other'
+                ]
+                st.success("✅ AI Model Loaded (using fallback features)")
+            return model
+        except Exception as e:
+            st.error(f"❌ Failed to load medical model: {e}")
+    
+    # Try fallback model
+    if FALLBACK_MODEL_PATH.exists():
+        try:
+            st.warning("🔄 Loading fallback model...")
+            model = joblib.load(FALLBACK_MODEL_PATH)
+            st.session_state.triage_features = [
                 'age', 'rr', 'hr', 'sbp', 'spo2', 'temp_c', 'gcs', 'comorbid_count', 
                 'on_oxygen', 'sex_M', 'avpu_ord', 'case_type_cardiac', 'case_type_maternal',
                 'case_type_sepsis', 'case_type_stroke', 'case_type_trauma', 'case_type_other'
             ]
-            st.success("✅ AI Model Loaded (using fallback features)")
-        
-        st.session_state.triage_features = feature_names
-        return model
-        
-    except Exception as e:
-        st.error(f"❌ Failed to load medical model: {e}")
-        return None
+            st.success("✅ Fallback AI Model Loaded Successfully!")
+            return model
+        except Exception as e:
+            st.error(f"❌ Failed to load fallback model: {e}")
+    
+    # No model available
+    st.error("""
+    ❌ No AI model could be loaded
+    
+    **Please check:**
+    - Model files exist in models/ folder
+    - All dependencies are installed
+    - Using compatible scikit-learn version (1.2.2)
+    """)
+    return None
+
 triage_model = load_triage_model()
 
-# Initialize session state for AI model
+# Initialize session state
 if "triage_model" not in st.session_state:
     st.session_state.triage_model = triage_model
 if "triage_features" not in st.session_state:
-    # Default feature names - will be overridden by feature_info.pkl if available
     st.session_state.triage_features = [
         'age', 'rr', 'hr', 'sbp', 'spo2', 'temp_c', 'gcs', 'comorbid_count', 
         'on_oxygen', 'sex_M', 'avpu_ord', 'case_type_cardiac', 'case_type_maternal',
