@@ -4292,7 +4292,9 @@ with tabs[5]:
         else:
             st.success(f"Top {len(ranked)} matches")
             for i, r in enumerate(ranked, 1):
-                # Safely ignore return values; we only want to render
-            with st.container():
-                st.markdown(f"**{i}. {r['name']}** - Score: {r['score']} - ETA: {r['eta_min']} min")
-                st.write(f"Distance: {r['km']} km • ICU beds: {r['ICU_open']}")
+                with st.container():
+                    st.markdown(f"**{i}. {r['name']}** - Score: {r['score']} - ETA: {r['eta_min']} min")
+                    st.write(f"Distance: {r['km']} km • ICU beds: {r['ICU_open']}")
+                    st.write(f"Specialties: {r['specialties']}")
+                    st.write(f"High-end equipment: {r['highend']}")
+                    st.markdown("---")
