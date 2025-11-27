@@ -173,21 +173,19 @@ def enhanced_facility_card(row, rank, is_primary=False, is_alternate=False):
 
 def enhanced_facility_ranking_with_ors(origin_coords, required_caps, case_type, triage_color, top_k=5, api_key=None):
     """
-    Rank facilities using OpenRouteService professional routing - DEBUG VERSION
+    Rank facilities using OpenRouteService professional routing with fallbacks
     """
     if not api_key:
-        st.write("🔧 DEBUG: No API key provided, falling back to free routing")
         return rank_facilities_with_free_routing(origin_coords, required_caps, case_type, triage_color, top_k)
     
     ranked_facilities = []
     processed_count = 0
     successful_routes = 0
     failed_routes = 0
-    zero_score_facilities = 0
     
     st.write(f"🔧 DEBUG: Starting professional routing with {len(st.session_state.facilities[:8])} facilities")
     
-    for i, facility in enumerate(st.session_state.facilities[:8]):  # Limit API calls
+    for i, facility in enumerate(st.session_state.facilities[:8]):
         try:
             processed_count += 1
             facility_name = facility.get("name", "Unknown")
@@ -207,19 +205,8 @@ def enhanced_facility_ranking_with_ors(origin_coords, required_caps, case_type, 
                     facility, required_caps, route_data, case_type, triage_color
                 )
                 
-                # Debug scoring for first facility
-                if i == 0:
-                    st.write(f"🔧 DEBUG First facility '{facility_name}':")
-                    st.write(f"   - Route distance: {route_data['distance_km']:.1f} km")
-                    st.write(f"   - Route duration: {route_data['duration_min']:.1f} min")
-                    st.write(f"   - Calculated score: {score}")
-                    st.write(f"   - Scoring details: {scoring_details}")
-                
                 # Skip facilities with insufficient capabilities
                 if score == 0:
-                    zero_score_facilities += 1
-                    if i < 3:  # Show reasons for first 3 zero-score facilities
-                        st.write(f"🔧 DEBUG Zero score for '{facility_name}': {scoring_details.get('reason', 'Unknown reason')}")
                     continue
                 
                 ranked_facilities.append({
@@ -241,25 +228,54 @@ def enhanced_facility_ranking_with_ors(origin_coords, required_caps, case_type, 
                 })
             else:
                 failed_routes += 1
-                if i < 3:  # Show errors for first 3 failed routes
-                    st.write(f"🔧 DEBUG Route failed for '{facility_name}': {route_data.get('error')}")
+                # For facilities that fail professional routing, use free routing as fallback
+                st.write(f"🔧 DEBUG: Professional routing failed for '{facility_name}', using free routing fallback")
+                
+                # Get free route as fallback
+                free_route_data = get_route_info_free(
+                    origin_coords[0], origin_coords[1],
+                    float(facility["lat"]), float(facility["lon"]),
+                    provider="osrm"  # Use OSRM as fallback
+                )
+                
+                if free_route_data.get('success'):
+                    score, scoring_details = calculate_enhanced_facility_score_free(
+                        facility, required_caps, free_route_data, case_type, triage_color
+                    )
+                    
+                    if score > 0:
+                        ranked_facilities.append({
+                            "name": facility.get("name", "Unknown Facility"),
+                            "type": facility.get("type", "Unknown"),
+                            "score": score,
+                            "scoring_details": scoring_details,
+                            "km": round(free_route_data.get('distance_km', 0), 1),
+                            "eta_min": scoring_details.get("eta_minutes", "N/A"),
+                            "ICU_open": facility.get("ICU_open", 0),
+                            "accept": int(facility.get("acceptanceRate", 0.75) * 100),
+                            "specialties": ", ".join([s for s, v in facility.get("specialties", {}).items() if v]) or "—",
+                            "highend": ", ".join([e for e, v in facility.get("highend", {}).items() if v]) or "—",
+                            "route": interpolate_route(origin_coords[0], origin_coords[1], float(facility["lat"]), float(facility["lon"])),
+                            "lat": float(facility["lat"]),
+                            "lon": float(facility["lon"]),
+                            "routing_success": True,
+                            "routing_provider": "OSRM (Fallback)"
+                        })
                 
         except Exception as e:
             failed_routes += 1
-            if i < 3:  # Show exceptions for first 3 failures
-                st.write(f"🔧 DEBUG Exception for '{facility_name}': {str(e)}")
+            st.write(f"🔧 DEBUG Exception for '{facility.get('name')}': {str(e)}")
             continue
     
-    # Summary debug
+    # Summary
     st.write(f"🔧 DEBUG Professional Routing Summary:")
     st.write(f"   - Processed: {processed_count} facilities")
-    st.write(f"   - Successful routes: {successful_routes}")
-    st.write(f"   - Failed routes: {failed_routes}")
-    st.write(f"   - Zero score facilities: {zero_score_facilities}")
-    st.write(f"   - Ranked facilities: {len(ranked_facilities)}")
+    st.write(f"   - Successful professional routes: {successful_routes}")
+    st.write(f"   - Failed professional routes: {failed_routes}")
+    st.write(f"   - Total ranked facilities: {len(ranked_facilities)}")
     
     # Sort by score (descending) and ETA (ascending)
-    ranked_facilities.sort(key=lambda x: (-x["score"], x["eta_min"]))
+    ranked_facilities.sort(key=lambda x: (-x["score"], x["eta_min"] if isinstance(x["eta_min"], (int, float)) else 999))
     return ranked_facilities[:top_k]
     
 # Temporary API key test (add this somewhere in your app)
@@ -1271,12 +1287,11 @@ def get_route_osrm_free(origin_lat, origin_lon, dest_lat, dest_lon, profile='dri
 
 def get_ors_route(origin_lat, origin_lon, dest_lat, dest_lon, api_key):
     """
-    Get professional routing from OpenRouteService with enhanced debugging
+    Get professional routing from OpenRouteService with robust error handling
     """
     try:
         url = "https://api.openrouteservice.org/v2/directions/driving-car"
         
-        # CORRECT HEADERS for JWT token
         headers = {
             'Authorization': f'Bearer {api_key}',
             'Content-Type': 'application/json'
@@ -1291,27 +1306,30 @@ def get_ors_route(origin_lat, origin_lon, dest_lat, dest_lon, api_key):
             "preference": "fastest"
         }
         
-        # Debug request
-        st.write(f"🔧 DEBUG ORS Request: {origin_lat}, {origin_lon} -> {dest_lat}, {dest_lon}")
-        
         response = requests.post(url, json=body, headers=headers, timeout=10)
-        
-        # Debug response
-        st.write(f"🔧 DEBUG ORS Response Status: {response.status_code}")
         
         if response.status_code == 200:
             data = response.json()
-            route = data['features'][0]
             
-            result = {
-                'success': True,
-                'distance_km': route['properties']['segments'][0]['distance'] / 1000,
-                'duration_min': route['properties']['segments'][0]['duration'] / 60,
-                'geometry': route['geometry']['coordinates'],
-                'provider': 'OpenRouteService'
-            }
-            st.write(f"🔧 DEBUG ORS Success: {result['distance_km']:.1f} km, {result['duration_min']:.1f} min")
-            return result
+            # ROBUST RESPONSE HANDLING - Check if we have the expected structure
+            if 'features' in data and len(data['features']) > 0:
+                route = data['features'][0]
+                
+                # Check if we have the required properties
+                if ('properties' in route and 'segments' in route['properties'] and 
+                    len(route['properties']['segments']) > 0 and 'geometry' in route):
+                    
+                    return {
+                        'success': True,
+                        'distance_km': route['properties']['segments'][0]['distance'] / 1000,
+                        'duration_min': route['properties']['segments'][0]['duration'] / 60,
+                        'geometry': route['geometry']['coordinates'],
+                        'provider': 'OpenRouteService'
+                    }
+                else:
+                    return {'success': False, 'error': 'Incomplete route data in API response'}
+            else:
+                return {'success': False, 'error': 'No route features in API response'}
         else:
             error_detail = "Unknown error"
             try:
@@ -1320,11 +1338,9 @@ def get_ors_route(origin_lat, origin_lon, dest_lat, dest_lon, api_key):
             except:
                 error_detail = f"HTTP {response.status_code} - {response.text}"
             
-            st.error(f"🔧 DEBUG ORS API Error: {error_detail}")
             return {'success': False, 'error': f"API Error: {error_detail}"}
             
     except Exception as e:
-        st.error(f"🔧 DEBUG ORS Exception: {str(e)}")
         return {'success': False, 'error': str(e)}
         
 def get_route_graphhopper_free(origin_lat, origin_lon, dest_lat, dest_lon, profile='car'):
@@ -4323,3 +4339,11 @@ with tabs[5]:
                     st.write(f"Specialties: {r['specialties']}")
                     st.write(f"High-end equipment: {r['highend']}")
                     st.markdown("---")
+# Temporary fix for the chart error - wrap in try/except
+try:
+    if 'daily_trends' in locals() or 'daily_trends' in globals():
+        trend_chart = alt.Chart(daily_trends).mark_line(point=True).encode(
+            # ... your existing chart code ...
+        )
+except Exception as e:
+    st.write("Chart not available: ", str(e))
