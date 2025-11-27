@@ -2404,8 +2404,6 @@ with tabs[0]:
 
             # Get ranked facilities with free routing
             with st.spinner("Calculating optimal routes with free routing services..."):
-    
-                # TEMPORARY: Force free routing to test (bypass professional routing)
                 ranked_facilities = rank_facilities_with_free_routing(
                     origin_coords=(p_lat, p_lon),
                     required_caps=need_caps,
@@ -2415,8 +2413,30 @@ with tabs[0]:
                     provider=current_provider
                 )
     
-                # Add debug info
-                st.write(f"🔧 DEBUG: Found {len(ranked_facilities) if ranked_facilities else 0} facilities with free routing")
+                # DEBUG: Detailed diagnostic information
+                st.write(f"🔧 Number of facilities in database: {len(st.session_state.facilities)}")
+                st.write(f"🔧 Required capabilities: {need_caps}")
+                st.write(f"🔧 Found {len(ranked_facilities) if ranked_facilities else 0} ranked facilities")
+    
+                if ranked_facilities:
+                    st.write("🏆 **Top Facilities Found:**")
+                    for i, facility in enumerate(ranked_facilities[:3]):
+                        st.write(f"   {i+1}. {facility['name']} - Score: {facility['score']}")
+                else:
+                    st.error("❌ **DEBUG: No facilities passed the scoring filter**")
+        
+                    # Additional debug: Check first few facilities and their capabilities
+                    if st.session_state.facilities:
+                        st.write("🔍 **Sample facility capabilities check:**")
+                        for i, facility in enumerate(st.session_state.facilities[:2]):
+                            cap_match = []
+                            for cap in need_caps:
+                                has_cap = facility["caps"].get(cap, 0)
+                                cap_match.append(f"{cap}: {has_cap}")
+                            st.write(f"   Facility '{facility.get('name')}': {', '.join(cap_match)}")
+    
+                            # Add debug info
+                            st.write(f"🔧 DEBUG: Found {len(ranked_facilities) if ranked_facilities else 0} facilities with free routing")
             
             # This part goes AFTER the with block (no indentation)
             if not ranked_facilities:
