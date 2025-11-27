@@ -14,8 +14,6 @@ import urllib.parse
 
 # === AI TRIAGE MODEL - TEMPORARILY DISABLED ===
 BASE_DIR = Path(__file__).parent
-MODEL_PATH = BASE_DIR / "models" / "triage_model_medically_accurate.pkl"
-FEATURE_INFO_PATH = BASE_DIR / "models" / "feature_info.pkl"
 
 # Simply set the model to None - no loading attempts
 triage_model = None
@@ -30,9 +28,9 @@ if "triage_features" not in st.session_state:
         'case_type_sepsis', 'case_type_stroke', 'case_type_trauma', 'case_type_other'
     ]
 
-# Just show a simple status
-st.sidebar.info("🤖 AI Features: Disabled")
-
+# Show status in sidebar
+st.sidebar.info("🤖 AI Features: Temporarily Disabled")
+    
 # === PAGE CONFIG MUST BE FIRST STREAMLIT COMMAND ===
 st.set_page_config(
     page_title="AHECN MVP v1.9",
@@ -809,7 +807,7 @@ def triage_with_ai(vitals: dict, context: dict, complaint: str, mode: str = "rul
     """
     AI triage disabled - always returns guideline-based triage
     """
-    # Always use rules-based triage
+    # Always use rules-based triage regardless of mode
     rules_color, rules_details = triage_decision(vitals, context)
     
     return rules_color, {
@@ -818,7 +816,7 @@ def triage_with_ai(vitals: dict, context: dict, complaint: str, mode: str = "rul
         "rules_details": rules_details,
         "ai_color": None,
         "probs": None,
-        "note": "AI features temporarily disabled"
+        "note": "AI features temporarily disabled for deployment stability"
     }
 # === UI HELPERS ===
 def triage_pill(color:str, overridden=False):
@@ -2044,12 +2042,12 @@ with tabs[0]:
     # Triage decision banner
     render_triage_banner(hr, rr, sbp, temp, spo2, avpu, complaint)
 
-    # Show only guideline option
-    st.info("🎯 Triage Mode: Guidelines Only (AI features temporarily disabled)")
+    # Show only guideline option (hidden from user)
     st.session_state.triage_mode = "rules"
 
-    # Hidden field to maintain compatibility
-    mode_label = "Guideline only"
+    # Display info to user
+    st.info("🎯 Triage Mode: Clinical Guidelines (AI features temporarily disabled)")
+    st.caption("Using established medical scoring systems: NEWS2, MEOWS, PEWS, qSOFA")
 
     # === CLINICIAN OVERRIDE CONTROL ===
     st.subheader("Clinician Triage Override")
@@ -3938,60 +3936,6 @@ with tabs[4]:
         except Exception:
             pass
     
-    # ======== FIXED DEPLOYMENT DEBUG SECTION ========
-    st.markdown("---")
-    st.markdown("### 🔧 Deployment Environment Debug")
-    
-    with st.expander("View Package Versions & Environment", expanded=True):
-        import sklearn
-        import sys
-        
-        st.write("**Package Versions:**")
-        # Use a safer approach without pkg_resources
-        packages_info = [
-            ('streamlit', st.__version__),
-            ('scikit-learn', sklearn.__version__),
-            ('pandas', pd.__version__),
-            ('numpy', np.__version__),
-        ]
-        
-        # Try to get other package versions safely
-        try:
-            import joblib
-            packages_info.append(('joblib', joblib.__version__))
-        except:
-            packages_info.append(('joblib', 'NOT FOUND'))
-            
-        try:
-            import altair
-            packages_info.append(('altair', altair.__version__))
-        except:
-            packages_info.append(('altair', 'NOT FOUND'))
-            
-        try:
-            import pydeck
-            packages_info.append(('pydeck', pydeck.__version__))
-        except:
-            packages_info.append(('pydeck', 'NOT FOUND'))
-        
-        for pkg, version in packages_info:
-            st.write(f"- {pkg}: {version}")
-        
-        st.write("**System Info:**")
-        st.write(f"- Python: {sys.version.split()[0]}")
-        st.write(f"- Model path: {MODEL_PATH}")
-        st.write(f"- Model exists: {MODEL_PATH.exists()}")
-        if MODEL_PATH.exists():
-            st.write(f"- Model size: {MODEL_PATH.stat().st_size} bytes")
-        
-        # Test model loading
-        st.write("**Model Loading Test:**")
-        try:
-            model = joblib.load(MODEL_PATH)
-            st.success("✅ Model loads successfully!")
-        except Exception as e:
-            st.error(f"❌ Model load fails: {str(e)[:200]}")
-
     # ---------- Rides providers (for GREEN/YELLOW demo) ----------
     st.markdown("---")
     st.markdown("### 🚕 Healthcare Rides Registry (Demo)")
