@@ -180,9 +180,14 @@ def enhanced_facility_ranking_with_ors(origin_coords, required_caps, case_type, 
         return rank_facilities_with_free_routing(origin_coords, required_caps, case_type, triage_color, top_k)
     
     ranked_facilities = []
+    successful_routes = 0
+    failed_routes = 0
     
     for facility in st.session_state.facilities[:8]:  # Limit API calls
         try:
+            # DEBUG: Print facility being processed
+            print(f"Processing facility: {facility.get('name', 'Unknown')}")
+            
             # Get professional route
             route_data = get_ors_route(
                 origin_coords[0], origin_coords[1],
@@ -191,6 +196,7 @@ def enhanced_facility_ranking_with_ors(origin_coords, required_caps, case_type, 
             )
             
             if route_data['success']:
+                successful_routes += 1
                 # Use existing scoring with real routing data
                 score, scoring_details = calculate_enhanced_facility_score_free(
                     facility, required_caps, route_data, case_type, triage_color
@@ -217,13 +223,22 @@ def enhanced_facility_ranking_with_ors(origin_coords, required_caps, case_type, 
                     "routing_success": True,
                     "routing_provider": "OpenRouteService Professional"
                 })
+            else:
+                failed_routes += 1
+                print(f"Route failed for {facility.get('name')}: {route_data.get('error')}")
                 
         except Exception as e:
+            failed_routes += 1
+            print(f"Exception for {facility.get('name')}: {str(e)}")
             continue
+    
+    # DEBUG: Print routing statistics
+    print(f"Routing complete: {successful_routes} successful, {failed_routes} failed")
     
     # Sort by score (descending) and ETA (ascending)
     ranked_facilities.sort(key=lambda x: (-x["score"], x["eta_min"]))
     return ranked_facilities[:top_k]
+    
     
 # === LOAD ICD CATALOG FROM CSV ===
 def load_icd_catalogue():
@@ -2392,6 +2407,8 @@ with tabs[0]:
             
                 # Use professional ORS routing if available, otherwise fallback
                 ORS_API_KEY = os.getenv('ORS_API_KEY', 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjAzZmM5ZTViYTI5ZjQzNGM5OTY0ODU5ZTJlZThlYjNjIiwiaCI6Im11cm11cjY0In0=')
+                # DEBUG: Check if API key is being detected
+                st.write(f"🔑 API Key detected: {bool(ORS_API_KEY and ORS_API_KEY != 'your_free_api_key_here')}")
 
                 if ORS_API_KEY and ORS_API_KEY != "your_free_api_key_here":
                     ranked_facilities = enhanced_facility_ranking_with_ors(
