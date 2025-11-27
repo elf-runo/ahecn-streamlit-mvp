@@ -173,16 +173,25 @@ def enhanced_facility_card(row, rank, is_primary=False, is_alternate=False):
 
 def enhanced_facility_ranking_with_ors(origin_coords, required_caps, case_type, triage_color, top_k=5, api_key=None):
     """
-    Rank facilities using OpenRouteService professional routing
+    Rank facilities using OpenRouteService professional routing - DEBUG VERSION
     """
     if not api_key:
-        # Fallback to existing free routing
+        st.write("🔧 DEBUG: No API key provided, falling back to free routing")
         return rank_facilities_with_free_routing(origin_coords, required_caps, case_type, triage_color, top_k)
     
     ranked_facilities = []
+    processed_count = 0
+    successful_routes = 0
+    failed_routes = 0
+    zero_score_facilities = 0
     
-    for facility in st.session_state.facilities[:8]:  # Limit API calls
+    st.write(f"🔧 DEBUG: Starting professional routing with {len(st.session_state.facilities[:8])} facilities")
+    
+    for i, facility in enumerate(st.session_state.facilities[:8]):  # Limit API calls
         try:
+            processed_count += 1
+            facility_name = facility.get("name", "Unknown")
+            
             # Get professional route
             route_data = get_ors_route(
                 origin_coords[0], origin_coords[1],
@@ -191,13 +200,26 @@ def enhanced_facility_ranking_with_ors(origin_coords, required_caps, case_type, 
             )
             
             if route_data['success']:
+                successful_routes += 1
+                
                 # Use existing scoring with real routing data
                 score, scoring_details = calculate_enhanced_facility_score_free(
                     facility, required_caps, route_data, case_type, triage_color
                 )
                 
+                # Debug scoring for first facility
+                if i == 0:
+                    st.write(f"🔧 DEBUG First facility '{facility_name}':")
+                    st.write(f"   - Route distance: {route_data['distance_km']:.1f} km")
+                    st.write(f"   - Route duration: {route_data['duration_min']:.1f} min")
+                    st.write(f"   - Calculated score: {score}")
+                    st.write(f"   - Scoring details: {scoring_details}")
+                
                 # Skip facilities with insufficient capabilities
                 if score == 0:
+                    zero_score_facilities += 1
+                    if i < 3:  # Show reasons for first 3 zero-score facilities
+                        st.write(f"🔧 DEBUG Zero score for '{facility_name}': {scoring_details.get('reason', 'Unknown reason')}")
                     continue
                 
                 ranked_facilities.append({
@@ -211,26 +233,52 @@ def enhanced_facility_ranking_with_ors(origin_coords, required_caps, case_type, 
                     "accept": int(facility.get("acceptanceRate", 0.75) * 100),
                     "specialties": ", ".join([s for s, v in facility.get("specialties", {}).items() if v]) or "—",
                     "highend": ", ".join([e for e, v in facility.get("highend", {}).items() if v]) or "—",
-                    "route": [[point[1], point[0]] for point in route_data['geometry']],  # Convert to [lat, lon]
+                    "route": [[point[1], point[0]] for point in route_data['geometry']],
                     "lat": float(facility["lat"]),
                     "lon": float(facility["lon"]),
                     "routing_success": True,
                     "routing_provider": "OpenRouteService Professional"
                 })
+            else:
+                failed_routes += 1
+                if i < 3:  # Show errors for first 3 failed routes
+                    st.write(f"🔧 DEBUG Route failed for '{facility_name}': {route_data.get('error')}")
                 
         except Exception as e:
+            failed_routes += 1
+            if i < 3:  # Show exceptions for first 3 failures
+                st.write(f"🔧 DEBUG Exception for '{facility_name}': {str(e)}")
             continue
+    
+    # Summary debug
+    st.write(f"🔧 DEBUG Professional Routing Summary:")
+    st.write(f"   - Processed: {processed_count} facilities")
+    st.write(f"   - Successful routes: {successful_routes}")
+    st.write(f"   - Failed routes: {failed_routes}")
+    st.write(f"   - Zero score facilities: {zero_score_facilities}")
+    st.write(f"   - Ranked facilities: {len(ranked_facilities)}")
     
     # Sort by score (descending) and ETA (ascending)
     ranked_facilities.sort(key=lambda x: (-x["score"], x["eta_min"]))
     return ranked_facilities[:top_k]
     
-# Temporary API key verification (add this anywhere to test)
-ORS_API_KEY = os.getenv('ORS_API_KEY', 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjAzZmM5ZTViYTI5ZjQzNGM5OTY0ODU5ZTJlZThlYjNjIiwiaCI6Im11cm11cjY0In0=')
-if ORS_API_KEY and ORS_API_KEY != "your_free_api_key_here":
-    st.sidebar.success("✅ Professional Routing: ENABLED")
-else:
-    st.sidebar.warning("🔑 Professional Routing: DISABLED - Set API Key")    
+# Temporary API key test (add this somewhere in your app)
+if st.sidebar.button("🔑 Test OpenRouteService API Key"):
+    ORS_API_KEY = os.getenv('ORS_API_KEY', 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjAzZmM5ZTViYTI5ZjQzNGM5OTY0ODU5ZTJlZThlYjNjIiwiaCI6Im11cm11cjY0In0=')
+    
+    if ORS_API_KEY and ORS_API_KEY != "your_free_api_key_here":
+        test_result = get_ors_route(
+            12.9716, 77.5946,  # Bangalore coordinates
+            13.0827, 80.2707,  # Chennai coordinates  
+            ORS_API_KEY
+        )
+        if test_result['success']:
+            st.sidebar.success(f"✅ API Key Valid! Distance: {test_result['distance_km']:.1f} km")
+        else:
+            st.sidebar.error(f"❌ API Key Invalid: {test_result.get('error')}")
+    else:
+        st.sidebar.warning("🔑 No valid API key found")
+        
 # === LOAD ICD CATALOG FROM CSV ===
 def load_icd_catalogue():
     """Load ICD catalog from CSV file with robust error handling."""
@@ -1223,7 +1271,7 @@ def get_route_osrm_free(origin_lat, origin_lon, dest_lat, dest_lon, profile='dri
 
 def get_ors_route(origin_lat, origin_lon, dest_lat, dest_lon, api_key):
     """
-    Get professional routing from OpenRouteService with JWT token authentication
+    Get professional routing from OpenRouteService with enhanced debugging
     """
     try:
         url = "https://api.openrouteservice.org/v2/directions/driving-car"
@@ -1243,24 +1291,40 @@ def get_ors_route(origin_lat, origin_lon, dest_lat, dest_lon, api_key):
             "preference": "fastest"
         }
         
+        # Debug request
+        st.write(f"🔧 DEBUG ORS Request: {origin_lat}, {origin_lon} -> {dest_lat}, {dest_lon}")
+        
         response = requests.post(url, json=body, headers=headers, timeout=10)
+        
+        # Debug response
+        st.write(f"🔧 DEBUG ORS Response Status: {response.status_code}")
         
         if response.status_code == 200:
             data = response.json()
             route = data['features'][0]
             
-            return {
+            result = {
                 'success': True,
                 'distance_km': route['properties']['segments'][0]['distance'] / 1000,
                 'duration_min': route['properties']['segments'][0]['duration'] / 60,
                 'geometry': route['geometry']['coordinates'],
                 'provider': 'OpenRouteService'
             }
+            st.write(f"🔧 DEBUG ORS Success: {result['distance_km']:.1f} km, {result['duration_min']:.1f} min")
+            return result
         else:
-            error_detail = response.json().get('error', {}).get('message', f"HTTP {response.status_code}")
+            error_detail = "Unknown error"
+            try:
+                error_response = response.json()
+                error_detail = error_response.get('error', {}).get('message', f"HTTP {response.status_code}")
+            except:
+                error_detail = f"HTTP {response.status_code} - {response.text}"
+            
+            st.error(f"🔧 DEBUG ORS API Error: {error_detail}")
             return {'success': False, 'error': f"API Error: {error_detail}"}
             
     except Exception as e:
+        st.error(f"🔧 DEBUG ORS Exception: {str(e)}")
         return {'success': False, 'error': str(e)}
         
 def get_route_graphhopper_free(origin_lat, origin_lon, dest_lat, dest_lon, profile='car'):
@@ -2393,23 +2457,23 @@ with tabs[0]:
             if st.session_state.triage_override_active and st.session_state.triage_override_color:
                 triage_color = st.session_state.triage_override_color
 
-            # Get ranked facilities with professional routing if available
-            with st.spinner("Calculating optimal routes with professional routing..."):
-                # Use professional ORS routing if available, otherwise fallback to free routing
+            # Get ranked facilities - TEST BOTH METHODS
+            with st.spinner("Calculating optimal routes..."):
                 ORS_API_KEY = os.getenv('ORS_API_KEY', 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjAzZmM5ZTViYTI5ZjQzNGM5OTY0ODU5ZTJlZThlYjNjIiwiaCI6Im11cm11cjY0In0=')
     
-                if ORS_API_KEY and ORS_API_KEY != "your_free_api_key_here":
-                    ranked_facilities = enhanced_facility_ranking_with_ors(
-                        origin_coords=(p_lat, p_lon),
-                        required_caps=need_caps,
-                        case_type=complaint,
-                        triage_color=triage_color,
-                        top_k=8,
-                        api_key=ORS_API_KEY
-                    )
-                    routing_provider = "OpenRouteService (Professional)"
-                else:
-                    ranked_facilities = rank_facilities_with_free_routing(
+                # Test professional routing
+                st.markdown("#### 🔧 Testing Professional Routing")
+                professional_facilities = enhanced_facility_ranking_with_ors(
+                    origin_coords=(p_lat, p_lon),
+                    required_caps=need_caps,
+                    case_type=complaint,
+                    triage_color=triage_color,
+                    top_k=8,
+                    api_key=ORS_API_KEY
+                )
+                # Test free routing
+                st.markdown("#### 🔧 Testing Free Routing")
+                free_facilities = rank_facilities_with_free_routing(
                         origin_coords=(p_lat, p_lon),
                         required_caps=need_caps,
                         case_type=complaint,
@@ -2417,12 +2481,26 @@ with tabs[0]:
                         top_k=8,
                         provider=current_provider
                     )
+                # Compare results
+                st.markdown("#### 🔧 Comparison Results")
+                st.write(f"Professional routing found: {len(professional_facilities) if professional_facilities else 0} facilities") 
+                st.write(f"Free routing found: {len(free_facilities) if free_facilities else 0} facilities")
+                
+                # Use professional if it found facilities, otherwise fallback to free
+                if professional_facilities:
+                    ranked_facilities = professional_facilities
+                    routing_provider = "OpenRouteService (Professional)"
+                    st.success("✅ Using professional routing results")
+
+                else:
+                    ranked_facilities = free_facilities
                     routing_provider = {
                         "osrm": "OSRM (Free Open Source)",
                         "graphhopper": "GraphHopper (Free Tier)", 
                         "openrouteservice": "OpenRouteService (Free)"
                     }[current_provider]
-
+                    st.warning("⚠️ Professional routing found no facilities, using free routing fallback")
+                    
             # Display results
             if not ranked_facilities:
                 st.warning("No suitable facilities found. Try relaxing capability requirements.")
