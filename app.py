@@ -3205,11 +3205,11 @@ Notes: {emt_notes}
                     if route_data['success']:
                         # Display professional route info
                         col1, col2, col3 = st.columns(3)
-                       with col1:
+                        with col1:
                             st.metric("🏁 Distance", f"{route_data['distance_km']:.1f} km")
-                       with col2:
+                        with col2:
                             st.metric("⏱️ Estimated Time", f"{route_data['duration_min']:.1f} min")
-                       with col3:
+                        with col3:
                             st.metric("🛣️ Routing", "OpenRouteService")
                 
                         # Enhanced map visualization with route
