@@ -180,14 +180,9 @@ def enhanced_facility_ranking_with_ors(origin_coords, required_caps, case_type, 
         return rank_facilities_with_free_routing(origin_coords, required_caps, case_type, triage_color, top_k)
     
     ranked_facilities = []
-    successful_routes = 0
-    failed_routes = 0
     
     for facility in st.session_state.facilities[:8]:  # Limit API calls
         try:
-            # DEBUG: Print facility being processed
-            print(f"Processing facility: {facility.get('name', 'Unknown')}")
-            
             # Get professional route
             route_data = get_ors_route(
                 origin_coords[0], origin_coords[1],
@@ -196,7 +191,6 @@ def enhanced_facility_ranking_with_ors(origin_coords, required_caps, case_type, 
             )
             
             if route_data['success']:
-                successful_routes += 1
                 # Use existing scoring with real routing data
                 score, scoring_details = calculate_enhanced_facility_score_free(
                     facility, required_caps, route_data, case_type, triage_color
@@ -223,23 +217,20 @@ def enhanced_facility_ranking_with_ors(origin_coords, required_caps, case_type, 
                     "routing_success": True,
                     "routing_provider": "OpenRouteService Professional"
                 })
-            else:
-                failed_routes += 1
-                print(f"Route failed for {facility.get('name')}: {route_data.get('error')}")
                 
         except Exception as e:
-            failed_routes += 1
-            print(f"Exception for {facility.get('name')}: {str(e)}")
             continue
-    
-    # DEBUG: Print routing statistics
-    print(f"Routing complete: {successful_routes} successful, {failed_routes} failed")
     
     # Sort by score (descending) and ETA (ascending)
     ranked_facilities.sort(key=lambda x: (-x["score"], x["eta_min"]))
     return ranked_facilities[:top_k]
     
-    
+# Temporary API key verification (add this anywhere to test)
+ORS_API_KEY = os.getenv('ORS_API_KEY', 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjAzZmM5ZTViYTI5ZjQzNGM5OTY0ODU5ZTJlZThlYjNjIiwiaCI6Im11cm11cjY0In0=')
+if ORS_API_KEY and ORS_API_KEY != "your_free_api_key_here":
+    st.sidebar.success("✅ Professional Routing: ENABLED")
+else:
+    st.sidebar.warning("🔑 Professional Routing: DISABLED - Set API Key")    
 # === LOAD ICD CATALOG FROM CSV ===
 def load_icd_catalogue():
     """Load ICD catalog from CSV file with robust error handling."""
@@ -1239,7 +1230,7 @@ def get_ors_route(origin_lat, origin_lon, dest_lat, dest_lon, api_key):
         
         # CORRECT HEADERS for JWT token
         headers = {
-            'Authorization': f'Bearer {api_key}',  # Add 'Bearer ' prefix for JWT
+            'Authorization': f'Bearer {api_key}',
             'Content-Type': 'application/json'
         }
         
@@ -1271,7 +1262,7 @@ def get_ors_route(origin_lat, origin_lon, dest_lat, dest_lon, api_key):
             
     except Exception as e:
         return {'success': False, 'error': str(e)}
-
+        
 def get_route_graphhopper_free(origin_lat, origin_lon, dest_lat, dest_lon, profile='car'):
     """
     Get route information from GraphHopper (free tier available)
@@ -2402,55 +2393,45 @@ with tabs[0]:
             if st.session_state.triage_override_active and st.session_state.triage_override_color:
                 triage_color = st.session_state.triage_override_color
 
-            # Get ranked facilities with free routing - WITH DEBUG INFO
-            with st.spinner("Calculating optimal routes with free routing services..."):
-                ranked_facilities = rank_facilities_with_free_routing(
-                    origin_coords=(p_lat, p_lon),
-                    required_caps=need_caps,
-                    case_type=complaint,
-                    triage_color=triage_color,
-                    top_k=8,
-                    provider=current_provider
-                 )
-            
-                # DEBUG: Detailed diagnostic information
-                st.write(f"🔧 Number of facilities in database: {len(st.session_state.facilities)}")
-                st.write(f"🔧 Required capabilities: {need_caps}")
-                st.write(f"🔧 Found {len(ranked_facilities) if ranked_facilities else 0} ranked facilities")
-            
-                if ranked_facilities:
-                    st.write("🏆 **Top Facilities Found:**")
-                    for i, facility in enumerate(ranked_facilities[:3]):
-                        st.write(f"   {i+1}. {facility['name']} - Score: {facility['score']}")
+            # Get ranked facilities with professional routing if available
+            with st.spinner("Calculating optimal routes with professional routing..."):
+                # Use professional ORS routing if available, otherwise fallback to free routing
+                ORS_API_KEY = os.getenv('ORS_API_KEY', 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjAzZmM5ZTViYTI5ZjQzNGM5OTY0ODU5ZTJlZThlYjNjIiwiaCI6Im11cm11cjY0In0=')
+    
+                if ORS_API_KEY and ORS_API_KEY != "your_free_api_key_here":
+                    ranked_facilities = enhanced_facility_ranking_with_ors(
+                        origin_coords=(p_lat, p_lon),
+                        required_caps=need_caps,
+                        case_type=complaint,
+                        triage_color=triage_color,
+                        top_k=8,
+                        api_key=ORS_API_KEY
+                    )
+                    routing_provider = "OpenRouteService (Professional)"
                 else:
-                    st.error("❌ **DEBUG: No facilities passed the scoring filter**")
-                
-                    # Additional debug: Check first few facilities and their capabilities
-                    if st.session_state.facilities:
-                        st.write("🔍 **Sample facility capabilities check:**")
-                        for i, facility in enumerate(st.session_state.facilities[:2]):
-                            cap_match = []
-                            for cap in need_caps:
-                                has_cap = facility["caps"].get(cap, 0)
-                                cap_match.append(f"{cap}: {has_cap}")
-                            st.write(f"   Facility '{facility.get('name')}': {', '.join(cap_match)}")
+                    ranked_facilities = rank_facilities_with_free_routing(
+                        origin_coords=(p_lat, p_lon),
+                        required_caps=need_caps,
+                        case_type=complaint,
+                        triage_color=triage_color,
+                        top_k=8,
+                        provider=current_provider
+                    )
+                    routing_provider = {
+                        "osrm": "OSRM (Free Open Source)",
+                        "graphhopper": "GraphHopper (Free Tier)", 
+                        "openrouteservice": "OpenRouteService (Free)"
+                    }[current_provider]
 
-            # This part goes AFTER the with block (no indentation)
+            # Display results
             if not ranked_facilities:
                 st.warning("No suitable facilities found. Try relaxing capability requirements.")
             else:
-                # Display routing provider info - FIXED: No ORS_API_KEY reference
-                provider_name = {
-                    "osrm": "OSRM (Free Open Source)",
-                    "graphhopper": "GraphHopper (Free Tier)", 
-                    "openrouteservice": "OpenRouteService (Free)"
-                }[current_provider]
-            
-                st.success(f"✓ Routing completed using {provider_name}")
-            
+                st.success(f"✓ Routing completed using {routing_provider}")
+    
                 # Display ranked facilities
                 st.markdown(f"#### 🏆 Top {len(ranked_facilities)} Matched Facilities")
-            
+    
                 # Show traffic simulation status
                 if enable_traffic:
                     current_hour = datetime.now().hour
@@ -2458,9 +2439,9 @@ with tabs[0]:
                         st.info("🚗 **Peak hours detected**: Estimated travel times include traffic delays")
                     else:
                         st.info("🛣️ **Off-peak hours**: Normal travel conditions")
-            
+    
                 st.info(f"**Case Type:** {complaint} | **Triage:** {triage_color} | **Required Capabilities:** {', '.join(need_caps) if need_caps else 'None'}")
-            
+    
                 # Reset selection state
                 st.session_state.matched_primary = None
                 st.session_state.matched_alts = set()
@@ -3196,7 +3177,7 @@ Notes: {emt_notes}
         # === PROFESSIONAL ROUTE VISUALIZATION ===
         st.markdown("### 🗺️ Professional Route Optimization")
 
-        # Your ORS API Key - Using environment variable with fallback
+        # Your ORS API Key
         ORS_API_KEY = os.getenv('ORS_API_KEY', 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjAzZmM5ZTViYTI5ZjQzNGM5OTY0ODU5ZTJlZThlYjNjIiwiaCI6Im11cm11cjY0In0=')
 
         if st.session_state.get('active_case'):
@@ -3208,11 +3189,11 @@ Notes: {emt_notes}
             # Find facility coordinates
             facility = next((f for f in st.session_state.facilities if f['name'] == r['dest']), None)
     
-            # Use professional routing if we have a valid API key
-            if ORS_API_KEY and ORS_API_KEY != "your_free_api_key_here":
-                if facility:
-                    facility_coords = (float(facility['lat']), float(facility['lon']))
-            
+            if facility:
+                facility_coords = (float(facility['lat']), float(facility['lon']))
+        
+                # Use professional routing if available
+                if ORS_API_KEY and ORS_API_KEY != "your_free_api_key_here":
                     # Get professional route
                     with st.spinner("🔄 Calculating optimal route with OpenRouteService..."):
                         route_data = get_ors_route(
@@ -3224,41 +3205,60 @@ Notes: {emt_notes}
                     if route_data['success']:
                         # Display professional route info
                         col1, col2, col3 = st.columns(3)
-                        with col1:
+                       with col1:
                             st.metric("🏁 Distance", f"{route_data['distance_km']:.1f} km")
-                        with col2:  
+                       with col2:
                             st.metric("⏱️ Estimated Time", f"{route_data['duration_min']:.1f} min")
-                        with col3:
+                       with col3:
                             st.metric("🛣️ Routing", "OpenRouteService")
                 
-                        # Simple map visualization
-                        map_data = pd.DataFrame({
+                        # Enhanced map visualization with route
+                        st.markdown("##### 🗺️ Interactive Route Map")
+                
+                        # Create a DataFrame with the route coordinates
+                        route_points = [[point[1], point[0]] for point in route_data['geometry']]  # Convert to [lat, lon]
+                        route_df = pd.DataFrame(route_points, columns=['lat', 'lon'])
+                
+                        # Add start and end points
+                        points_df = pd.DataFrame({
                             'lat': [patient_coords[0], facility_coords[0]],
-                            'lon': [patient_coords[1], facility_coords[1]]
+                            'lon': [patient_coords[1], facility_coords[1]],
+                            'type': ['Patient', 'Hospital']
                         })
-                        st.map(map_data)
+                
+                        # Display the map
+                        st.map(route_df)
                 
                         # Route details
                         with st.expander("📋 Professional Route Details"):
                             st.write(f"**Patient Location:** {patient_coords[0]:.4f}, {patient_coords[1]:.4f}")
                             st.write(f"**Destination:** {r['dest']} - {facility_coords[0]:.4f}, {facility_coords[1]:.4f}")
                             st.write(f"**Route Optimization:** Fastest driving route with real road network")
-                            st.write(f"**Traffic Consideration:** Yes")
+                            st.write(f"**Traffic Consideration:** Real-time road conditions")
                             st.write(f"**Route Points:** {len(route_data['geometry'])} coordinates")
+                            st.write(f"**Provider:** OpenRouteService Professional API")
                     
                     else:
                         st.error(f"❌ Professional routing failed: {route_data.get('error', 'Unknown error')}")
-                        # Fallback to existing method
-                        st.info("🔄 Using fallback routing...")
-                        # Your existing fallback code here
+                        # Fallback to basic visualization
+                        st.info("🔄 Using basic route visualization...")
+                        map_data = pd.DataFrame({
+                            'lat': [patient_coords[0], facility_coords[0]],
+                            'lon': [patient_coords[1], facility_coords[1]]
+                        })
+                        st.map(map_data)
                 else:
-                    st.warning("Facility not found for route calculation")
+                    # Basic route visualization when no professional key
+                    st.info("🗺️ Basic route visualization - Set OpenRouteService API key for professional routing")
+                    map_data = pd.DataFrame({
+                        'lat': [patient_coords[0], facility_coords[0]],
+                        'lon': [patient_coords[1], facility_coords[1]]
+                    })
+                    st.map(map_data)
             else:
-                st.info("🗺️ Basic route visualization - Set OpenRouteService API key for professional routing")
-                # Your existing basic map code here
+                st.warning("Facility coordinates not found for route visualization")
         else:
             st.info("👆 Select an active case to view route optimization")
-
 # ======== ENHANCED GOVERNMENT ANALYTICS DASHBOARD ========
 with tabs[3]:
     st.subheader("🏛️ Enhanced Government Analytics Dashboard")
