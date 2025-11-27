@@ -2390,10 +2390,11 @@ with tabs[0]:
 
             # Get ranked facilities with free routing
             with st.spinner("Calculating optimal routes with free routing services..."):
+                
                 # Use professional ORS routing if available, otherwise fallback
                 ORS_API_KEY = os.getenv('ORS_API_KEY', 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjAzZmM5ZTViYTI5ZjQzNGM5OTY0ODU5ZTJlZThlYjNjIiwiaCI6Im11cm11cjY0In0=')
 
-                if ORS_API_KEY = os.getenv('ORS_API_KEY', 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjAzZmM5ZTViYTI5ZjQzNGM5OTY0ODU5ZTJlZThlYjNjIiwiaCI6Im11cm11cjY0In0=')
+                if ORS_API_KEY and ORS_API_KEY != "your_free_api_key_here":
                     ranked_facilities = enhanced_facility_ranking_with_ors(
                         origin_coords=(p_lat, p_lon),
                         required_caps=need_caps,
@@ -3171,7 +3172,7 @@ Notes: {emt_notes}
         # === PROFESSIONAL ROUTE VISUALIZATION ===
         st.markdown("### 🗺️ Professional Route Optimization")
 
-        # Your ORS API Key (replace with your actual key or get from user input)
+        # Your ORS API Key - Using environment variable with fallback
         ORS_API_KEY = os.getenv('ORS_API_KEY', 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjAzZmM5ZTViYTI5ZjQzNGM5OTY0ODU5ZTJlZThlYjNjIiwiaCI6Im11cm11cjY0In0=')
 
         if st.session_state.get('active_case'):
@@ -3183,53 +3184,53 @@ Notes: {emt_notes}
             # Find facility coordinates
             facility = next((f for f in st.session_state.facilities if f['name'] == r['dest']), None)
     
-            if facility and ORS_API_KEY != "your_free_api_key_here":
-                facility_coords = (facility['lat'], facility['lon'])
-        
-                # Get professional route
-                with st.spinner("🔄 Calculating optimal route with OpenRouteService..."):
-                    route_data = get_ors_route(
-                        patient_coords[0], patient_coords[1],
-                        facility_coords[0], facility_coords[1],
-                        ORS_API_KEY
-                    )
-        
-                if route_data['success']:
-                    # Display professional route info
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("🏁 Distance", f"{route_data['distance_km']:.1f} km")
-                    with col2:
-                        st.metric("⏱️ Estimated Time", f"{route_data['duration_min']:.1f} min")
-                    with col3:
-                        st.metric("🛣️ Routing", "OpenRouteService")
+            # Use professional routing if we have a valid API key
+            if ORS_API_KEY and ORS_API_KEY != "your_free_api_key_here":
+                if facility:
+                    facility_coords = (float(facility['lat']), float(facility['lon']))
             
-                    # Simple map visualization
-                    map_data = pd.DataFrame({
-                        'lat': [patient_coords[0], facility_coords[0]],
-                        'lon': [patient_coords[1], facility_coords[1]]
-                    })
-                    st.map(map_data)
+                    # Get professional route
+                    with st.spinner("🔄 Calculating optimal route with OpenRouteService..."):
+                        route_data = get_ors_route(
+                            patient_coords[0], patient_coords[1],
+                            facility_coords[0], facility_coords[1],
+                            ORS_API_KEY
+                        )
             
-                    # Route details
-                    with st.expander("📋 Professional Route Details"):
-                        st.write(f"**Patient Location:** {patient_coords[0]:.4f}, {patient_coords[1]:.4f}")
-                        st.write(f"**Destination:** {r['dest']} - {facility_coords[0]:.4f}, {facility_coords[1]:.4f}")
-                        st.write(f"**Route Optimization:** Fastest driving route with real road network")
-                        st.write(f"**Traffic Consideration:** Yes")
-                        st.write(f"**Route Points:** {len(route_data['geometry'])} coordinates")
+                    if route_data['success']:
+                        # Display professional route info
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("🏁 Distance", f"{route_data['distance_km']:.1f} km")
+                        with col2:  
+                            st.metric("⏱️ Estimated Time", f"{route_data['duration_min']:.1f} min")
+                        with col3:
+                            st.metric("🛣️ Routing", "OpenRouteService")
                 
-                else:
-                    st.error(f"❌ Professional routing failed: {route_data.get('error', 'Unknown error')}")
-                    # Fallback to existing method
-                    st.info("🔄 Using fallback routing...")
-                    if r.get("route"):
+                        # Simple map visualization
+                        map_data = pd.DataFrame({
+                            'lat': [patient_coords[0], facility_coords[0]],
+                            'lon': [patient_coords[1], facility_coords[1]]
+                        })
+                        st.map(map_data)
+                
+                        # Route details
+                        with st.expander("📋 Professional Route Details"):
+                            st.write(f"**Patient Location:** {patient_coords[0]:.4f}, {patient_coords[1]:.4f}")
+                            st.write(f"**Destination:** {r['dest']} - {facility_coords[0]:.4f}, {facility_coords[1]:.4f}")
+                            st.write(f"**Route Optimization:** Fastest driving route with real road network")
+                            st.write(f"**Traffic Consideration:** Yes")
+                            st.write(f"**Route Points:** {len(route_data['geometry'])} coordinates")
+                    
+                    else:
+                        st.error(f"❌ Professional routing failed: {route_data.get('error', 'Unknown error')}")
+                        # Fallback to existing method
+                        st.info("🔄 Using fallback routing...")
                         # Your existing fallback code here
-                        pass
+                else:
+                    st.warning("Facility not found for route calculation")
             else:
-                if ORS_API_KEY == "your_free_api_key_here":
-                    st.warning("🔑 Please set your OpenRouteService API key in the code")
-                st.info("🗺️ Basic route visualization")
+                st.info("🗺️ Basic route visualization - Set OpenRouteService API key for professional routing")
                 # Your existing basic map code here
         else:
             st.info("👆 Select an active case to view route optimization")
