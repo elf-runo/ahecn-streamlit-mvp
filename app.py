@@ -2402,7 +2402,7 @@ with tabs[0]:
             if st.session_state.triage_override_active and st.session_state.triage_override_color:
                 triage_color = st.session_state.triage_override_color
 
-            # Get ranked facilities with free routing
+            # Get ranked facilities with free routing - WITH DEBUG INFO
             with st.spinner("Calculating optimal routes with free routing services..."):
                 ranked_facilities = rank_facilities_with_free_routing(
                     origin_coords=(p_lat, p_lon),
@@ -2411,20 +2411,20 @@ with tabs[0]:
                     triage_color=triage_color,
                     top_k=8,
                     provider=current_provider
-                )
-    
+                 )
+            
                 # DEBUG: Detailed diagnostic information
                 st.write(f"🔧 Number of facilities in database: {len(st.session_state.facilities)}")
                 st.write(f"🔧 Required capabilities: {need_caps}")
                 st.write(f"🔧 Found {len(ranked_facilities) if ranked_facilities else 0} ranked facilities")
-    
+            
                 if ranked_facilities:
                     st.write("🏆 **Top Facilities Found:**")
                     for i, facility in enumerate(ranked_facilities[:3]):
                         st.write(f"   {i+1}. {facility['name']} - Score: {facility['score']}")
                 else:
                     st.error("❌ **DEBUG: No facilities passed the scoring filter**")
-        
+                
                     # Additional debug: Check first few facilities and their capabilities
                     if st.session_state.facilities:
                         st.write("🔍 **Sample facility capabilities check:**")
@@ -2434,23 +2434,17 @@ with tabs[0]:
                                 has_cap = facility["caps"].get(cap, 0)
                                 cap_match.append(f"{cap}: {has_cap}")
                             st.write(f"   Facility '{facility.get('name')}': {', '.join(cap_match)}")
-    
-                            # Add debug info
-                            st.write(f"🔧 DEBUG: Found {len(ranked_facilities) if ranked_facilities else 0} facilities with free routing")
-            
+
             # This part goes AFTER the with block (no indentation)
             if not ranked_facilities:
                 st.warning("No suitable facilities found. Try relaxing capability requirements.")
             else:
-                # Display routing provider info
-                if ORS_API_KEY and ORS_API_KEY != "your_free_api_key_here":
-                    provider_name = "OpenRouteService (Professional)"
-                else:
-                    provider_name = {
-                        "osrm": "OSRM (Free Open Source)",
-                        "graphhopper": "GraphHopper (Free Tier)", 
-                        "openrouteservice": "OpenRouteService (Free)"
-                    }[current_provider]
+                # Display routing provider info - FIXED: No ORS_API_KEY reference
+                provider_name = {
+                    "osrm": "OSRM (Free Open Source)",
+                    "graphhopper": "GraphHopper (Free Tier)", 
+                    "openrouteservice": "OpenRouteService (Free)"
+                }[current_provider]
             
                 st.success(f"✓ Routing completed using {provider_name}")
             
