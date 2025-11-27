@@ -2391,37 +2391,38 @@ with tabs[0]:
             # Get ranked facilities with free routing
             with st.spinner("Calculating optimal routes with free routing services..."):
                 
-                # Use professional ORS routing if available, otherwise fallback
-                ORS_API_KEY = os.getenv('ORS_API_KEY', 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjAzZmM5ZTViYTI5ZjQzNGM5OTY0ODU5ZTJlZThlYjNjIiwiaCI6Im11cm11cjY0In0=')
+            # Use professional ORS routing if available, otherwise fallback
+            ORS_API_KEY = os.getenv('ORS_API_KEY', 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjAzZmM5ZTViYTI5ZjQzNGM5OTY0ODU5ZTJlZThlYjNjIiwiaCI6Im11cm11cjY0In0=')
 
-                if ORS_API_KEY and ORS_API_KEY != "your_free_api_key_here":
-                    ranked_facilities = enhanced_facility_ranking_with_ors(
-                        origin_coords=(p_lat, p_lon),
-                        required_caps=need_caps,
-                        case_type=complaint,
-                        triage_color=triage_color,
-                        top_k=8,
-                        api_key=ORS_API_KEY
-                    )
-                else:
-                    ranked_facilities = rank_facilities_with_free_routing(
-                        origin_coords=(p_lat, p_lon),
-                        required_caps=need_caps,
-                        case_type=complaint,
-                        triage_color=triage_color,
-                        top_k=8,
-                        provider=current_provider
-                    )
+            if ORS_API_KEY and ORS_API_KEY != "your_free_api_key_here":
+                ranked_facilities = enhanced_facility_ranking_with_ors(
+                    origin_coords=(p_lat, p_lon),
+                    required_caps=need_caps,
+                    case_type=complaint,
+                    triage_color=triage_color,
+                    top_k=8,
+                    api_key=ORS_API_KEY
+                )
+            else:
+                ranked_facilities = rank_facilities_with_free_routing(
+                    origin_coords=(p_lat, p_lon),
+                    required_caps=need_caps,
+                    case_type=complaint,
+                    triage_color=triage_color,
+                    top_k=8,
+                    provider=current_provider
+                )
+
             if not ranked_facilities:
-                    st.warning("No suitable facilities found. Try relaxing capability requirements.")
-                else:
-                    # Display routing provider info
-                    provider_name = {
-                        "osrm": "OSRM (Free Open Source)",
-                        "graphhopper": "GraphHopper (Free Tier)", 
-                        "openrouteservice": "OpenRouteService (Free)"
-                    }[current_provider]
-                
+                st.warning("No suitable facilities found. Try relaxing capability requirements.")
+            else:
+                # Display routing provider info
+                provider_name = {
+                    "osrm": "OSRM (Free Open Source)",
+                    "graphhopper": "GraphHopper (Free Tier)", 
+                    "openrouteservice": "OpenRouteService (Free)"
+                }[current_provider]
+    
                 st.success(f"✓ Routing completed using {provider_name}")
                 
                 # Display ranked facilities
