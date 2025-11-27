@@ -2579,157 +2579,157 @@ with tabs[0]:
     alternates = sorted(list(st.session_state.get("matched_alts", [])))
 
     def _save_referral(dispatch=False):
-    # Validate based on role
-    if referrer_role == "Doctor/Physician" and dx_payload is None:
-        st.error("Please select an ICD diagnosis to create referral")
-        return False
-    elif referrer_role == "ANM/ASHA/EMT" and not dx_payload.get("label"):
-        st.error("Please provide a reason for referral")
-        return False
+        # Validate based on role
+        if referrer_role == "Doctor/Physician" and dx_payload is None:
+            st.error("Please select an ICD diagnosis to create referral")
+            return False
+        elif referrer_role == "ANM/ASHA/EMT" and not dx_payload.get("label"):
+            st.error("Please provide a reason for referral")
+            return False
         
-    if not primary:
-        st.error("Select a primary destination from 'Find Best Matched Facilities' above.")
-        return False
+        if not primary:
+            st.error("Select a primary destination from 'Find Best Matched Facilities' above.")
+            return False
         
-    vit = dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu, complaint=complaint)
+        vit = dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu, complaint=complaint)
     
-    # Combine interventions properly
-    all_interventions = iv_selected if 'iv_selected' in locals() else []
+        # Combine interventions properly
+        all_interventions = iv_selected if 'iv_selected' in locals() else []
     
-    # Add resuscitation interventions
-    for resus in resus_done:
-        all_interventions.append({
-            "name": resus,
-            "type": "resuscitation",
-            "timestamp": now_ts(),
-            "performed_by": "referrer",
-            "status": "completed"
-        })
+        # Add resuscitation interventions
+        for resus in resus_done:
+            all_interventions.append({
+                "name": resus,
+                "type": "resuscitation",
+                "timestamp": now_ts(),
+                "performed_by": "referrer",
+                "status": "completed"
+            })
     
-    # Calculate triage (guideline + AI overlay)
-    age = _num(p_age)
-    context = dict(
-        age=age,
-        pregnant=(complaint == "Maternal"),
-        infection=(complaint in ["Sepsis", "Other"]),
-        o2_device=st.session_state.o2_device,
-        spo2_scale=st.session_state.spo2_scale,
-        behavior=st.session_state.pews_behavior
-    )
-    triage_mode = st.session_state.get("triage_mode", "rules")
+        # Calculate triage (guideline + AI overlay)
+        age = _num(p_age)
+        context = dict(
+            age=age,
+            pregnant=(complaint == "Maternal"),
+            infection=(complaint in ["Sepsis", "Other"]),
+            o2_device=st.session_state.o2_device,
+            spo2_scale=st.session_state.spo2_scale,
+            behavior=st.session_state.pews_behavior
+        )
+        triage_mode = st.session_state.get("triage_mode", "rules")
     
-    # Get AI prediction with error handling
-    ai_color = None
-    ai_probs = None
-    ai_error = None
+        # Get AI prediction with error handling
+        ai_color = None
+        ai_probs = None
+        ai_error = None
     
-    try:
-        final_ai_colour, tri_meta = triage_with_ai(vit, context, complaint, triage_mode)
-        base_colour = tri_meta["rules_color"]
-        score_details = tri_meta["rules_details"]
-        ai_color = tri_meta.get("ai_color")
-        ai_probs = tri_meta.get("probs")
-    except Exception as e:
-        st.error(f"AI triage failed: {str(e)}")
-        # Fallback to rules-based triage
-        base_colour, score_details = triage_decision(vit, context)
-        final_ai_colour = base_colour
-        ai_error = str(e)
+        try:
+            final_ai_colour, tri_meta = triage_with_ai(vit, context, complaint, triage_mode)
+            base_colour = tri_meta["rules_color"]
+            score_details = tri_meta["rules_details"]
+            ai_color = tri_meta.get("ai_color")
+            ai_probs = tri_meta.get("probs")
+        except Exception as e:
+            st.error(f"AI triage failed: {str(e)}")
+            # Fallback to rules-based triage
+            base_colour, score_details = triage_decision(vit, context)
+            final_ai_colour = base_colour
+            ai_error = str(e)
 
-    # Apply override if active (on top of AI/hybrid)
-    final_colour = final_ai_colour
-    audit_log = []
+        # Apply override if active (on top of AI/hybrid)
+        final_colour = final_ai_colour
+        audit_log = []
 
-    if st.session_state.triage_override_active and st.session_state.triage_override_color:
-        final_colour = st.session_state.triage_override_color
-        audit_entry = {
-            "timestamp": datetime.now().isoformat(),
-            "action": "TRIAGE_OVERRIDE",
-            "user": r_name,
-            "details": {
-                "from": base_colour,
-                "to": final_colour,
-                "reason": st.session_state.triage_override_reason,
-                "scores": {
-                    "NEWS2": score_details["NEWS2"]["score"],
-                    "qSOFA": score_details["qSOFA"]["score"],
-                    "MEOWS_red": len(score_details["MEOWS"]["red"]),
-                    "PEWS": score_details["PEWS"]["score"]
-                },
-                "triage_mode": triage_mode,
-                "ai_color": ai_color,
+        if st.session_state.triage_override_active and st.session_state.triage_override_color:
+            final_colour = st.session_state.triage_override_color
+            audit_entry = {
+                "timestamp": datetime.now().isoformat(),
+                "action": "TRIAGE_OVERRIDE",
+                "user": r_name,
+                "details": {
+                    "from": base_colour,
+                    "to": final_colour,
+                    "reason": st.session_state.triage_override_reason,
+                    "scores": {
+                        "NEWS2": score_details["NEWS2"]["score"],
+                        "qSOFA": score_details["qSOFA"]["score"],
+                        "MEOWS_red": len(score_details["MEOWS"]["red"]),
+                        "PEWS": score_details["PEWS"]["score"]
+                    },
+                    "triage_mode": triage_mode,
+                    "ai_color": ai_color,
+                }
             }
+            audit_log.append(audit_entry)
+
+        # Enhanced triage decision logging for analytics
+        triage_decision_data = {
+            "color": final_colour,
+            "overridden": (final_colour != base_colour),
+            "base_color": base_colour,
+            "triage_mode": triage_mode,
+            "score_details": score_details
         }
-        audit_log.append(audit_entry)
-
-    # Enhanced triage decision logging for analytics
-    triage_decision_data = {
-        "color": final_colour,
-        "overridden": (final_colour != base_colour),
-        "base_color": base_colour,
-        "triage_mode": triage_mode,
-        "score_details": score_details
-    }
     
-    # Add AI metadata if available
-    if ai_color is not None:
-        triage_decision_data["ai_color"] = ai_color
-    if ai_probs is not None:
-        triage_decision_data["ai_probabilities"] = ai_probs.tolist() if hasattr(ai_probs, 'tolist') else ai_probs
-    if ai_error is not None:
-        triage_decision_data["ai_error"] = ai_error
+        # Add AI metadata if available
+        if ai_color is not None:
+            triage_decision_data["ai_color"] = ai_color
+        if ai_probs is not None:
+            triage_decision_data["ai_probabilities"] = ai_probs.tolist() if hasattr(ai_probs, 'tolist') else ai_probs
+        if ai_error is not None:
+            triage_decision_data["ai_error"] = ai_error
 
-    ref = dict(
-        id="R" + str(int(time.time()))[-6:],
-        patient=dict(
-            name=p_name, 
-            age=int(p_age), 
-            sex=p_sex, 
-            id=p_id, 
-            location=dict(lat=float(p_lat), lon=float(p_lon))
-        ),
-        referrer=dict(name=r_name, facility=r_fac, role=referrer_role),
-        provisionalDx=dx_payload,
-        interventions=all_interventions,
-        resuscitation=resus_done,
+        ref = dict(
+            id="R" + str(int(time.time()))[-6:],
+            patient=dict(
+                name=p_name, 
+                age=int(p_age), 
+                sex=p_sex, 
+                id=p_id, 
+                location=dict(lat=float(p_lat), lon=float(p_lon))
+            ),
+            referrer=dict(name=r_name, facility=r_fac, role=referrer_role),
+            provisionalDx=dx_payload,
+            interventions=all_interventions,
+            resuscitation=resus_done,
 
-        triage=dict(
-            complaint=complaint,
-            decision=triage_decision_data,  # Use enhanced decision data
-            hr=hr, sbp=sbp, rr=rr, temp=temp, spo2=spo2, avpu=avpu
-        ),
-        clinical=dict(
-            summary=" ".join(ocr.split()[:60]) if ocr else ""
-        ),
-        reasons=dict(
-            severity=True,
-            bedorICUUnavailable=ref_beds,
-            specialTest=ref_tests,
-            requiredCapabilities=need_caps,
-        ),
-        dest=primary,
-        alternates=alternates,
-        transport=dict(
-            priority=priority,
-            ambulance=amb_type,
-            consent=bool(consent),
-        ),
-        times=dict(
-            first_contact_ts=now_ts(),
-            decision_ts=now_ts(),
-        ),
-        status="PREALERT",
-        ambulance_available=None,
-        audit_log=audit_log,
-    )
+            triage=dict(
+                complaint=complaint,
+                decision=triage_decision_data,  # Use enhanced decision data
+                hr=hr, sbp=sbp, rr=rr, temp=temp, spo2=spo2, avpu=avpu
+            ),
+            clinical=dict(
+                summary=" ".join(ocr.split()[:60]) if ocr else ""
+            ),
+            reasons=dict(
+                severity=True,
+                bedorICUUnavailable=ref_beds,
+                specialTest=ref_tests,
+                requiredCapabilities=need_caps,
+            ),
+            dest=primary,
+            alternates=alternates,
+            transport=dict(
+                priority=priority,
+                ambulance=amb_type,
+                consent=bool(consent),
+            ),
+            times=dict(
+                first_contact_ts=now_ts(),
+                decision_ts=now_ts(),
+            ),
+            status="PREALERT",
+            ambulance_available=None,
+            audit_log=audit_log,
+        )
 
-    if dispatch:
-        ref["times"]["dispatch_ts"] = now_ts()
-        ref["status"] = "DISPATCHED"
-        ref["ambulance_available"] = True
+        if dispatch:
+            ref["times"]["dispatch_ts"] = now_ts()
+            ref["status"] = "DISPATCHED"
+            ref["ambulance_available"] = True
         
-    st.session_state.referrals.insert(0, ref)
-    return True
+        st.session_state.referrals.insert(0, ref)
+        return True
 
     col1, col2 = st.columns(2)
     if col1.button("Create referral"):
