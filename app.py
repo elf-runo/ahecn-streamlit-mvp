@@ -11,11 +11,12 @@ import altair as alt
 import os
 import requests
 import urllib.parse
+from pathlib import Path
 
 # === AI TRIAGE MODEL - TEMPORARILY DISABLED ===
-BASE_DIR = Path(__file__).parent
+import os
 
-# Simply set the model to None - no loading attempts
+# Simply set the model to None
 triage_model = None
 
 # Initialize session state for AI model
@@ -816,7 +817,7 @@ def triage_with_ai(vitals: dict, context: dict, complaint: str, mode: str = "rul
         "rules_details": rules_details,
         "ai_color": None,
         "probs": None,
-        "note": "AI features temporarily disabled for deployment stability"
+        "note": "AI features temporarily disabled"
     }
 # === UI HELPERS ===
 def triage_pill(color:str, overridden=False):
