@@ -28,65 +28,15 @@ import urllib.parse
 from pathlib import Path
 import joblib
 
-# === AI TRIAGE MODEL - COMPATIBLE VERSION ===
+# === AI TRIAGE MODEL - TEMPORARILY DISABLED ===
 BASE_DIR = Path(__file__).parent
 MODEL_PATH = BASE_DIR / "models" / "triage_model_medically_accurate.pkl"
 FEATURE_INFO_PATH = BASE_DIR / "models" / "feature_info.pkl"
-FALLBACK_MODEL_PATH = BASE_DIR / "models" / "triage_model_rf_v1 (1).pkl"
 
-@st.cache_resource
-def load_triage_model():
-    """Load AI model with comprehensive fallback handling"""
-    
-    # First, check if we have the medically accurate model
-    if MODEL_PATH.exists():
-        try:
-            model = joblib.load(MODEL_PATH)
-            if FEATURE_INFO_PATH.exists():
-                feature_info = joblib.load(FEATURE_INFO_PATH)
-                st.session_state.triage_features = feature_info['feature_names']
-                st.success("✅ Medically Accurate AI Model Loaded Successfully!")
-            else:
-                # Fallback feature names
-                st.session_state.triage_features = [
-                    'age', 'rr', 'hr', 'sbp', 'spo2', 'temp_c', 'gcs', 'comorbid_count', 
-                    'on_oxygen', 'sex_M', 'avpu_ord', 'case_type_cardiac', 'case_type_maternal',
-                    'case_type_sepsis', 'case_type_stroke', 'case_type_trauma', 'case_type_other'
-                ]
-                st.success("✅ AI Model Loaded (using fallback features)")
-            return model
-        except Exception as e:
-            st.error(f"❌ Failed to load medical model: {e}")
-    
-    # Try fallback model
-    if FALLBACK_MODEL_PATH.exists():
-        try:
-            st.warning("🔄 Loading fallback model...")
-            model = joblib.load(FALLBACK_MODEL_PATH)
-            st.session_state.triage_features = [
-                'age', 'rr', 'hr', 'sbp', 'spo2', 'temp_c', 'gcs', 'comorbid_count', 
-                'on_oxygen', 'sex_M', 'avpu_ord', 'case_type_cardiac', 'case_type_maternal',
-                'case_type_sepsis', 'case_type_stroke', 'case_type_trauma', 'case_type_other'
-            ]
-            st.success("✅ Fallback AI Model Loaded Successfully!")
-            return model
-        except Exception as e:
-            st.error(f"❌ Failed to load fallback model: {e}")
-    
-    # No model available
-    st.error("""
-    ❌ No AI model could be loaded
-    
-    **Please check:**
-    - Model files exist in models/ folder
-    - All dependencies are installed
-    - Using compatible scikit-learn version (1.2.2)
-    """)
-    return None
+# Simply set the model to None - no loading attempts
+triage_model = None
 
-triage_model = load_triage_model()
-
-# Initialize session state
+# Initialize session state for AI model
 if "triage_model" not in st.session_state:
     st.session_state.triage_model = triage_model
 if "triage_features" not in st.session_state:
@@ -96,40 +46,8 @@ if "triage_features" not in st.session_state:
         'case_type_sepsis', 'case_type_stroke', 'case_type_trauma', 'case_type_other'
     ]
 
-# ======== STEP 4: MODEL LOADING VERIFICATION ========
-if triage_model is None:
-    st.error("""
-    ❌ AI model failed to load completely 
-    
-    **Please check:**
-    - Model files exist in models/ folder
-    - requirements.txt has correct scikit-learn version
-    - All dependencies are installed
-    """)
-else:
-    st.sidebar.success("✅ AI model loaded and ready for predictions")
-    
-# ======== TEMPORARY DEBUG CODE ========
-st.sidebar.markdown("### 🔍 Model Debug Info")
-st.sidebar.write(f"New model path: {MODEL_PATH}")
-st.sidebar.write(f"New model exists: {MODEL_PATH.exists()}")
-st.sidebar.write(f"Feature info exists: {FEATURE_INFO_PATH.exists()}")
-st.sidebar.write(f"Old model exists: {(BASE_DIR / 'models' / 'triage_model_rf_v1 (1).pkl').exists()}")
-
-# ADD THESE LINES:
-st.sidebar.write(f"Feature info exists: {FEATURE_INFO_PATH.exists()}")
-import sklearn
-st.sidebar.write(f"scikit-learn version: {sklearn.__version__}")
-st.sidebar.write(f"Model in session state: {st.session_state.get('triage_model') is not None}")
-st.sidebar.write(f"Features in session state: {len(st.session_state.get('triage_features', []))}")
-
-# Add scikit-learn version check
-import sklearn
-st.sidebar.write(f"scikit-learn version: {sklearn.__version__}")
-
-# Check if model is actually in session state
-st.sidebar.write(f"Model in session state: {st.session_state.get('triage_model') is not None}")
-st.sidebar.write(f"Features in session state: {len(st.session_state.get('triage_features', []))}")
+# Just show a simple status
+st.sidebar.info("🤖 AI Features: Disabled")
 
 # === PAGE CONFIG MUST BE FIRST STREAMLIT COMMAND ===
 st.set_page_config(
@@ -905,74 +823,19 @@ def ai_triage_predict(vitals: dict, context: dict, complaint: str):
         
 def triage_with_ai(vitals: dict, context: dict, complaint: str, mode: str = "rules"):
     """
-    Overlay AI triage on top of guideline scores.
-    mode: 'rules' | 'ai' | 'hybrid'
-    Returns (final_color, meta) where meta includes:
-      rules_color, rules_details, ai_color, probs, mode
+    AI triage disabled - always returns guideline-based triage
     """
-    # First get the rule-based triage
+    # Always use rules-based triage
     rules_color, rules_details = triage_decision(vitals, context)
-
-    model = st.session_state.get("triage_model")
-    features = st.session_state.get("triage_features") or []
     
-    # If rules-only mode or no AI model, return rules only
-    if mode == "rules" or model is None or not features:
-        return rules_color, {
-            "mode": "rules",
-            "rules_color": rules_color,
-            "rules_details": rules_details,
-            "ai_color": None,
-            "probs": None,
-        }
-
-    # Get AI prediction
-    ai_color, probs = ai_triage_predict(vitals, context, complaint)
-    
-    # If AI prediction fails, fall back to rules
-    if ai_color is None:
-        return rules_color, {
-            "mode": "rules_fallback",
-            "rules_color": rules_color,
-            "rules_details": rules_details,
-            "ai_color": None,
-            "probs": None,
-        }
-
-    # Define color order for comparison
-    color_order = ["GREEN", "YELLOW", "ORANGE", "RED"]
-    
-    try:
-        rules_idx = color_order.index(rules_color)
-        ai_idx = color_order.index(ai_color)
-
-        # Combine based on mode
-        if mode == "ai":
-            final_idx = ai_idx
-        else:  # 'hybrid' – AI can only escalate
-            final_idx = max(rules_idx, ai_idx)
-
-        final_color = color_order[final_idx]
-
-        return final_color, {
-            "mode": mode,
-            "rules_color": rules_color,
-            "rules_details": rules_details,
-            "ai_color": ai_color,
-            "probs": probs,
-        }
-    except Exception as e:
-        # If any error in color processing, fall back to rules
-        st.warning(f"Error combining AI and rules: {e} - using rules only")
-        return rules_color, {
-            "mode": "error_fallback",
-            "rules_color": rules_color,
-            "rules_details": rules_details,
-            "ai_color": ai_color,
-            "probs": probs,
-            "error": str(e)
-        }
-
+    return rules_color, {
+        "mode": "rules",
+        "rules_color": rules_color,
+        "rules_details": rules_details,
+        "ai_color": None,
+        "probs": None,
+        "note": "AI features temporarily disabled"
+    }
 # === UI HELPERS ===
 def triage_pill(color:str, overridden=False):
     c = (color or "").upper()
@@ -2196,19 +2059,13 @@ with tabs[0]:
 
     # Triage decision banner
     render_triage_banner(hr, rr, sbp, temp, spo2, avpu, complaint)
-    # Select how triage is computed (guidelines vs AI vs hybrid)
-    mode_label = st.radio(
-        "Triage mode",
-        ["Guideline only", "AI only", "Hybrid (AI + Guideline)"],
-        index={"rules": 0, "ai": 1, "hybrid": 2}[st.session_state.get("triage_mode", "rules")],
-        horizontal=True,
-    )
-    mode_map = {
-        "Guideline only": "rules",
-        "AI only": "ai",
-        "Hybrid (AI + Guideline)": "hybrid",
-    }
-    st.session_state.triage_mode = mode_map[mode_label]
+
+    # Show only guideline option
+    st.info("🎯 Triage Mode: Guidelines Only (AI features temporarily disabled)")
+    st.session_state.triage_mode = "rules"
+
+    # Hidden field to maintain compatibility
+    mode_label = "Guideline only"
 
     # === CLINICIAN OVERRIDE CONTROL ===
     st.subheader("Clinician Triage Override")
@@ -3456,44 +3313,24 @@ with tabs[3]:
     specialty_data, case_type_breakdown = analyze_medical_specialties(referrals_data)
     ambulance_utilization = analyze_ambulance_utilization(referrals_data)
 
-    # ---------- NEW: AI vs guideline overlay analysis ----------
-    color_order = ["GREEN", "YELLOW", "ORANGE", "RED"]
+    # ---------- AI OVERLAY SECTION - DISABLED ----------
+    st.markdown("#### 🤖 AI Triage Overlay Snapshot")
+    st.info("AI features are temporarily disabled. Analytics showing guideline-based triage only.")
+
+    # Set all AI metrics to zero/empty
     total_ai = 0
     ai_escalated = 0
     ai_deescalated = 0
     ai_same = 0
-    triage_modes = {"guideline": 0, "ai": 0, "hybrid": 0}
 
-    for r in referrals_data:
-        decision = (r.get("triage", {}) or {}).get("decision", {}) or {}
-
-        mode = decision.get("triage_mode") or "guideline"
-        triage_modes[mode] = triage_modes.get(mode, 0) + 1
-
-        base_color = decision.get("base_color")
-        ai_color = decision.get("ai_color")
-
-        # Only compare when both guideline and AI colors are logged
-        if base_color and ai_color:
-            try:
-                base_idx = color_order.index(base_color)
-                ai_idx = color_order.index(ai_color)
-            except ValueError:
-                # Ignore unexpected color labels
-                continue
-
-            total_ai += 1
-            if ai_idx > base_idx:
-                ai_escalated += 1   # AI more conservative (higher acuity)
-            elif ai_idx < base_idx:
-                ai_deescalated += 1 # AI less conservative (lower acuity)
-            else:
-                ai_same += 1        # AI matches guideline
-
-    ai_same_or_lower = ai_same + ai_deescalated
-    ai_escalated_rate = (ai_escalated / total_ai * 100) if total_ai else 0.0
-    ai_same_lower_rate = (ai_same_or_lower / total_ai * 100) if total_ai else 0.0
-
+    ai_col1, ai_col2, ai_col3 = st.columns(3)
+    with ai_col1:
+        st.metric("AI-involved referrals", "0", "0% of all cases")
+    with ai_col2:
+        st.metric("AI stricter than guideline", "0", "0% of AI cases")
+    with ai_col3:
+        st.metric("Same / lower vs guideline", "0", "0% of AI cases")
+        
     # ---------- Summary KPIs ----------
     st.markdown("### 📊 Executive Summary Dashboard")
     
