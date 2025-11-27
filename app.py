@@ -866,7 +866,7 @@ def encode_case_for_triage_ai(vitals: dict, context: dict, complaint: str):
         return None
 
 def ai_triage_predict(vitals: dict, context: dict, complaint: str):
-    """Make prediction using the AI model"""
+    """Make prediction using the AI model with comprehensive error handling"""
     model = st.session_state.get("triage_model")
     if model is None:
         return None, None
@@ -877,9 +877,21 @@ def ai_triage_predict(vitals: dict, context: dict, complaint: str):
         if features is None:
             return None, None
             
-        # Make prediction
-        prediction = model.predict(features)[0]
-        probabilities = model.predict_proba(features)[0]
+        # Make prediction with error handling
+        try:
+            prediction = model.predict(features)[0]
+        except Exception as e:
+            st.warning(f"Model prediction failed: {e}")
+            return None, None
+            
+        # Get probabilities if available
+        probabilities = None
+        try:
+            if hasattr(model, 'predict_proba'):
+                probabilities = model.predict_proba(features)[0]
+        except Exception as e:
+            st.warning(f"Probability prediction failed: {e}")
+            probabilities = None
         
         # Map to color
         color_map = {0: "GREEN", 1: "YELLOW", 2: "ORANGE", 3: "RED"}
