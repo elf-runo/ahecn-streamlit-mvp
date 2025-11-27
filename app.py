@@ -73,20 +73,42 @@ if "triage_features" not in st.session_state:
         'on_oxygen', 'sex_M', 'avpu_ord', 'case_type_cardiac', 'case_type_maternal',
         'case_type_sepsis', 'case_type_stroke', 'case_type_trauma', 'case_type_other'
     ]
+
+# ======== STEP 4: MODEL LOADING VERIFICATION ========
+if triage_model is None:
+    st.error("""
+    ❌ AI model failed to load completely 
+    
+    **Please check:**
+    - Model files exist in models/ folder
+    - requirements.txt has correct scikit-learn version
+    - All dependencies are installed
+    """)
+else:
+    st.sidebar.success("✅ AI model loaded and ready for predictions")
+    
 # ======== TEMPORARY DEBUG CODE ========
 st.sidebar.markdown("### 🔍 Model Debug Info")
 st.sidebar.write(f"New model path: {MODEL_PATH}")
 st.sidebar.write(f"New model exists: {MODEL_PATH.exists()}")
+st.sidebar.write(f"Feature info exists: {FEATURE_INFO_PATH.exists()}")
 st.sidebar.write(f"Old model exists: {(BASE_DIR / 'models' / 'triage_model_rf_v1 (1).pkl').exists()}")
 
-if triage_model is not None:
-    st.sidebar.success("✅ New medically accurate model loaded!")
-else:
-    st.sidebar.error("❌ No model loaded - check errors above")
-
+# ADD THESE LINES:
+st.sidebar.write(f"Feature info exists: {FEATURE_INFO_PATH.exists()}")
 import sklearn
-st.sidebar.write(f"Current scikit-learn: {sklearn.__version__}")
-# ======== END DEBUG CODE ========
+st.sidebar.write(f"scikit-learn version: {sklearn.__version__}")
+st.sidebar.write(f"Model in session state: {st.session_state.get('triage_model') is not None}")
+st.sidebar.write(f"Features in session state: {len(st.session_state.get('triage_features', []))}")
+
+# Add scikit-learn version check
+import sklearn
+st.sidebar.write(f"scikit-learn version: {sklearn.__version__}")
+
+# Check if model is actually in session state
+st.sidebar.write(f"Model in session state: {st.session_state.get('triage_model') is not None}")
+st.sidebar.write(f"Features in session state: {len(st.session_state.get('triage_features', []))}")
+
 # === PAGE CONFIG MUST BE FIRST STREAMLIT COMMAND ===
 st.set_page_config(
     page_title="AHECN MVP v1.9",
@@ -828,10 +850,13 @@ def triage_with_ai(vitals: dict, context: dict, complaint: str, mode: str = "rul
     Returns (final_color, meta) where meta includes:
       rules_color, rules_details, ai_color, probs, mode
     """
+    # First get the rule-based triage
     rules_color, rules_details = triage_decision(vitals, context)
 
     model = st.session_state.get("triage_model")
     features = st.session_state.get("triage_features") or []
+    
+    # If rules-only mode or no AI model, return rules only
     if mode == "rules" or model is None or not features:
         return rules_color, {
             "mode": "rules",
@@ -841,45 +866,52 @@ def triage_with_ai(vitals: dict, context: dict, complaint: str, mode: str = "rul
             "probs": None,
         }
 
-def ai_triage_predict(vitals: dict, context: dict, complaint: str):
-    """
-    AI triage prediction that works with the new medically accurate model
-    """
-    model = st.session_state.get("triage_model")
-    if model is None:
-        st.warning("AI model not available - using rule-based triage only")
-        return None, None
+    # Get AI prediction
+    ai_color, probs = ai_triage_predict(vitals, context, complaint)
+    
+    # If AI prediction fails, fall back to rules
+    if ai_color is None:
+        return rules_color, {
+            "mode": "rules_fallback",
+            "rules_color": rules_color,
+            "rules_details": rules_details,
+            "ai_color": None,
+            "probs": None,
+        }
 
+    # Define color order for comparison
+    color_order = ["GREEN", "YELLOW", "ORANGE", "RED"]
+    
     try:
-        X = encode_case_for_triage_ai(vitals, context, complaint)
-        if X is None:
-            return None, None
+        rules_idx = color_order.index(rules_color)
+        ai_idx = color_order.index(ai_color)
 
-        # Get prediction probabilities from the NEW model
-        probs = model.predict_proba(X)[0]
-        
-        # Handle multi-class classification (GREEN, YELLOW, ORANGE, RED)
-        if len(probs) >= 4:  # Multi-class with 4 categories
-            label = int(np.argmax(probs))
-            color_map = {0: "GREEN", 1: "YELLOW", 2: "ORANGE", 3: "RED"}
-            ai_color = color_map.get(label, "YELLOW")
-            probs_array = probs
-        else:
-            # Fallback for binary classification
-            prob_positive = probs[1] if len(probs) == 2 else probs[0]
-            if prob_positive >= 0.7:
-                ai_color = "RED"
-            elif prob_positive >= 0.4:
-                ai_color = "YELLOW" 
-            else:
-                ai_color = "GREEN"
-            probs_array = probs
+        # Combine based on mode
+        if mode == "ai":
+            final_idx = ai_idx
+        else:  # 'hybrid' – AI can only escalate
+            final_idx = max(rules_idx, ai_idx)
 
-        return ai_color, probs_array
-        
+        final_color = color_order[final_idx]
+
+        return final_color, {
+            "mode": mode,
+            "rules_color": rules_color,
+            "rules_details": rules_details,
+            "ai_color": ai_color,
+            "probs": probs,
+        }
     except Exception as e:
-        st.warning(f"AI prediction failed: {str(e)} - using fallback rules")
-        return None, None
+        # If any error in color processing, fall back to rules
+        st.warning(f"Error combining AI and rules: {e} - using rules only")
+        return rules_color, {
+            "mode": "error_fallback",
+            "rules_color": rules_color,
+            "rules_details": rules_details,
+            "ai_color": ai_color,
+            "probs": probs,
+            "error": str(e)
+        }
 
 # === UI HELPERS ===
 def triage_pill(color:str, overridden=False):
@@ -931,6 +963,23 @@ def render_triage_banner(hr, rr, sbp, temp, spo2, avpu, complaint, override_appl
     )
 
     triage_mode = st.session_state.get("triage_mode", "rules")
+     # ======== TEMPORARY DEBUG ========
+    st.sidebar.markdown("### 🔴 DEBUG: Before triage_with_ai")
+    st.sidebar.write(f"Model available: {st.session_state.get('triage_model') is not None}")
+    st.sidebar.write(f"Features count: {len(st.session_state.get('triage_features', []))}")
+    st.sidebar.write(f"Triage mode: {triage_mode}")
+    
+    try:
+        # Test the function call
+        result = triage_with_ai(vitals, context, complaint, triage_mode)
+        st.sidebar.write(f"Result type: {type(result)}")
+        if result is not None:
+            st.sidebar.write(f"Result length: {len(result)}")
+        else:
+            st.sidebar.error("Result is None!")
+    except Exception as debug_e:
+        st.sidebar.error(f"Debug call failed: {debug_e}")
+    # ======== END DEBUG ========
 
     # Combine guideline scores with AI overlay
     final_colour_ai, meta = triage_with_ai(vitals, context, complaint, triage_mode)
