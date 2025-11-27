@@ -4036,26 +4036,47 @@ with tabs[4]:
         except Exception:
             pass
     
-    # ======== ADD DEBUG DEPLOYMENT SECTION HERE ========
+    # ======== FIXED DEPLOYMENT DEBUG SECTION ========
     st.markdown("---")
     st.markdown("### 🔧 Deployment Environment Debug")
     
     with st.expander("View Package Versions & Environment", expanded=True):
-        import pkg_resources
         import sklearn
         import sys
         
         st.write("**Package Versions:**")
-        packages = ['streamlit', 'scikit-learn', 'pandas', 'numpy', 'joblib', 'altair', 'pydeck']
-        for pkg in packages:
-            try:
-                version = pkg_resources.get_distribution(pkg).version
-                st.write(f"- {pkg}: {version}")
-            except:
-                st.write(f"- {pkg}: NOT FOUND")
+        # Use a safer approach without pkg_resources
+        packages_info = [
+            ('streamlit', st.__version__),
+            ('scikit-learn', sklearn.__version__),
+            ('pandas', pd.__version__),
+            ('numpy', np.__version__),
+        ]
+        
+        # Try to get other package versions safely
+        try:
+            import joblib
+            packages_info.append(('joblib', joblib.__version__))
+        except:
+            packages_info.append(('joblib', 'NOT FOUND'))
+            
+        try:
+            import altair
+            packages_info.append(('altair', altair.__version__))
+        except:
+            packages_info.append(('altair', 'NOT FOUND'))
+            
+        try:
+            import pydeck
+            packages_info.append(('pydeck', pydeck.__version__))
+        except:
+            packages_info.append(('pydeck', 'NOT FOUND'))
+        
+        for pkg, version in packages_info:
+            st.write(f"- {pkg}: {version}")
         
         st.write("**System Info:**")
-        st.write(f"- Python: {sys.version}")
+        st.write(f"- Python: {sys.version.split()[0]}")
         st.write(f"- Model path: {MODEL_PATH}")
         st.write(f"- Model exists: {MODEL_PATH.exists()}")
         if MODEL_PATH.exists():
@@ -4067,7 +4088,7 @@ with tabs[4]:
             model = joblib.load(MODEL_PATH)
             st.success("✅ Model loads successfully!")
         except Exception as e:
-            st.error(f"❌ Model load fails: {str(e)[:200]}")       
+            st.error(f"❌ Model load fails: {str(e)[:200]}")
 
     # ---------- Rides providers (for GREEN/YELLOW demo) ----------
     st.markdown("---")
