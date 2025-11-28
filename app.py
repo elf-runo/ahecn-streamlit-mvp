@@ -559,23 +559,34 @@ def enhanced_facility_ranking_with_ors(origin_coords, required_caps, case_type, 
     # Sort by score (descending) and ETA (ascending)
     ranked_facilities.sort(key=lambda x: (-x["score"], x["eta_min"] if isinstance(x["eta_min"], (int, float)) else 999))
     return ranked_facilities[:top_k]
+
+# === API STATUS CHECK ===
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 🔑 API Status")
+
+ORS_API_KEY = os.getenv('ORS_API_KEY', 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjAzZmM5ZTViYTI5ZjQzNGM5OTY0ODU5ZTJlZThlYjNjIiwiaCI6Im11cm11cjY0In0=')
+
+if ORS_API_KEY and ORS_API_KEY != "your_free_api_key_here":
+    st.sidebar.success("✅ OpenRouteService API: Configured")
     
-# Temporary API key test (add this somewhere in your app)
-if st.sidebar.button("🔑 Test OpenRouteService API Key"):
-    ORS_API_KEY = os.getenv('ORS_API_KEY', 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjAzZmM5ZTViYTI5ZjQzNGM5OTY0ODU5ZTJlZThlYjNjIiwiaCI6Im11cm11cjY0In0=')
-    
-    if ORS_API_KEY and ORS_API_KEY != "your_free_api_key_here":
-        test_result = get_ors_route(
-            12.9716, 77.5946,  # Bangalore coordinates
-            13.0827, 80.2707,  # Chennai coordinates  
-            ORS_API_KEY
-        )
-        if test_result['success']:
-            st.sidebar.success(f"✅ API Key Valid! Distance: {test_result['distance_km']:.1f} km")
-        else:
-            st.sidebar.error(f"❌ API Key Invalid: {test_result.get('error')}")
-    else:
-        st.sidebar.warning("🔑 No valid API key found")
+    # Test the API key with Meghalaya coordinates
+    if st.sidebar.button("Test API Connection", key="api_test_main"):
+        with st.sidebar:
+            with st.spinner("Testing API connection..."):
+                test_result = get_ors_route(
+                    25.5780, 91.8930,  # Shillong Civil Hospital
+                    25.5880, 91.9030,  # Ganesh Das Hospital
+                    ORS_API_KEY
+                )
+                if test_result['success']:
+                    st.success(f"✅ API Working! Distance: {test_result['distance_km']:.1f} km")
+                    st.info(f"Route from Shillong Civil Hospital to Ganesh Das Hospital")
+                else:
+                    st.error(f"❌ API Failed: {test_result.get('error')}")
+                    st.info("Falling back to free routing providers")
+else:
+    st.sidebar.warning("⚠️ Using Free Routing Only")
+    st.sidebar.info("Set ORS_API_KEY environment variable for professional routing")
         
 # === LOAD ICD CATALOG FROM CSV ===
 def load_icd_catalogue():
@@ -1457,6 +1468,24 @@ def rank_facilities_for_case(origin_coords, required_caps, case_type, triage_col
     
     return ranked_facilities[:top_k]
 
+# Show API status before routing
+st.markdown("#### 🔧 Routing Service Status")
+api_status_col1, api_status_col2 = st.columns(2)
+
+with api_status_col1:
+    ORS_API_KEY = os.getenv('ORS_API_KEY', 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjAzZmM5ZTViYTI5ZjQzNGM5OTY0ODU5ZTJlZThlYjNjIiwiaCI6Im11cm11cjY0In0=')
+    
+    if ORS_API_KEY and ORS_API_KEY != "your_free_api_key_here":
+        st.success("✅ Professional Routing: Available")
+        st.caption("Using OpenRouteService with real road network data")
+    else:
+        st.warning("🔄 Professional Routing: Not Configured")
+        st.caption("Using free routing services")
+
+with api_status_col2:
+    st.info(f"🆓 Free Routing: {current_provider.upper()}")
+    st.caption("Fallback routing with estimated travel times")
+    
 def facility_card(row, rank, is_primary=False, is_alternate=False):
     """
     Enhanced facility card with scoring details and priority indicators
@@ -1945,31 +1974,29 @@ def calculate_enhanced_facility_score_free(facility, required_caps, route_data, 
     score = 0
     scoring_details = {}
     
-    # 1. Capability Match (40% weight) - Hard filter
+    # 1. Capability Match (40% weight) - Less restrictive filter
     if required_caps:
         capability_match = sum(1 for cap in required_caps if facility["caps"].get(cap, 0)) / len(required_caps)
-        # Apply hard filter - must meet minimum capability threshold
-        if capability_match < 0.5:  # At least 50% of required capabilities
+        # Reduced threshold from 0.5 to 0.3 to include more facilities
+        if capability_match < 0.3:  # Only filter out completely unsuitable facilities
             return 0, {"capability_score": 0, "reason": "Insufficient capabilities"}
     else:
-        capability_match = 1.0
+        capability_match = 1.0  # No specific capabilities required
     
     score += capability_match * 40
     scoring_details["capability_score"] = round(capability_match * 40, 1)
     
     # 2. Proximity Score (30% weight) - Based on estimated ETA
     if route_data.get('success'):
-        # Use traffic-adjusted duration if available
         eta_minutes = route_data.get('estimated_duration_min', route_data.get('duration_min', 0))
         
-        # Normalize ETA score (0-30 points)
-        # Shorter ETA = higher score, max score for <30min, linear decay to 60min
-        if eta_minutes <= 30:
+        # More generous ETA scoring
+        if eta_minutes <= 45:  # Increased from 30 to 45 minutes
             proximity_score = 30
-        elif eta_minutes <= 60:
-            proximity_score = 30 * (1 - (eta_minutes - 30) / 30)
+        elif eta_minutes <= 90:  # Increased from 60 to 90 minutes
+            proximity_score = 30 * (1 - (eta_minutes - 45) / 45)
         else:
-            proximity_score = max(0, 30 * (1 - (eta_minutes - 60) / 60))
+            proximity_score = max(5, 30 * (1 - (eta_minutes - 90) / 90))  # Minimum 5 points
             
         # Apply traffic factor adjustment
         traffic_factor = route_data.get('traffic_multiplier', 1.0)
@@ -1982,8 +2009,15 @@ def calculate_enhanced_facility_score_free(facility, required_caps, route_data, 
         scoring_details["estimated"] = route_data.get('estimated', False)
         scoring_details["peak_hour"] = route_data.get('peak_hour', False)
     else:
-        # Fallback to straight-line distance if routing fails
-        scoring_details["proximity_score"] = 0
+        # Fallback proximity scoring based on straight-line distance
+        distance_km = route_data.get('distance_km', 0)
+        if distance_km <= 50:
+            proximity_score = 25  # Reduced but still significant
+        else:
+            proximity_score = max(10, 25 * (1 - (distance_km - 50) / 100))
+        
+        score += proximity_score
+        scoring_details["proximity_score"] = round(proximity_score, 1)
         scoring_details["eta_minutes"] = "N/A"
         scoring_details["traffic_factor"] = 1.0
     
@@ -2023,17 +2057,17 @@ def calculate_enhanced_facility_score_free(facility, required_caps, route_data, 
 
 def rank_facilities_with_free_routing(origin_coords, required_caps, case_type, triage_color, top_k=8, provider=None):
     """
-    Enhanced facility ranking with free routing data
+    Enhanced facility ranking with free routing data and better error handling
     """
     ranked_facilities = []
     
     # Validate inputs
     if not origin_coords or len(origin_coords) != 2:
-        st.error("Invalid origin coordinates")
+        st.error("❌ Invalid origin coordinates")
         return []
     
     if not hasattr(st.session_state, 'facilities') or not st.session_state.facilities:
-        st.error("No facilities data available")
+        st.error("❌ No facilities data available")
         return []
     
     # Show progress for routing calculations
@@ -2041,19 +2075,20 @@ def rank_facilities_with_free_routing(origin_coords, required_caps, case_type, t
     status_text = st.empty()
     
     total_facilities = len(st.session_state.facilities)
+    successful_routes = 0
     
     for i, facility in enumerate(st.session_state.facilities):
         try:
             # Update progress
             progress = (i + 1) / total_facilities
             progress_bar.progress(progress)
-            status_text.text(f"Calculating routes... ({i + 1}/{total_facilities})")
+            status_text.text(f"📍 Calculating routes... ({i + 1}/{total_facilities}) - {facility['name']}")
             
             # Validate facility data
             if not facility or 'lat' not in facility or 'lon' not in facility:
                 continue
             
-            # Get free route information (respect selected provider)
+            # Get free route information
             route_data = get_route_info_free(
                 origin_coords[0], origin_coords[1],
                 float(facility["lat"]), float(facility["lon"]),
@@ -2065,26 +2100,32 @@ def rank_facilities_with_free_routing(origin_coords, required_caps, case_type, t
                 facility, required_caps, route_data, case_type, triage_color
             )
             
-            # Skip facilities with insufficient capabilities
+            # Skip facilities with insufficient capabilities (but log why)
             if score == 0:
-                continue
+                # Show why facility was skipped for debugging
+                if scoring_details.get("reason") == "Insufficient capabilities":
+                    continue
+                else:
+                    # Facility has some score, include it
+                    pass
             
-            # Generate route for visualization
-            route_coords = interpolate_route(
-                origin_coords[0], origin_coords[1],
-                float(facility["lat"]), float(facility["lon"]), n=20
-            )
+            # Generate route for visualization (always create basic route)
+            try:
+                route_coords = interpolate_route(
+                    origin_coords[0], origin_coords[1],
+                    float(facility["lat"]), float(facility["lon"]), n=20
+                )
+            except:
+                # Fallback route if interpolation fails
+                route_coords = []
             
-            ranked_facilities.append({
+            # Prepare facility data for display
+            facility_data = {
                 "name": facility.get("name", "Unknown Facility"),
                 "type": facility.get("type", "Unknown"),
                 "score": score,
                 "scoring_details": scoring_details,
                 "km": round(route_data.get('distance_km', 0), 1),
-                "eta_min": scoring_details.get("eta_minutes", "N/A"),
-                "traffic_factor": scoring_details.get("traffic_factor", 1.0),
-                "estimated": scoring_details.get("estimated", False),
-                "peak_hour": scoring_details.get("peak_hour", False),
                 "ICU_open": facility.get("ICU_open", 0),
                 "accept": int(facility.get("acceptanceRate", 0.75) * 100),
                 "specialties": ", ".join([s for s, v in facility.get("specialties", {}).items() if v]) or "—",
@@ -2094,20 +2135,48 @@ def rank_facilities_with_free_routing(origin_coords, required_caps, case_type, t
                 "lon": float(facility["lon"]),
                 "routing_success": route_data.get('success', False),
                 "routing_provider": route_data.get('provider', 'Unknown')
-            })
+            }
+            
+            # Add ETA information if available
+            if route_data.get('success'):
+                eta_minutes = route_data.get('estimated_duration_min', route_data.get('duration_min', 0))
+                facility_data["eta_min"] = round(eta_minutes, 1)
+                facility_data["traffic_factor"] = route_data.get('traffic_multiplier', 1.0)
+                facility_data["estimated"] = route_data.get('estimated', False)
+                facility_data["peak_hour"] = route_data.get('peak_hour', False)
+                successful_routes += 1
+            else:
+                # Estimate ETA based on distance
+                distance_km = route_data.get('distance_km', 0)
+                estimated_eta = max(10, distance_km * 1.5)  # Rough estimate: 1.5 min per km
+                facility_data["eta_min"] = round(estimated_eta, 1)
+                facility_data["traffic_factor"] = 1.0
+                facility_data["estimated"] = True
+                facility_data["peak_hour"] = False
+            
+            ranked_facilities.append(facility_data)
+            
         except Exception as e:
-            st.error(f"Error processing facility {facility.get('name', 'Unknown')}: {str(e)}")
+            # Log error but continue processing other facilities
+            print(f"Error processing facility {facility.get('name', 'Unknown')}: {str(e)}")
             continue
     
     # Clear progress indicators
     progress_bar.empty()
     status_text.empty()
     
-    # Sort by score (descending)
-    ranked_facilities.sort(key=lambda x: (-x["score"], x["eta_min"] if isinstance(x["eta_min"], (int, float)) else 999))
+    # Show routing summary
+    if successful_routes > 0:
+        st.success(f"✅ Successfully calculated routes to {successful_routes} out of {total_facilities} facilities")
+    else:
+        st.warning(f"⚠️ Using estimated distances for all {len(ranked_facilities)} facilities")
     
-    return ranked_facilities[:top_k]
-
+    # Sort by score (descending) and ensure we have facilities
+    if ranked_facilities:
+        ranked_facilities.sort(key=lambda x: (-x["score"], x.get("eta_min", 999)))
+        return ranked_facilities[:top_k]
+    else:
+        return []        
 # === DEMO FACILITIES (East Khasi Hills) ===
 EH_BASE = dict(lat_min=25.45, lat_max=25.65, lon_min=91.80, lon_max=91.95)
 
@@ -2823,9 +2892,64 @@ with tabs[0]:
             if st.session_state.triage_override_active and st.session_state.triage_override_color:
                 triage_color = st.session_state.triage_override_color
 
-            # Get ranked facilities - TEST BOTH METHODS
-            with st.spinner("Calculating optimal routes..."):
-                ORS_API_KEY = os.getenv('ORS_API_KEY', 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjAzZmM5ZTViYTI5ZjQzNGM5OTY0ODU5ZTJlZThlYjNjIiwiaCI6Im11cm11cjY0In0=')
+            # Get ranked facilities with proper error handling
+            with st.spinner("🚗 Calculating optimal routes with real-time traffic..."):
+                # Use environment variable with proper fallback
+                ORS_API_KEY = os.getenv('ORS_API_KEY')
+    
+                # If no API key in environment, use the provided key
+                if not ORS_API_KEY:
+            ORS_API_KEY = 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjAzZmM5ZTViYTI5ZjQzNGM5OTY0ODU5ZTJlZThlYjNjIiwiaCI6Im11cm11cjY0In0='
+    
+                # Test if API key is working
+                if ORS_API_KEY and ORS_API_KEY != "your_free_api_key_here":
+                    try:
+                        professional_facilities = enhanced_facility_ranking_with_ors(
+                            origin_coords=(p_lat, p_lon),
+                            required_caps=need_caps,
+                            case_type=complaint,
+                            triage_color=triage_color,
+                            top_k=8,
+                            api_key=ORS_API_KEY
+                        )
+            
+                        if professional_facilities and len(professional_facilities) > 0:
+                            ranked_facilities = professional_facilities
+                            routing_provider = "OpenRouteService Professional"
+                            st.success("✅ Using professional routing with real road network data")
+                        else:
+                            st.warning("⚠️ Professional routing found no facilities, falling back to free routing")
+                            ranked_facilities = rank_facilities_with_free_routing(
+                                origin_coords=(p_lat, p_lon),
+                                required_caps=need_caps,
+                                case_type=complaint,
+                                triage_color=triage_color,
+                                top_k=8,
+                                provider=current_provider
+                            )
+                            routing_provider = f"{current_provider.upper()} (Free)"
+                    except Exception as e:
+                        st.error(f"Professional routing failed: {str(e)}")
+                        ranked_facilities = rank_facilities_with_free_routing(
+                            origin_coords=(p_lat, p_lon),
+                            required_caps=need_caps,
+                            case_type=complaint,
+                            triage_color=triage_color,
+                            top_k=8,
+                            provider=current_provider
+                        )
+                        routing_provider = f"{current_provider.upper()} (Free Fallback)"
+                else:
+                    # No valid API key, use free routing directly
+                    ranked_facilities = rank_facilities_with_free_routing(
+                        origin_coords=(p_lat, p_lon),
+                        required_caps=need_caps,
+                        case_type=complaint,
+                        triage_color=triage_color,
+                        top_k=8,
+                        provider=current_provider
+                    )
+                    routing_provider = f"{current_provider.upper()} (Free)"
     
                 # Test professional routing
                 st.markdown("#### 🔧 Testing Professional Routing")
