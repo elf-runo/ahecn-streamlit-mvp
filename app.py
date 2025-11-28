@@ -2892,15 +2892,15 @@ with tabs[0]:
             if st.session_state.triage_override_active and st.session_state.triage_override_color:
                 triage_color = st.session_state.triage_override_color
 
-            # Get ranked facilities with proper error handling
+                        # Get ranked facilities with proper error handling
             with st.spinner("🚗 Calculating optimal routes with real-time traffic..."):
                 # Use environment variable with proper fallback
                 ORS_API_KEY = os.getenv('ORS_API_KEY')
-    
+                
                 # If no API key in environment, use the provided key
                 if not ORS_API_KEY:
-            ORS_API_KEY = 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjAzZmM5ZTViYTI5ZjQzNGM5OTY0ODU5ZTJlZThlYjNjIiwiaCI6Im11cm11cjY0In0='
-    
+                    ORS_API_KEY = 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjAzZmM5ZTViYTI5ZjQzNGM5OTY0ODU5ZTJlZThlYjNjIiwiaCI6Im11cm11cjY0In0='
+                
                 # Test if API key is working
                 if ORS_API_KEY and ORS_API_KEY != "your_free_api_key_here":
                     try:
@@ -2912,7 +2912,7 @@ with tabs[0]:
                             top_k=8,
                             api_key=ORS_API_KEY
                         )
-            
+                        
                         if professional_facilities and len(professional_facilities) > 0:
                             ranked_facilities = professional_facilities
                             routing_provider = "OpenRouteService Professional"
