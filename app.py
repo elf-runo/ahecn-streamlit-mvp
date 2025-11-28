@@ -40,7 +40,193 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed"
 )
-
+# === MEGHALAYA HOSPITAL DATASET ===
+MEGHALAYA_FACILITIES = [
+    # Central Referral Point - Shillong Civil Hospital
+    {
+        "name": "Shillong Civil Hospital",
+        "type": "Public",
+        "lat": 25.5780,
+        "lon": 91.8930,
+        "caps": {
+            "Emergency": 1, "ICU": 1, "Pediatric": 1, "Maternal": 1, "Trauma": 1,
+            "Cardiac": 1, "Neuro": 1, "Oncology": 1, "Orthopedic": 1, "Radiology": 1,
+            "Lab": 1, "Pharmacy": 1, "Ambulance": 1
+        },
+        "ICU_open": 50,
+        "acceptanceRate": 0.85,
+        "specialties": {
+            "Cardiac": True, "Neuro": True, "Trauma": True, "Maternal": True,
+            "Pediatric": True, "Orthopedic": True
+        },
+        "highend": {
+            "CT": True, "MRI": True, "Ventilator": True, "ICU": True
+        }
+    },
+    
+    # East Khasi Hills - Public Hospitals
+    {
+        "name": "Ganesh Das Hospital",
+        "type": "Public", 
+        "lat": 25.5880,
+        "lon": 91.9030,
+        "caps": {
+            "Emergency": 1, "ICU": 1, "Pediatric": 1, "Maternal": 1, "Trauma": 1,
+            "Cardiac": 1, "Neuro": 1, "Oncology": 1, "Orthopedic": 1, "Radiology": 1,
+            "Lab": 1, "Pharmacy": 1, "Ambulance": 1
+        },
+        "ICU_open": 30,
+        "acceptanceRate": 0.80,
+        "specialties": {
+            "Cardiac": True, "Neuro": True, "Trauma": True, "Maternal": True,
+            "Pediatric": True, "Orthopedic": True
+        },
+        "highend": {
+            "CT": True, "MRI": True, "Ventilator": True, "ICU": True
+        }
+    },
+    {
+        "name": "NEIGRIHMS Hospital",
+        "type": "Public",
+        "lat": 25.5680,
+        "lon": 91.8830,
+        "caps": {
+            "Emergency": 1, "ICU": 1, "Pediatric": 1, "Maternal": 1, "Trauma": 1,
+            "Cardiac": 1, "Neuro": 1, "Oncology": 1, "Orthopedic": 1, "Radiology": 1,
+            "Lab": 1, "Pharmacy": 1, "Ambulance": 1
+        },
+        "ICU_open": 100,
+        "acceptanceRate": 0.90,
+        "specialties": {
+            "Cardiac": True, "Neuro": True, "Trauma": True, "Maternal": True,
+            "Pediatric": True, "Orthopedic": True
+        },
+        "highend": {
+            "CT": True, "MRI": True, "Ventilator": True, "ICU": True
+        }
+    },
+    
+    # East Khasi Hills - Private Hospitals
+    {
+        "name": "Bethany Hospital",
+        "type": "Private",
+        "lat": 25.5820,
+        "lon": 91.9000,
+        "caps": {
+            "Emergency": 1, "ICU": 1, "Pediatric": 1, "Maternal": 1, "Trauma": 1,
+            "Cardiac": 1, "Neuro": 1, "Oncology": 1, "Orthopedic": 1, "Radiology": 1,
+            "Lab": 1, "Pharmacy": 1, "Ambulance": 1
+        },
+        "ICU_open": 20,
+        "acceptanceRate": 0.95,
+        "specialties": {
+            "Cardiac": True, "Neuro": True, "Trauma": True, "Maternal": True,
+            "Pediatric": True, "Orthopedic": True
+        },
+        "highend": {
+            "CT": True, "MRI": True, "Ventilator": True, "ICU": True
+        }
+    },
+    {
+        "name": "Nazareth Hospital", 
+        "type": "Private",
+        "lat": 25.5740,
+        "lon": 91.8850,
+        "caps": {
+            "Emergency": 1, "ICU": 1, "Pediatric": 1, "Maternal": 1, "Trauma": 1,
+            "Cardiac": 1, "Neuro": 1, "Oncology": 1, "Orthopedic": 1, "Radiology": 1,
+            "Lab": 1, "Pharmacy": 1, "Ambulance": 1
+        },
+        "ICU_open": 10,
+        "acceptanceRate": 0.85,
+        "specialties": {
+            "Cardiac": True, "Neuro": True, "Trauma": True, "Maternal": True,
+            "Pediatric": True, "Orthopedic": True
+        },
+        "highend": {
+            "CT": True, "MRI": True, "Ventilator": True, "ICU": True
+        }
+    },
+    
+    # West Jaintia Hills - Public Hospitals
+    {
+        "name": "Civil Hospital Jowai",
+        "type": "Public",
+        "lat": 25.4447,
+        "lon": 92.2047,
+        "caps": {
+            "Emergency": 1, "ICU": 1, "Pediatric": 1, "Maternal": 1, "Trauma": 1,
+            "Cardiac": 1, "Neuro": 0, "Oncology": 0, "Orthopedic": 1, "Radiology": 1,
+            "Lab": 1, "Pharmacy": 1, "Ambulance": 1
+        },
+        "ICU_open": 10,
+        "acceptanceRate": 0.75,
+        "specialties": {
+            "Cardiac": False, "Neuro": False, "Trauma": True, "Maternal": True,
+            "Pediatric": True, "Orthopedic": True
+        },
+        "highend": {
+            "CT": False, "MRI": False, "Ventilator": True, "ICU": True
+        }
+    },
+    {
+        "name": "MCH Hospital Panaliar",
+        "type": "Public", 
+        "lat": 25.4500,
+        "lon": 92.2100,
+        "caps": {
+            "Emergency": 1, "ICU": 1, "Pediatric": 1, "Maternal": 1, "Trauma": 0,
+            "Cardiac": 0, "Neuro": 0, "Oncology": 0, "Orthopedic": 0, "Radiology": 1,
+            "Lab": 1, "Pharmacy": 1, "Ambulance": 1
+        },
+        "ICU_open": 5,
+        "acceptanceRate": 0.80,
+        "specialties": {
+            "Cardiac": False, "Neuro": False, "Trauma": False, "Maternal": True,
+            "Pediatric": True, "Orthopedic": False
+        },
+        "highend": {
+            "CT": False, "MRI": False, "Ventilator": True, "ICU": True
+        }
+    },
+    
+    # West Jaintia Hills - Private Hospitals  
+    {
+        "name": "K.J.P. Assembly Hospital",
+        "type": "Private",
+        "lat": 25.4400,
+        "lon": 92.2000,
+        "caps": {
+            "Emergency": 1, "ICU": 1, "Pediatric": 1, "Maternal": 1, "Trauma": 1,
+            "Cardiac": 1, "Neuro": 0, "Oncology": 0, "Orthopedic": 1, "Radiology": 1,
+            "Lab": 1, "Pharmacy": 1, "Ambulance": 1
+        },
+        "ICU_open": 5,
+        "acceptanceRate": 0.85,
+        "specialties": {
+            "Cardiac": True, "Neuro": False, "Trauma": True, "Maternal": True,
+            "Pediatric": True, "Orthopedic": True
+        },
+        "highend": {
+            "CT": True, "MRI": False, "Ventilator": True, "ICU": True
+        }
+    }
+]
+# === INITIALIZATION FUNCTION (Step 2) ===
+def initialize_meghalaya_facilities():
+    """Initialize session state with Meghalaya hospital data"""
+    if 'facilities' not in st.session_state:
+        st.session_state.facilities = MEGHALAYA_FACILITIES
+    
+    # Set Shillong Civil Hospital as default central point
+    if 'central_referral_point' not in st.session_state:
+        st.session_state.central_referral_point = {
+            'name': 'Shillong Civil Hospital',
+            'lat': 25.5780,
+            'lon': 91.8930,
+            'type': 'Central Referral Point'
+        }
+        
 # === FREE ROUTING CONFIGURATION ===
 # Choose your free routing provider: 'osrm' (recommended) or 'openrouteservice'
 ROUTING_PROVIDER = 'osrm'
