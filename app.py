@@ -2862,92 +2862,83 @@ with tabs[0]:
                 need_caps.append(cap)
 
     # === ENHANCED FACILITY MATCHING WITH FREE ROUTING ===
-    st.markdown("### 🎯 Enhanced Facility Matching (Free Routing)")
+st.markdown("### 🎯 Enhanced Facility Matching (Free Routing)")
 
-    # Show free routing configuration
-    current_provider, enable_traffic = show_free_routing_configuration()
+# Show free routing configuration - this defines current_provider
+current_provider, enable_traffic = show_free_routing_configuration()
 
-    if st.button("Find Best Matched Facilities with Free Routing", type="primary"):
-        # Validate diagnosis before proceeding
-        if referrer_role == "Doctor/Physician" and dx_payload is None:
-            st.error("Please select an ICD diagnosis to find matching facilities")
-        elif referrer_role == "ANM/ASHA/EMT" and not dx_payload.get("label"):
-            st.error("Please provide a reason for referral to find matching facilities")
-        else:
-            # Calculate triage color (respect selected mode + AI)
-            vitals = dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu)
-            context = dict(
-                age=p_age,
-                pregnant=(complaint == "Maternal"),
-                infection=(complaint in ["Sepsis", "Other"]),
-                o2_device=st.session_state.o2_device,
-                spo2_scale=st.session_state.spo2_scale,
-                behavior=st.session_state.pews_behavior
-            )
-            triage_mode = st.session_state.get("triage_mode", "rules")
-            triage_color_ai, meta = triage_with_ai(vitals, context, complaint, triage_mode)
-            triage_color = triage_color_ai
+# Show API status using the now-defined current_provider
+st.markdown("#### 🔧 Routing Service Status")
+api_status_col1, api_status_col2 = st.columns(2)
 
-            # Apply override if active
-            if st.session_state.triage_override_active and st.session_state.triage_override_color:
-                triage_color = st.session_state.triage_override_color
-            # === ADD API STATUS CHECK HERE ===
-            st.markdown("#### 🔧 Routing Service Status")
-            api_status_col1, api_status_col2 = st.columns(2)
+with api_status_col1:
+    ORS_API_KEY = os.getenv('ORS_API_KEY', 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjAzZmM5ZTViYTI5ZjQzNGM5OTY0ODU5ZTJlZThlYjNjIiwiaCI6Im11cm11cjY0In0=')
+    
+    if ORS_API_KEY and ORS_API_KEY != "your_free_api_key_here":
+        st.success("✅ Professional Routing: Available")
+        st.caption("Using OpenRouteService with real road network data")
+    else:
+        st.warning("🔄 Professional Routing: Not Configured")
+        st.caption("Using free routing services")
 
-            with api_status_col1:
-                ORS_API_KEY = os.getenv('ORS_API_KEY', 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjAzZmM5ZTViYTI5ZjQzNGM5OTY0ODU5ZTJlZThlYjNjIiwiaCI6Im11cm11cjY0In0=')
+with api_status_col2:
+    # Safe usage of current_provider - it's now defined
+    provider_display = current_provider.upper() if current_provider else "OSRM"
+    st.info(f"🆓 Free Routing: {provider_display}")
+    st.caption("Fallback routing with estimated travel times")
+
+if st.button("Find Best Matched Facilities with Free Routing", type="primary"):
+    # Validate diagnosis before proceeding
+    if referrer_role == "Doctor/Physician" and dx_payload is None:
+        st.error("Please select an ICD diagnosis to find matching facilities")
+    elif referrer_role == "ANM/ASHA/EMT" and not dx_payload.get("label"):
+        st.error("Please provide a reason for referral to find matching facilities")
+    else:
+        # Calculate triage color (respect selected mode + AI)
+        vitals = dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu)
+        context = dict(
+            age=p_age,
+            pregnant=(complaint == "Maternal"),
+            infection=(complaint in ["Sepsis", "Other"]),
+            o2_device=st.session_state.o2_device,
+            spo2_scale=st.session_state.spo2_scale,
+            behavior=st.session_state.pews_behavior
+        )
+        triage_mode = st.session_state.get("triage_mode", "rules")
+        triage_color_ai, meta = triage_with_ai(vitals, context, complaint, triage_mode)
+        triage_color = triage_color_ai
+
+        # Apply override if active
+        if st.session_state.triage_override_active and st.session_state.triage_override_color:
+            triage_color = st.session_state.triage_override_color
+
+        # Get ranked facilities with proper error handling
+        with st.spinner("🚗 Calculating optimal routes with real-time traffic..."):
+            # Use environment variable with proper fallback
+            ORS_API_KEY = os.getenv('ORS_API_KEY', 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjAzZmM5ZTViYTI5ZjQzNGM5OTY0ODU5ZTJlZThlYjNjIiwiaCI6Im11cm11cjY0In0=')
             
-                if ORS_API_KEY and ORS_API_KEY != "your_free_api_key_here":
-                    st.success("✅ Professional Routing: Available")
-                    st.caption("Using OpenRouteService with real road network data")
-                else:
-                    st.warning("🔄 Professional Routing: Not Configured")
-                    st.caption("Using free routing services")
-
-            with api_status_col2:
-                st.info(f"🆓 Free Routing: {current_provider.upper()}")
-                st.caption("Fallback routing with estimated travel times")
-            # === END API STATUS CHECK ===
-        
-            # Get ranked facilities with proper error handling
-            with st.spinner("🚗 Calculating optimal routes with real-time traffic..."):
-                # Use environment variable with proper fallback
-                ORS_API_KEY = os.getenv('ORS_API_KEY')
-                
-                # If no API key in environment, use the provided key
-                if not ORS_API_KEY:
-                    ORS_API_KEY = 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjAzZmM5ZTViYTI5ZjQzNGM5OTY0ODU5ZTJlZThlYjNjIiwiaCI6Im11cm11cjY0In0='
-                
-                # Test if API key is working
-                if ORS_API_KEY and ORS_API_KEY != "your_free_api_key_here":
-                    try:
-                        professional_facilities = enhanced_facility_ranking_with_ors(
-                            origin_coords=(p_lat, p_lon),
-                            required_caps=need_caps,
-                            case_type=complaint,
-                            triage_color=triage_color,
-                            top_k=8,
-                            api_key=ORS_API_KEY
-                        )
-                        
-                        if professional_facilities and len(professional_facilities) > 0:
-                            ranked_facilities = professional_facilities
-                            routing_provider = "OpenRouteService Professional"
-                            st.success("✅ Using professional routing with real road network data")
-                        else:
-                            st.warning("⚠️ Professional routing found no facilities, falling back to free routing")
-                            ranked_facilities = rank_facilities_with_free_routing(
-                                origin_coords=(p_lat, p_lon),
-                                required_caps=need_caps,
-                                case_type=complaint,
-                                triage_color=triage_color,
-                                top_k=8,
-                                provider=current_provider
-                            )
-                            routing_provider = f"{current_provider.upper()} (Free)"
-                    except Exception as e:
-                        st.error(f"Professional routing failed: {str(e)}")
+            # If no API key in environment, use the provided key
+            if not ORS_API_KEY:
+                ORS_API_KEY = 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjAzZmM5ZTViYTI5ZjQzNGM5OTY0ODU5ZTJlZThlYjNjIiwiaCI6Im11cm11cjY0In0='
+            
+            # Test if API key is working
+            if ORS_API_KEY and ORS_API_KEY != "your_free_api_key_here":
+                try:
+                    professional_facilities = enhanced_facility_ranking_with_ors(
+                        origin_coords=(p_lat, p_lon),
+                        required_caps=need_caps,
+                        case_type=complaint,
+                        triage_color=triage_color,
+                        top_k=8,
+                        api_key=ORS_API_KEY
+                    )
+                    
+                    if professional_facilities and len(professional_facilities) > 0:
+                        ranked_facilities = professional_facilities
+                        routing_provider = "OpenRouteService Professional"
+                        st.success("✅ Using professional routing with real road network data")
+                    else:
+                        st.warning("⚠️ Professional routing found no facilities, falling back to free routing")
                         ranked_facilities = rank_facilities_with_free_routing(
                             origin_coords=(p_lat, p_lon),
                             required_caps=need_caps,
@@ -2956,9 +2947,9 @@ with tabs[0]:
                             top_k=8,
                             provider=current_provider
                         )
-                        routing_provider = f"{current_provider.upper()} (Free Fallback)"
-                else:
-                    # No valid API key, use free routing directly
+                        routing_provider = f"{current_provider.upper()} (Free)"
+                except Exception as e:
+                    st.error(f"Professional routing failed: {str(e)}")
                     ranked_facilities = rank_facilities_with_free_routing(
                         origin_coords=(p_lat, p_lon),
                         required_caps=need_caps,
@@ -2967,57 +2958,28 @@ with tabs[0]:
                         top_k=8,
                         provider=current_provider
                     )
-                    routing_provider = f"{current_provider.upper()} (Free)"
-    
-                # Test professional routing
-                st.markdown("#### 🔧 Testing Professional Routing")
-                professional_facilities = enhanced_facility_ranking_with_ors(
+                    routing_provider = f"{current_provider.upper()} (Free Fallback)"
+            else:
+                # No valid API key, use free routing directly
+                ranked_facilities = rank_facilities_with_free_routing(
                     origin_coords=(p_lat, p_lon),
                     required_caps=need_caps,
                     case_type=complaint,
                     triage_color=triage_color,
                     top_k=8,
-                    api_key=ORS_API_KEY
+                    provider=current_provider
                 )
-                # Test free routing
-                st.markdown("#### 🔧 Testing Free Routing")
-                free_facilities = rank_facilities_with_free_routing(
-                        origin_coords=(p_lat, p_lon),
-                        required_caps=need_caps,
-                        case_type=complaint,
-                        triage_color=triage_color,
-                        top_k=8,
-                        provider=current_provider
-                    )
-                # Compare results
-                st.markdown("#### 🔧 Comparison Results")
-                st.write(f"Professional routing found: {len(professional_facilities) if professional_facilities else 0} facilities") 
-                st.write(f"Free routing found: {len(free_facilities) if free_facilities else 0} facilities")
-                
-                # Use professional if it found facilities, otherwise fallback to free
-                if professional_facilities:
-                    ranked_facilities = professional_facilities
-                    routing_provider = "OpenRouteService (Professional)"
-                    st.success("✅ Using professional routing results")
-
-                else:
-                    ranked_facilities = free_facilities
-                    routing_provider = {
-                        "osrm": "OSRM (Free Open Source)",
-                        "graphhopper": "GraphHopper (Free Tier)", 
-                        "openrouteservice": "OpenRouteService (Free)"
-                    }[current_provider]
-                    st.warning("⚠️ Professional routing found no facilities, using free routing fallback")
-                    
+                routing_provider = f"{current_provider.upper()} (Free)"
+            
             # Display results
             if not ranked_facilities:
                 st.warning("No suitable facilities found. Try relaxing capability requirements.")
             else:
                 st.success(f"✓ Routing completed using {routing_provider}")
-    
+        
                 # Display ranked facilities
                 st.markdown(f"#### 🏆 Top {len(ranked_facilities)} Matched Facilities")
-    
+        
                 # Show traffic simulation status
                 if enable_traffic:
                     current_hour = datetime.now().hour
@@ -3025,9 +2987,9 @@ with tabs[0]:
                         st.info("🚗 **Peak hours detected**: Estimated travel times include traffic delays")
                     else:
                         st.info("🛣️ **Off-peak hours**: Normal travel conditions")
-    
+        
                 st.info(f"**Case Type:** {complaint} | **Triage:** {triage_color} | **Required Capabilities:** {', '.join(need_caps) if need_caps else 'None'}")
-    
+        
                 # Reset selection state
                 st.session_state.matched_primary = None
                 st.session_state.matched_alts = set()
