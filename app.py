@@ -226,8 +226,22 @@ def initialize_meghalaya_facilities():
             'lon': 91.8930,
             'type': 'Central Referral Point'
         }
-        
-# === FREE ROUTING CONFIGURATION ===
+
+def verify_meghalaya_facilities():
+    """Verify that Meghalaya facilities are being used"""
+    if not st.session_state.get('facilities'):
+        return False
+    
+    # Check if we have known Meghalaya facilities
+    meghalaya_facility_names = ["Shillong Civil Hospital", "Ganesh Das Hospital", "NEIGRIHMS Hospital", 
+                               "Bethany Hospital", "Nazareth Hospital", "Civil Hospital Jowai"]
+    
+    actual_names = [f['name'] for f in st.session_state.facilities]
+    meghalaya_count = sum(1 for name in actual_names if any(meghalaya_name in name for meghalaya_name in meghalaya_facility_names))
+    
+    return meghalaya_count > 0        
+
+    # === FREE ROUTING CONFIGURATION ===
 # Choose your free routing provider: 'osrm' (recommended) or 'openrouteservice'
 ROUTING_PROVIDER = 'osrm'
 
@@ -284,6 +298,7 @@ def show_free_routing_configuration():
         st.sidebar.info("**OpenRouteService**: Free with Registration")
     
     return provider, enable_traffic
+
 def test_meghalaya_routes():
     """Test routing between Meghalaya hospitals"""
     st.markdown("### 🧪 Meghalaya Route Testing")
@@ -322,7 +337,21 @@ def test_meghalaya_routes():
                     )
                     if free_route.get('success'):
                         st.info(f"🔄 Fallback: {free_route.get('distance_km', 0):.1f} km")
-                        
+
+# === ADD THIS RIGHT AFTER THE ROUTING CONFIGURATION ===
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 🏥 Data Source Verification")
+
+if verify_meghalaya_facilities():
+    st.sidebar.success("✅ Using Meghalaya Hospital Data")
+    facility_count = len(st.session_state.facilities)
+    st.sidebar.write(f"**Active Facilities:** {facility_count}")
+else:
+    st.sidebar.error("❌ Synthetic Data Detected")
+    if st.sidebar.button("Fix Data Source"):
+        initialize_meghalaya_facilities()
+        st.rerun()
+
 # === ENHANCED FACILITY CARD WITH ROUTING INFO ===
 def enhanced_facility_card(row, rank, is_primary=False, is_alternate=False):
     """
@@ -2348,8 +2377,9 @@ def seed_referrals(n=500, rng_seed=42, append=False):
 
 # === SESSION STATE INITIALIZATION ===
 if "facilities" not in st.session_state:
-    st.session_state.facilities = default_facilities(count=15)
-
+    # Initialize with Meghalaya facilities instead of synthetic data
+    initialize_meghalaya_facilities()
+    
 # Initialize session state variables
 if "patient_age" not in st.session_state: 
     st.session_state.patient_age = 30
@@ -2395,8 +2425,8 @@ if "matched_primary" not in st.session_state:
 if "matched_alts" not in st.session_state:
     st.session_state.matched_alts = set()
 
-# Normalize schema
-st.session_state.facilities = [normalize_facility(x) for x in st.session_state.facilities]
+# Normalize schema - COMMENTED OUT to preserve Meghalaya data structure
+# st.session_state.facilities = [normalize_facility(x) for x in st.session_state.facilities]
 
 # Auto-seed on first run (ensures ≥100)
 if len(st.session_state.referrals) < 100:
@@ -2433,6 +2463,7 @@ with tabs[0]:
     referrer_role = st.radio("Referrer role", ["Doctor/Physician", "ANM/ASHA/EMT"], horizontal=True)
     
     ocr = st.text_area("Clinical Notes / OCR (paste)", height=100, placeholder="Paste clinical notes, observations, or free-text assessment here...")
+    
     # === MEGHALAYA COMMON HEALTH SCENARIOS ===
     # Check if demo_mode is enabled (you need to define demo_mode variable)
     demo_mode = st.session_state.get('demo_mode', True)  # Default to True for Meghalaya demo
@@ -4552,28 +4583,21 @@ with tabs[5]:
         return df.to_csv(index=False).encode("utf-8")
 
     # ---------- Seed/reset ----------
-    st.markdown("#### Demo Facilities Controls")
-    fc1, fc2, fc3 = st.columns(3)
-    with fc1:
-        if st.button("🔁 Reset to Default 15", key="fac_reset"):
-            st.session_state.facilities = default_facilities(count=15)
-            st.session_state.facilities = [normalize_facility(x) for x in st.session_state.facilities]
-            st.success("Facilities reset to default 15.")
-    with fc2:
-        gen_n = st.number_input("Generate facilities", 10, 200, 30, step=5, key="fac_gen_n")
-        if st.button("🎲 Generate New Set", key="fac_generate"):
-            st.session_state.facilities = default_facilities(count=int(gen_n))
-            st.session_state.facilities = [normalize_facility(x) for x in st.session_state.facilities]
-            st.success(f"Generated {gen_n} demo facilities.")
-    with fc3:
-        up_fac = st.file_uploader("⬆️ Upload facilities CSV", type=["csv"], key="fac_up")
-        if up_fac is not None:
-            try:
-                df_up = pd.read_csv(up_fac)
-                st.session_state.facilities = pack_facilities_from_df(df_up)
-                st.success(f"Imported {len(st.session_state.facilities)} facilities from CSV.")
-            except Exception as e:
-                st.error(f"Import failed: {e}")
+        st.markdown("#### Demo Facilities Controls")
+        fc1, fc2, fc3 = st.columns(3)
+        with fc1:
+            if st.button("🔄 Reset to Meghalaya Facilities", key="fac_reset"):
+                initialize_meghalaya_facilities()
+                st.success("Facilities reset to Meghalaya dataset.")
+        with fc2:
+            if st.button("📊 Show Facility Summary", key="fac_summary"):
+                public_count = sum(1 for f in st.session_state.facilities if f['type'] == 'Public')
+                private_count = sum(1 for f in st.session_state.facilities if f['type'] == 'Private')
+                total_icu = sum(f.get('ICU_open', 0) for f in st.session_state.facilities)
+                st.info(f"**Meghalaya Facilities Summary:** {public_count} Public, {private_count} Private, {total_icu} Total ICU Beds")
+    
+        with fc3:
+            st.info("**Using Real Meghalaya Hospital Data**")
 
     # ---------- Editor ----------
     st.markdown("#### Edit Facilities (inline)")
