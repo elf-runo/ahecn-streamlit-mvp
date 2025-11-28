@@ -2862,6 +2862,21 @@ with tabs[0]:
                 need_caps.append(cap)
 
     # === ENHANCED FACILITY MATCHING WITH FREE ROUTING ===
+# Debug: Check if function exists and works
+try:
+    result = show_free_routing_configuration()
+    st.write(f"DEBUG: Function returned: {result}")
+    if result:
+        current_provider, enable_traffic = result
+    else:
+        current_provider = "osrm"
+        enable_traffic = True
+except Exception as e:
+    st.error(f"DEBUG: Function failed: {e}")
+    current_provider = "osrm"
+    enable_traffic = True
+
+st.write(f"DEBUG: current_provider = {current_provider}")
 st.markdown("### 🎯 Enhanced Facility Matching (Free Routing)")
 
 # Show free routing configuration
