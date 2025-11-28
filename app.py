@@ -284,7 +284,45 @@ def show_free_routing_configuration():
         st.sidebar.info("**OpenRouteService**: Free with Registration")
     
     return provider, enable_traffic
-
+def test_meghalaya_routes():
+    """Test routing between Meghalaya hospitals"""
+    st.markdown("### 🧪 Meghalaya Route Testing")
+    
+    # Test routes from Shillong Civil Hospital to other facilities
+    origin = st.session_state.central_referral_point
+    
+    test_destinations = [
+        ("Ganesh Das Hospital", 25.5880, 91.9030),
+        ("NEIGRIHMS", 25.5680, 91.8830), 
+        ("Civil Hospital Jowai", 25.4447, 92.2047),
+        ("Bethany Hospital", 25.5820, 91.9000)
+    ]
+    
+    for dest_name, dest_lat, dest_lon in test_destinations:
+        with st.expander(f"Route: Shillong → {dest_name}"):
+            # Test with professional routing
+            ORS_API_KEY = os.getenv('ORS_API_KEY', 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjAzZmM5ZTViYTI5ZjQzNGM5OTY0ODU5ZTJlZThlYjNjIiwiaCI6Im11cm11cjY0In0=')
+            if ORS_API_KEY and ORS_API_KEY != "your_free_api_key_here":
+                route_data = get_ors_route(
+                    origin['lat'], origin['lon'],
+                    dest_lat, dest_lon,
+                    ORS_API_KEY
+                )
+                
+                if route_data['success']:
+                    st.success(f"✅ {route_data['distance_km']:.1f} km • {route_data['duration_min']:.1f} min")
+                    st.write(f"**Provider:** {route_data['provider']}")
+                else:
+                    st.error(f"❌ Routing failed: {route_data.get('error')}")
+                    # Fallback to free routing
+                    free_route = get_route_info_free(
+                        origin['lat'], origin['lon'],
+                        dest_lat, dest_lon,
+                        provider="osrm"
+                    )
+                    if free_route.get('success'):
+                        st.info(f"🔄 Fallback: {free_route.get('distance_km', 0):.1f} km")
+                        
 # === ENHANCED FACILITY CARD WITH ROUTING INFO ===
 def enhanced_facility_card(row, rank, is_primary=False, is_alternate=False):
     """
@@ -356,7 +394,36 @@ def enhanced_facility_card(row, rank, is_primary=False, is_alternate=False):
         
         st.markdown('</div>', unsafe_allow_html=True)
         return pick, alt
-
+def display_meghalaya_facility_info(facility):
+    """Display enhanced facility information with district classification"""
+    
+    # Determine district based on coordinates
+    lat, lon = facility['lat'], facility['lon']
+    if 25.4 <= lat <= 25.7 and 91.8 <= lon <= 92.0:
+        district = "East Khasi Hills"
+    elif 25.4 <= lat <= 25.5 and 92.1 <= lon <= 92.3:
+        district = "West Jaintia Hills" 
+    else:
+        district = "Meghalaya"
+    
+    # Create enhanced display
+    col1, col2, col3 = st.columns([2, 1, 1])
+    
+    with col1:
+        st.write(f"**{facility['name']}**")
+        st.write(f"*{facility['type']} Hospital • {district}*")
+        
+    with col2:
+        st.metric("ICU Beds", facility.get('ICU_open', 0))
+        
+    with col3:
+        acceptance = int(facility.get('acceptanceRate', 0.75) * 100)
+        st.metric("Acceptance", f"{acceptance}%")
+    
+    # Show capabilities
+    specialties = [s for s, v in facility.get('specialties', {}).items() if v]
+    if specialties:
+        st.write(f"**Specialties:** {', '.join(specialties)}")
 def enhanced_facility_ranking_with_ors(origin_coords, required_caps, case_type, triage_color, top_k=5, api_key=None):
     """
     Rank facilities using OpenRouteService professional routing with fallbacks
@@ -2294,7 +2361,14 @@ if "pews_behavior" not in st.session_state:
     st.session_state.pews_behavior = "Normal"
 if "triage_mode" not in st.session_state:
     st.session_state.triage_mode = "rules"  # 'rules' | 'ai' | 'hybrid'
-    
+
+# Initialize Meghalaya facilities
+initialize_meghalaya_facilities()
+
+# Initialize demo mode for Meghalaya
+if "demo_mode" not in st.session_state:
+    st.session_state.demo_mode = True  # Enable Meghalaya demo by default
+
 # Initialize AI model in session state if not already there
 if "triage_model" not in st.session_state:
     st.session_state.triage_model = triage_model
@@ -2346,8 +2420,10 @@ with tabs[0]:
 
     with c2:
         p_id = st.text_input("Patient ID", "PT-001")
-        p_lat = st.number_input("Latitude", value=25.58, format="%.6f")
-        p_lon = st.number_input("Longitude", value=91.89, format="%.6f")
+        # Default to Shillong Civil Hospital coordinates
+        p_lat = st.number_input("Latitude", value=25.5780, format="%.6f")
+        p_lon = st.number_input("Longitude", value=91.8930, format="%.6f")
+    
     with c3:
         r_name = st.text_input("Referrer name", "Dr. Smith")
         r_fac = st.text_input("Referrer facility", "PHC Mawlai")
@@ -2357,7 +2433,53 @@ with tabs[0]:
     referrer_role = st.radio("Referrer role", ["Doctor/Physician", "ANM/ASHA/EMT"], horizontal=True)
     
     ocr = st.text_area("Clinical Notes / OCR (paste)", height=100, placeholder="Paste clinical notes, observations, or free-text assessment here...")
+    # === MEGHALAYA COMMON HEALTH SCENARIOS ===
+    # Check if demo_mode is enabled (you need to define demo_mode variable)
+    demo_mode = st.session_state.get('demo_mode', True)  # Default to True for Meghalaya demo
 
+    if demo_mode:
+        st.info("🎯 **Meghalaya Demo Mode**: Using actual hospital data from East Khasi Hills and West Jaintia Hills")
+    
+        # Pre-set common Meghalaya health scenarios
+        scenario = st.selectbox(
+            "Common Health Scenarios",
+            [
+                "Select Scenario",
+                "Cardiac Emergency", 
+                "Maternal Complication",
+                "Pediatric Critical Care", 
+                "Trauma/Accident",
+                "Neuro Emergency"
+            ]    
+        )
+    
+        # Auto-set capabilities based on scenario
+        scenario_caps = {
+            "Cardiac Emergency": ["Emergency", "ICU", "Cardiac"],
+            "Maternal Complication": ["Emergency", "Maternal", "ICU", "BloodBank"],
+            "Pediatric Critical Care": ["Emergency", "Pediatric", "ICU"], 
+            "Trauma/Accident": ["Emergency", "Trauma", "Orthopedic", "ICU"],
+            "Neuro Emergency": ["Emergency", "Neuro", "ICU", "CT"]
+        }
+    
+        if scenario != "Select Scenario":
+            # Store the scenario capabilities in session state for later use
+            st.session_state.scenario_caps = scenario_caps[scenario]
+            st.write(f"**Required Capabilities:** {', '.join(st.session_state.scenario_caps)}")
+        
+            # Auto-set complaint based on scenario
+            complaint_map = {
+                "Cardiac Emergency": "Cardiac",
+                "Maternal Complication": "Maternal", 
+                "Pediatric Critical Care": "Other",
+                "Trauma/Accident": "Trauma",
+                "Neuro Emergency": "Stroke"
+            }
+        
+            # Update the complaint in session state
+            st.session_state.complaint = complaint_map[scenario]
+            st.info(f"Complaint auto-set to: {st.session_state.complaint}")
+            
     # Vitals Section
     st.subheader("Vitals + Scores")
     v1, v2, v3 = st.columns(3)
@@ -2369,7 +2491,15 @@ with tabs[0]:
     with v2:
         spo2 = st.number_input("SpO₂ %", 50, 100, 92)
         avpu = st.selectbox("AVPU", ["A", "V", "P", "U"], index=0)
-        complaint = st.selectbox("Chief complaint", ["Maternal", "Trauma", "Stroke", "Cardiac", "Sepsis", "Other"], index=0)
+    
+        # Use session state complaint if set by scenario, otherwise use default
+        complaint_default = st.session_state.get('complaint', 'Maternal')
+        complaint_index = ["Maternal", "Trauma", "Stroke", "Cardiac", "Sepsis", "Other"].index(complaint_default)
+        complaint = st.selectbox("Chief complaint", ["Maternal", "Trauma", "Stroke", "Cardiac", "Sepsis", "Other"], 
+                               index=complaint_index)
+    
+        # Update session state with current selection
+        st.session_state.complaint = complaint
     with v3:
         st.info("**Score-based triage**\n\nTriage color determined by NEWS2/MEOWS/PEWS thresholds only")
 
@@ -2622,9 +2752,12 @@ with tabs[0]:
         st.caption("Select required capabilities for this case")
         cap_cols = st.columns(5)
         CAP_LIST = ["ICU", "Ventilator", "BloodBank", "OR", "CT", "Thrombolysis", "OBGYN_OT", "CathLab", "Dialysis", "Neurosurgery"]
+    
+        # Get scenario caps if available, otherwise use auto-suggested
+        scenario_caps = st.session_state.get('scenario_caps', [])
         for i, cap in enumerate(CAP_LIST):
-            # Pre-select auto-suggested capabilities
-            pre_select = cap in auto_suggested_caps
+            # Pre-select scenario capabilities OR auto-suggested capabilities
+            pre_select = cap in scenario_caps or (chosen_icd and row is not None and cap in auto_suggested_caps)
             if cap_cols[i % 5].checkbox(cap, value=pre_select, key=f"cap_{cap}"):
                 need_caps.append(cap)
 
@@ -4285,6 +4418,11 @@ with tabs[4]:
 
     st.dataframe(ref_df, use_container_width=True, height=360)
 
+    # ---------- Meghalaya Route Testing ----------
+    st.markdown("#### 🧪 Meghalaya Route Testing")
+    if st.button("Test Routes from Shillong Civil Hospital"):
+        test_meghalaya_routes()
+    
     # ---------- Downloads / Uploads ----------
     st.markdown("#### Import/Export")
     d1, d2, d3 = st.columns(3)
