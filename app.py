@@ -2864,10 +2864,15 @@ with tabs[0]:
     # === ENHANCED FACILITY MATCHING WITH FREE ROUTING ===
 st.markdown("### 🎯 Enhanced Facility Matching (Free Routing)")
 
-# Show free routing configuration - this defines current_provider
-current_provider, enable_traffic = show_free_routing_configuration()
+# Show free routing configuration
+try:
+    current_provider, enable_traffic = show_free_routing_configuration()
+except:
+    # Fallback if function fails
+    current_provider = "osrm"
+    enable_traffic = True
 
-# Show API status using the now-defined current_provider
+# Show API status
 st.markdown("#### 🔧 Routing Service Status")
 api_status_col1, api_status_col2 = st.columns(2)
 
@@ -2882,11 +2887,16 @@ with api_status_col1:
         st.caption("Using free routing services")
 
 with api_status_col2:
-    # Safe usage of current_provider - it's now defined
-    provider_display = current_provider.upper() if current_provider else "OSRM"
-    st.info(f"🆓 Free Routing: {provider_display}")
+    # Safe usage with guaranteed fallback
+    provider_name = str(current_provider).upper() if current_provider else "OSRM"
+    st.info(f"🆓 Free Routing: {provider_name}")
     st.caption("Fallback routing with estimated travel times")
 
+with api_status_col2:
+    # Safe usage with guaranteed fallback
+    provider_name = str(current_provider).upper() if current_provider else "OSRM"
+    st.info(f"🆓 Free Routing: {provider_name}")
+    st.caption("Fallback routing with estimated travel times")
 if st.button("Find Best Matched Facilities with Free Routing", type="primary"):
     # Validate diagnosis before proceeding
     if referrer_role == "Doctor/Physician" and dx_payload is None:
