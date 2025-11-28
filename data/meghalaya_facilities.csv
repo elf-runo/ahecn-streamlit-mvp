@@ -1,0 +1,9 @@
+facility_id,name,lat,lon,level,ownership,district,has_ed,has_icu,has_nicu,has_oti,has_ct,has_mri,has_blood_bank,has_obgyn,has_peds,has_ortho,has_cardiology,is_network_member
+MEG-SH-001,Shillong Civil Hospital,25.57877,91.89325,Secondary,Public,East Khasi Hills,1,1,0,1,1,0,1,1,1,1,0,1
+MEG-SH-002,Ganesh Das Hospital,25.57960,91.89010,Secondary,Public,East Khasi Hills,1,0,1,0,0,0,0,1,1,0,0,1
+MEG-SH-003,NEIGRIHMS Hospital,25.61467,91.96040,Tertiary,Public,East Khasi Hills,1,1,1,1,1,1,1,1,1,1,1,1
+MEG-SH-004,Bethany Hospital,25.56950,91.88390,Secondary,Private,East Khasi Hills,1,1,0,1,1,0,0,1,1,1,0,1
+MEG-SH-005,Nazareth Hospital,25.56730,91.88300,Secondary,Private,East Khasi Hills,1,1,0,1,1,0,0,1,1,1,0,1
+MEG-WJ-001,Civil Hospital Jowai,25.45180,92.20135,Secondary,Public,West Jaintia Hills,1,1,0,1,0,0,0,1,1,0,0,1
+MEG-WJ-002,MCH Hospital Panaliar,25.45100,92.20200,Secondary,Public,West Jaintia Hills,1,0,1,0,0,0,0,1,1,0,0,1
+MEG-WJ-003,K.J.P. Assembly Hospital,25.44780,92.20450,Secondary,Private,West Jaintia Hills,1,0,0,0,0,0,0,1,1,0,0,1
