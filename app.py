@@ -2891,8 +2891,26 @@ with tabs[0]:
             # Apply override if active
             if st.session_state.triage_override_active and st.session_state.triage_override_color:
                 triage_color = st.session_state.triage_override_color
+            # === ADD API STATUS CHECK HERE ===
+            st.markdown("#### 🔧 Routing Service Status")
+            api_status_col1, api_status_col2 = st.columns(2)
 
-                        # Get ranked facilities with proper error handling
+            with api_status_col1:
+                ORS_API_KEY = os.getenv('ORS_API_KEY', 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjAzZmM5ZTViYTI5ZjQzNGM5OTY0ODU5ZTJlZThlYjNjIiwiaCI6Im11cm11cjY0In0=')
+            
+                if ORS_API_KEY and ORS_API_KEY != "your_free_api_key_here":
+                    st.success("✅ Professional Routing: Available")
+                    st.caption("Using OpenRouteService with real road network data")
+                else:
+                    st.warning("🔄 Professional Routing: Not Configured")
+                    st.caption("Using free routing services")
+
+            with api_status_col2:
+                st.info(f"🆓 Free Routing: {current_provider.upper()}")
+                st.caption("Fallback routing with estimated travel times")
+            # === END API STATUS CHECK ===
+        
+            # Get ranked facilities with proper error handling
             with st.spinner("🚗 Calculating optimal routes with real-time traffic..."):
                 # Use environment variable with proper fallback
                 ORS_API_KEY = os.getenv('ORS_API_KEY')
