@@ -4220,30 +4220,54 @@ with tabs[5]:
     with sm2:
         origin_lon = st.number_input("Origin Lon", value=91.890000, format="%.6f", key="qa_lon")
     with sm3:
-        qa_case = st.selectbox("Case type", ["Maternal","Trauma","Stroke","Cardiac","Sepsis","Other"], index=0, key="qa_case")
-    with sm4:
-        qa_tri = st.selectbox("Triage", ["RED","YELLOW","GREEN"], index=0, key="qa_tri")
-
-    qa_caps = st.multiselect("Required capabilities", REQ_CAPS, default=["ICU"] if qa_tri=="RED" else [])
-    if st.button("Run facility match (top 5)", key="qa_run"):
-        ranked = rank_facilities_with_free_routing(
-            origin_coords=(origin_lat, origin_lon),
-            required_caps=qa_caps,
-            case_type=qa_case,
-            triage_color=qa_tri,
-            top_k=5,
-            provider=None  # use default
+        qa_case = st.selectbox(
+            "Case type",
+            ["Maternal", "Trauma", "Stroke", "Cardiac", "Sepsis", "Other"],
+            index=0,
+            key="qa_case"
         )
-        if not ranked:
-            st.warning("No facilities matched the capability threshold. Relax filters and try again.")
-        else:
-            st.success(f"Top {len(ranked)} matches")
-            for i, r in enumerate(ranked, 1):
-                with st.container():
-                    st.markdown(f"**{i}. {r['name']}** - Score: {r['score']} - ETA: {r['eta_min']} min")
-                    st.write(f"Distance: {r['km']} km • ICU beds: {r['ICU_open']}")
-                    st.write(f"Specialties: {r['specialties']}")
-                    st.write(f"High-end equipment: {r['highend']}")
-                    st.markdown("---")
-except Exception as e:
-    st.write("Chart not available: ", str(e))
+    with sm4:
+        qa_tri = st.selectbox(
+            "Triage",
+            ["RED", "YELLOW", "GREEN"],
+            index=0,
+            key="qa_tri"
+        )
+
+    qa_caps = st.multiselect(
+        "Required capabilities",
+        REQ_CAPS,
+        default=["ICU"] if qa_tri == "RED" else []
+    )
+
+    if st.button("Run facility match (top 5)", key="qa_run"):
+        try:
+            ranked = rank_facilities_with_free_routing(
+                origin_coords=(origin_lat, origin_lon),
+                required_caps=qa_caps,
+                case_type=qa_case,
+                triage_color=qa_tri,
+                top_k=5,
+                provider=None  # use default
+            )
+
+            if not ranked:
+                st.warning(
+                    "No facilities matched the capability threshold. "
+                    "Relax filters and try again."
+                )
+            else:
+                st.success(f"Top {len(ranked)} matches")
+                for i, r in enumerate(ranked, 1):
+                    with st.container():
+                        st.markdown(
+                            f"**{i}. {r['name']}** - "
+                            f"Score: {r['score']} - ETA: {r['eta_min']} min"
+                        )
+                        st.write(f"Distance: {r['km']} km • ICU beds: {r['ICU_open']}")
+                        st.write(f"Specialties: {r['specialties']}")
+                        st.write(f"High-end equipment: {r['highend']}")
+                        st.markdown("---")
+
+        except Exception as e:
+            st.write("Quick match not available: ", str(e))
