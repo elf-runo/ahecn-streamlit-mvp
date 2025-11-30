@@ -25,6 +25,8 @@ st.set_page_config(
 # ==========================
 # Facility database loading
 # ==========================
+from pathlib import Path  # keep only once at top of file
+
 FACILITY_BOOL_COLS = [
     "has_ed",
     "has_icu",
@@ -41,93 +43,75 @@ FACILITY_BOOL_COLS = [
 ]
 
 @st.cache_data
-def load_meghalaya_facilities(csv_path: str = "meghalaya_facilities.csv"):
+def load_meghalaya_facilities():
     """
-    Load the real Meghalaya facility master from CSV and
-    normalise it into a list[dict] with a 'capabilities' sub-dict.
+    Load the real Meghalaya facility master from data/meghalaya_facilities.csv
+    and return a list[dict] with a 'capabilities' sub-dict per facility.
+    This is exactly what default_facilities() expects.
     """
+    base_dir = Path(__file__).parent
+    csv_path = base_dir / "data" / "meghalaya_facilities.csv"
+
     df = pd.read_csv(csv_path)
 
-    # Ensure correct dtypes
-    df["lat"] = df["lat"].astype(float)
-    df["lon"] = df["lon"].astype(float)
+    # normalise column names
+    df.columns = [c.strip().lower() for c in df.columns]
 
-    # Convert 0/1 cols to bool
+    # ensure numeric lat/lon
+    if "lat" in df.columns:
+        df["lat"] = df["lat"].astype(float)
+    if "lon" in df.columns:
+        df["lon"] = df["lon"].astype(float)
+
+    # normalise capability flags as 0/1 ints
     for col in FACILITY_BOOL_COLS:
         if col in df.columns:
-            df[col] = df[col].astype(int).astype(bool)
+            df[col] = df[col].astype(int)
 
     facilities = []
     for _, row in df.iterrows():
-        facilities.append(
-            {
-                "facility_id": row["facility_id"],
-                "name": row["name"],
-                "lat": float(row["lat"]),
-                "lon": float(row["lon"]),
-                "level": row.get("level", ""),
-                "ownership": row.get("ownership", ""),
-                "district": row.get("district", ""),
-                # Normalised capability bundle used by matching logic
-                "capabilities": {
-                    "ed": bool(row.get("has_ed", False)),
-                    "icu": bool(row.get("has_icu", False)),
-                    "nicu": bool(row.get("has_nicu", False)),
-                    "oti": bool(row.get("has_oti", False)),
-                    "ct": bool(row.get("has_ct", False)),
-                    "mri": bool(row.get("has_mri", False)),
-                    "blood_bank": bool(row.get("has_blood_bank", False)),
-                    "obgyn": bool(row.get("has_obgyn", False)),
-                    "peds": bool(row.get("has_peds", False)),
-                    "ortho": bool(row.get("has_ortho", False)),
-                    "cardiology": bool(row.get("has_cardiology", False)),
-                    "network": bool(row.get("is_network_member", False)),
-                },
-            }
-        )
-    return facilities
-
-# -----------------------------
-# Facility database from CSV
-# -----------------------------
-@st.cache_data
-def load_meghalaya_facilities(csv_path: str = "meghalaya_facilities.csv"):
-    """
-    Load real Meghalaya facilities from CSV and map them into the structure
-    used by the facility matching / routing logic.
-    """
-    df = pd.read_csv(csv_path)
-
-    facilities = []
-    for _, row in df.iterrows():
-        # Capability flags from 0/1 to bool
+        # build capability bundle used downstream
         caps = {
-            "ED": bool(row.get("has_ed", 0)),
-            "ICU": bool(row.get("has_icu", 0)),
-            "NICU": bool(row.get("has_nicu", 0)),
-            "OTI": bool(row.get("has_oti", 0)),           # OT / intubation
-            "CT": bool(row.get("has_ct", 0)),
-            "MRI": bool(row.get("has_mri", 0)),
-            "BloodBank": bool(row.get("has_blood_bank", 0)),
-            "OBGYN": bool(row.get("has_obgyn", 0)),
-            "Peds": bool(row.get("has_peds", 0)),
-            "Ortho": bool(row.get("has_ortho", 0)),
-            "Cardiology": bool(row.get("has_cardiology", 0)),
+            "ed":          bool(row.get("has_ed", 0)),
+            "icu":         bool(row.get("has_icu", 0)),
+            "nicu":        bool(row.get("has_nicu", 0)),
+            "oti":         bool(row.get("has_oti", 0)),
+            "ct":          bool(row.get("has_ct", 0)),
+            "mri":         bool(row.get("has_mri", 0)),
+            "blood_bank":  bool(row.get("has_blood_bank", 0)),
+            "obgyn":       bool(row.get("has_obgyn", 0)),
+            "peds":        bool(row.get("has_peds", 0)),
+            "ortho":       bool(row.get("has_ortho", 0)),
+            "cardiology":  bool(row.get("has_cardiology", 0)),
+            "network":     bool(row.get("is_network_member", 0)),
         }
 
-        facilities.append(
-            {
-                "id": str(row["facility_id"]),
-                "name": str(row["name"]),
-                "lat": float(row["lat"]),
-                "lon": float(row["lon"]),
-                "level": str(row.get("level", "")),
-                "ownership": str(row.get("ownership", "")),
-                "district": str(row.get("district", "")),
-                "caps": caps,
-                "is_network_member": bool(row.get("is_network_member", 1)),
-            }
-        )
+        fac = {
+            "facility_id": row.get("facility_id"),
+            "name": row.get("name", ""),
+            "lat": float(row.get("lat")),
+            "lon": float(row.get("lon")),
+            "level": row.get("level", ""),
+            "ownership": row.get("ownership", ""),
+            "district": row.get("district", ""),
+
+            # raw flags – keep them so default_facilities() can read them
+            "has_icu": int(row.get("has_icu", 0)),
+            "has_blood_bank": int(row.get("has_blood_bank", 0)),
+            "has_ct": int(row.get("has_ct", 0)),
+            "has_mri": int(row.get("has_mri", 0)),
+            "has_obgyn": int(row.get("has_obgyn", 0)),
+            "has_peds": int(row.get("has_peds", 0)),
+            "has_ortho": int(row.get("has_ortho", 0)),
+            "has_cardiology": int(row.get("has_cardiology", 0)),
+            "has_oti": int(row.get("has_oti", 0)),
+            "is_network_member": int(row.get("is_network_member", 0)),
+
+            # pre-built capability dict
+            "capabilities": caps,
+        }
+
+        facilities.append(fac)
 
     return facilities
 
@@ -2028,16 +2012,13 @@ if "facility_db" not in st.session_state:
     try:
         st.session_state["facility_db"] = load_meghalaya_facilities()
     except Exception as e:
-        st.warning(f"Could not load meghalaya_facilities.csv: {e}")
-        st.session_state["facility_db"] = []
+        st.warning(f"Could not load data/meghalaya_facilities.csv: {e}")
+        st.session_state["facility_db"] = []   # list, not DataFrame
 
 if "facilities" not in st.session_state:
-    # Build the app-facing facility objects from the DB
     st.session_state["facilities"] = default_facilities()
+st.markdown(f"DEBUG facilities loaded: {len(st.session_state.get('facilities', []))}")
 
-# Set a default active facility if we have at least one
-if st.session_state.get("facilities"):
-    st.session_state.setdefault("active_fac", st.session_state["facilities"][0]["name"])
 
 # === Schema safety helpers ===
 REQ_CAPS = ["ICU","Ventilator","BloodBank","OR","CT","Thrombolysis","OBGYN_OT","CathLab","Dialysis","Neurosurgery"]
