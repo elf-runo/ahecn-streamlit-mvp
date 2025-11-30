@@ -3565,202 +3565,396 @@ with tabs[0]:
             st.session_state.triage_override_color = None
             st.session_state.triage_override_reason = ""
 
-# NEW RECEIVING HOSPITAL IMPLEMENTATION
+# ======== Receiving Hospital Tab ========
 with tabs[2]:
-    st.markdown("## Receiving Hospital – Incoming Network Cases")
+    st.subheader("Incoming referrals & case actions")
 
-    # --- Pull facility catalog (same as used by routing / referrer) ---
-    facilities = (
-        st.session_state.get("facility_catalog")
-        or st.session_state.get("facilities")
-        or []
-    )
-
+    # --- Facility selection & baseline data ---
+    facilities = st.session_state.get("facilities", [])
     if not facilities:
-        st.info("Facility catalog is empty. Load facilities from the admin/config tab first.")
+        st.info("No facilities loaded in session_state.facilities")
         st.stop()
 
-    # Make a simple lookup for later if needed
-    facility_lookup = {f.get("id") or f.get("facility_id"): f for f in facilities}
+    fac_names = [
+        f.get("name")
+        or f.get("display_name")
+        or f.get("id")
+        or f"Facility {idx+1}"
+        for idx, f in enumerate(facilities)
+    ]
 
-    # --- Select which facility you are viewing as (receiving hospital POV) ---
+    active_fac = st.session_state.get("active_fac")
+    if active_fac in fac_names:
+        current_idx = fac_names.index(active_fac)
+    else:
+        current_idx = 0
+
     selected_facility = st.selectbox(
-        "Viewing as receiving facility",
-        options=facilities,
-        format_func=lambda f: f.get("display_name") or f.get("name") or f.get("id", "Unknown"),
-        key="rh_selected_facility",
+        "Select your facility",
+        fac_names,
+        index=current_idx,
+        key="receiving_facility_select",
     )
-    my_facility_id = selected_facility.get("id") or selected_facility.get("facility_id")
+    st.session_state.active_fac = selected_facility
 
-    # --- Collect all referrals from session state ---
-    all_referrals = st.session_state.get("referrals", [])
+    # Resolve the full facility dict and an ID we can match on
+    current_fac = next(
+        (
+            f
+            for f in facilities
+            if (f.get("name") or f.get("display_name") or f.get("id"))
+            == selected_facility
+        ),
+        None,
+    )
 
-    # A referral is "incoming" if this facility is the primary dest or in alternates
-    incoming = []
-    for r in all_referrals:
-        dest = r.get("dest") or {}
-        dest_id = dest.get("id") or dest.get("facility_id")
+    if current_fac:
+        current_fac_id = (
+            current_fac.get("id")
+            or current_fac.get("facility_id")
+            or current_fac.get("name")
+            or current_fac.get("display_name")
+        )
+    else:
+        current_fac_id = selected_facility
 
-        alternates = r.get("alternates") or []
-        alt_ids = [(a.get("id") or a.get("facility_id")) for a in alternates]
+    # --- Facility capability metrics (unchanged idea) ---
+    if current_fac:
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("ICU Beds Available", current_fac.get("ICU_open", 0))
+        with col2:
+            st.metric(
+                "Acceptance Rate",
+                f"{current_fac.get('acceptanceRate', 0.75) * 100:.0f}%",
+            )
+        with col3:
+            specialties = [
+                s
+                for s, v in (current_fac.get("specialties") or {}).items()
+                if v
+            ]
+            st.metric("Specialties", len(specialties))
 
-        if (my_facility_id is not None) and (
-            my_facility_id == dest_id or my_facility_id in alt_ids
-        ):
-            incoming.append(r)
+    # --- Incoming referrals for this facility ---
+    all_refs = st.session_state.get("referrals", [])
+    incoming = [
+        r
+        for r in all_refs
+        if (
+            r.get("dest") == selected_facility
+            or selected_facility in r.get("alternates", [])
+        )
+        and r.get("status")
+        in [
+            "PREALERT",
+            "DISPATCHED",
+            "ARRIVE_SCENE",
+            "DEPART_SCENE",
+            "ARRIVE_DEST",
+        ]
+    ]
+
+    def decision_ts(ref):
+        return ref.get("times", {}).get("decision_ts", 0)
+
+    incoming.sort(
+        key=lambda x: (
+            0 if x.get("dest") == selected_facility else 1,
+            -decision_ts(x),
+        )
+    )
 
     if not incoming:
-        st.success("No active incoming cases for this facility.")
+        st.info("No incoming referrals for your facility")
         st.stop()
 
-    # --- Helper functions for triage + status ---
-    def triage_color(ref):
+    st.markdown(f"### 📋 Incoming Referrals ({len(incoming)})")
+
+    # Helper to extract a comparable facility identity from a ranked row
+    def facility_identity_from_row(row_dict):
+        """
+        Accepts either:
+        - row = {"facility": {..., "name": ...}, ...}
+        - or row = {..., "name": ...}
+        Returns a comparable ID string.
+        """
+        if not isinstance(row_dict, dict):
+            return None
+
+        fac_obj = row_dict.get("facility")
+        if fac_obj and isinstance(fac_obj, dict):
+            fac = fac_obj
+        else:
+            fac = row_dict
+
         return (
-            ref.get("triage", {})
-              .get("decision", {})
-              .get("color", "UNKNOWN")
-              .upper()
+            fac.get("id")
+            or fac.get("facility_id")
+            or fac.get("name")
+            or fac.get("display_name")
         )
 
-    def status(ref):
-        return str(ref.get("status", "REQUESTED")).upper()
-
-    SEVERITY_ORDER = {
-        "RED": 0,
-        "ORANGE": 1,
-        "YELLOW": 2,
-        "GREEN": 3,
-        "BLUE": 4,
-        "UNKNOWN": 9,
-    }
-
-    # --- Filters (status, later you can add time/age filters if you want) ---
-    status_options = [
-        "REQUESTED",
-        "ACKNOWLEDGED",
-        "ACCEPTED",
-        "DISPATCHED",
-        "ENROUTE",
-        "COMPLETED",
-        "DECLINED",
-    ]
-    status_filter = st.multiselect(
-        "Status filter",
-        options=status_options,
-        default=[s for s in status_options if s not in ("COMPLETED", "DECLINED")],
-        key="rh_status_filter",
-    )
-
-    filtered = [
-        r for r in incoming
-        if not status_filter or status(r) in status_filter
-    ]
-
-    # Sort by triage severity, then by time (if available)
-    def sort_key(ref):
-        c = triage_color(ref)
-        t = (
-            ref.get("times", {}).get("first_contact")
-            or ref.get("times", {}).get("created_at")
-            or ref.get("created_at")
-            or ""
-        )
-        return (SEVERITY_ORDER.get(c, 9), str(t))
-
-    filtered.sort(key=sort_key)
-
-    st.markdown(f"**Active incoming cases for this facility:** {len(filtered)}")
-
-    # --- Main loop: each incoming case for this receiving facility ---
-    for idx, ref in enumerate(filtered):
-        ref_id = ref.get("id", f"case_{idx+1}")
-        color = triage_color(ref)
-        from_fac = ref.get("origin") or {}
-        from_name = (
-            from_fac.get("name")
-            or from_fac.get("facility_name")
-            or from_fac.get("id")
-            or "Unknown origin facility"
-        )
-
-        vitals = ref.get("vitals") or {}
-        age = vitals.get("age") or ref.get("age")
-        diag = (
-            ref.get("provisional_diagnosis")
-            or ref.get("icd_label")
-            or ref.get("icd_code")
-            or "—"
-        )
-
+    # --- Main loop: each incoming case ---
+    for r in incoming:
         with st.container():
-            top_cols = st.columns([0.6, 0.4])
-            with top_cols[0]:
-                st.markdown(f"### {color.title()} case – {ref_id}")
-                st.caption(f"Referred from: {from_name}")
-                st.caption(f"Current status: {status(ref)}")
+            # Priority badge (Primary vs Alternate)
+            is_primary_dest = r.get("dest") == selected_facility
+            priority_badge = "🥇 PRIMARY" if is_primary_dest else "🥈 ALTERNATE"
+            badge_class = "priority-badge" if is_primary_dest else "alternate-badge"
 
-            with top_cols[1]:
-                st.markdown("**Clinical snapshot**")
-                st.write(
-                    f"- Age: {age if age is not None else 'NA'}\n"
-                    f"- Provisional Dx / ICD: {diag}\n"
+            col1, col2, col3 = st.columns([3, 1, 1])
+            with col1:
+                st.write(f"**{r['patient']['name']}** — {r['triage']['complaint']} ")
+
+                # Dx text
+                dx = r.get("provisionalDx", {})
+                if isinstance(dx, dict):
+                    dx_txt = (dx.get("code", "") + " " + dx.get("label", "")).strip()
+                else:
+                    dx_txt = str(dx)
+                st.write(f"| Dx: **{dx_txt or '—'}**")
+
+                # Priority badge
+                st.markdown(
+                    f'<span class="badge {badge_class}">{priority_badge}</span>',
+                    unsafe_allow_html=True,
                 )
 
-            # --- Core: use the SAME ranking and card helpers as referrer ---
+                # Referrer info
+                referrer_info = r.get("referrer", {})
+                if referrer_info.get("role"):
+                    st.caption(
+                        f"Referrer: {referrer_info.get('name', '')} "
+                        f"({referrer_info.get('role', '')}) "
+                        f"from {referrer_info.get('facility', '')}"
+                    )
+
+            with col2:
+                decision = r["triage"]["decision"]
+                if decision.get("overridden"):
+                    st.markdown(
+                        f'<span class="pill {decision["color"].lower()} override-badge">'
+                        f'{decision["color"]} (OVERRIDDEN)</span>',
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    triage_pill(decision["color"])
+
+            with col3:
+                if r.get("transport", {}).get("eta_min"):
+                    st.write(f"**ETA:** {r['transport']['eta_min']} min")
+                st.write(f"**Status:** {r['status']}")
+
+            # ========== NEW: ranked view for THIS facility & case ==========
+            ranked = []
             try:
-                ranked_list = rank_facilities_with_free_routing(
-                    case=ref,
-                    all_facilities=facilities,
-                    # add other args here if your helper expects them
-                )
+                loc = r.get("patient", {}).get("location") or {}
+                if "lat" in loc and "lon" in loc:
+                    origin_coords = (loc["lat"], loc["lon"])
+                else:
+                    origin_coords = None
+
+                required_caps = r.get("reasons", {}).get("requiredCapabilities", [])
+                case_type = r.get("case_type", r["triage"]["complaint"])
+                triage_color = r["triage"]["decision"]["color"]
+
+                if origin_coords is not None:
+                    ranked = rank_facilities_with_free_routing(
+                        origin_coords=origin_coords,
+                        required_caps=required_caps,
+                        case_type=case_type,
+                        triage_color=triage_color,
+                    )
+                else:
+                    st.info(
+                        "No patient coordinates available for routing view for this case."
+                    )
             except Exception as e:
-                st.error(f"Error ranking facilities for this case: {e}")
-                ranked_list = []
+                st.error(f"Routing/Ranking error for this case: {e}")
+                ranked = []
 
-            # Pick THIS receiving facility’s row from the ranked list
-            my_row = None
-            for row in ranked_list or []:
-                fac = row.get("facility") or {}
-                fac_id = fac.get("id") or fac.get("facility_id")
-                if fac_id == my_facility_id:
-                    my_row = row
-                    break
+            if ranked:
+                my_row = None
+                my_rank = None
+                for idx, row in enumerate(ranked, start=1):
+                    if facility_identity_from_row(row) == current_fac_id:
+                        my_row = row
+                        my_rank = idx
+                        break
 
-            if my_row is not None:
-                enhanced_facility_card(
-                    my_row,
-                    mode="receiving",        # if your card supports a mode flag
-                    show_rank=True,
-                    show_distance=True,
-                    show_actions=False,
+                if my_row is not None:
+                    st.markdown(
+                        "**Routing & capacity for this facility (from ranked list):**"
+                    )
+                    enhanced_facility_card(
+                        my_row,
+                        rank=my_rank,
+                        is_primary=is_primary_dest,
+                        is_alternate=not is_primary_dest,
+                    )
+                else:
+                    st.info(
+                        "This facility did not appear in the ranked list for this case. "
+                        "Check that facility IDs/names match between catalog and referrals."
+                    )
+
+            # ========== Case details & actions (existing logic) ==========
+            open_key = f"open_{r['id']}"
+            if st.button("Open case details", key=open_key):
+                # Audit log
+                if r.get("audit_log"):
+                    st.markdown("#### Audit Trail")
+                    for audit in r["audit_log"]:
+                        if audit["action"] == "TRIAGE_OVERRIDE":
+                            st.markdown(
+                                f"""
+                                <div class="audit-log">
+                                    <strong>🔧 Triage Override</strong><br>
+                                    <small>{audit['timestamp']} by {audit['user']}</small><br>
+                                    {audit['details']['from']} → {audit['details']['to']}<br>
+                                    <em>Reason: {audit['details']['reason']}</em>
+                                </div>
+                                """,
+                                unsafe_allow_html=True,
+                            )
+
+                # Interventions timeline
+                st.markdown("#### 📋 Interventions Timeline")
+                interventions = r.get("interventions", [])
+                if interventions:
+                    referrer_iv = [
+                        iv
+                        for iv in interventions
+                        if iv.get("performed_by") == "referrer"
+                    ]
+                    emt_iv = [
+                        iv for iv in interventions if iv.get("performed_by") == "emt"
+                    ]
+
+                    if referrer_iv:
+                        st.markdown("**Referrer Interventions:**")
+                        for iv in referrer_iv:
+                            timestamp = datetime.fromtimestamp(
+                                iv.get("timestamp", now_ts())
+                            ).strftime("%H:%M:%S")
+                            st.markdown(
+                                f"""
+                                <div style="background: #1e293b; padding: 6px 10px;
+                                            border-radius: 6px; margin: 2px 0;
+                                            border-left: 3px solid #3b82f6;">
+                                    <div style="font-weight: 500;">{iv['name']}</div>
+                                    <div style="font-size: 0.75rem; color: #9ca3af;">
+                                        {timestamp} • {iv.get("type", 'custom').replace('_', ' ').title()}
+                                    </div>
+                                </div>
+                                """,
+                                unsafe_allow_html=True,
+                            )
+
+                    if emt_iv:
+                        st.markdown("**En-route Interventions:**")
+                        for iv in emt_iv:
+                            timestamp = datetime.fromtimestamp(
+                                iv.get("timestamp", now_ts())
+                            ).strftime("%H:%M:%S")
+                            status_badge = {
+                                "completed": "🟢",
+                                "in_progress": "🟡",
+                                "planned": "🔵",
+                            }.get(iv.get("status", "completed"), "⚪")
+
+                            st.markdown(
+                                f"""
+                                <div style="background: #1e293b; padding: 6px 10px;
+                                            border-radius: 6px; margin: 2px 0;
+                                            border-left: 3px solid #10b981;">
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <span style="font-weight: 500;">{iv['name']}</span>
+                                        <span style="margin-left: auto;">{status_badge}</span>
+                                    </div>
+                                    <div style="font-size: 0.75rem; color: #9ca3af;">
+                                        {timestamp} • EMT • Status: {iv.get('status', 'completed').replace('_', ' ').title()}
+                                    </div>
+                                </div>
+                                """,
+                                unsafe_allow_html=True,
+                            )
+                else:
+                    st.info("No interventions recorded")
+
+                # ISBAR
+                dx = r.get("provisionalDx", {})
+                if isinstance(dx, dict):
+                    dx_txt = (dx.get("code", "") + " " + dx.get("label", "")).strip()
+                else:
+                    dx_txt = str(dx)
+
+                isbar = f"""**I (Identify):**
+- Patient: {r['patient']['name']}, {r['patient']['age']} {r['patient']['sex']}
+- Referrer: {r['referrer'].get('name', '')} ({r['referrer'].get('role', '')}) from {r['referrer'].get('facility', '')}
+
+**S (Situation):**
+- Chief Complaint: {r['triage']['complaint']}
+- Provisional Diagnosis: {dx_txt}
+- Triage: {r['triage']['decision']['color']} {'(OVERRIDDEN)' if r['triage']['decision'].get('overridden') else ''}
+
+**B (Background):**
+- Vitals: HR {r['triage']['hr']}, SBP {r['triage']['sbp']}, RR {r['triage']['rr']}, Temp {r['triage']['temp']}, SpO2 {r['triage']['spo2']}, AVPU {r['triage']['avpu']}
+- Resuscitation: {", ".join(r.get('resuscitation', [])) or "None performed"}
+- Clinical Summary: {r['clinical'].get('summary', "—")}
+
+**A (Assessment):**
+- Required Capabilities: {", ".join(r['reasons'].get('requiredCapabilities', [])) or "None specified"}
+- Referral Reasons: {"Bed/ICU unavailable; " if r['reasons'].get('bedOrICUUnavailable') else ""}{"Special test; " if r['reasons'].get('specialTest') else ""}Severity
+
+**R (Recommendation):**
+- Priority: {r['transport'].get('priority', 'Urgent')}
+- Ambulance: {r['transport'].get('ambulance', '—')}
+- Consent: {'Yes' if r['transport'].get('consent') else 'No'}
+"""
+                st.markdown(isbar)
+
+                # Action buttons
+                c1, c2, c3 = st.columns(3)
+                if c1.button("Accept case", key=f"acc_{r['id']}", type="primary"):
+                    r["status"] = "ARRIVE_DEST"
+                    r.setdefault("times", {})["arrive_dest_ts"] = now_ts()
+                    st.success("Case accepted and marked as arrived")
+                    st.rerun()
+
+                reject_reason = c2.selectbox(
+                    "Rejection reason",
+                    [
+                        "—",
+                        "No ICU bed",
+                        "No specialist",
+                        "Equipment down",
+                        "Over capacity",
+                        "Outside scope",
+                        "Patient diverted",
+                    ],
+                    key=f"rejrs_{r['id']}",
                 )
-            else:
-                st.warning(
-                    "This facility did not appear in the ranked list for this case. "
-                    "Check that rank_facilities_with_free_routing() sees the same facility IDs."
-                )
+                if c3.button("Reject case", key=f"rej_{r['id']}") and reject_reason != "—":
+                    r["status"] = "PREALERT"
+                    r.setdefault("reasons", {})["rejected"] = True
+                    r["reasons"]["reject_reason"] = reject_reason
 
-            # --- Case-level actions ---
-            action_cols = st.columns(3)
-            if action_cols[0].button("Accept", key=f"rh_accept_{ref_id}"):
-                ref["status"] = "ACCEPTED"
-                ref.setdefault("times", {})["accepted_at"] = datetime.utcnow().isoformat()
-                st.rerun()
+                    audit_entry = {
+                        "timestamp": datetime.now().isoformat(),
+                        "action": "CASE_REJECTED",
+                        "details": {
+                            "reason": reject_reason,
+                            "facility": selected_facility,
+                        },
+                    }
+                    r.setdefault("audit_log", []).append(audit_entry)
 
-            if action_cols[1].button("Reject", key=f"rh_reject_{ref_id}"):
-                ref["status"] = "DECLINED"
-                ref.setdefault("times", {})["declined_at"] = datetime.utcnow().isoformat()
-                st.rerun()
+                    st.warning(f"Case rejected: {reject_reason}")
+                    st.rerun()
 
-            if action_cols[2].button("Need more info", key=f"rh_moreinfo_{ref_id}"):
-                ref["status"] = "REQUESTED_INFO"
-                ref.setdefault("times", {})["info_requested_at"] = datetime.utcnow().isoformat()
-                st.rerun()
-
-# unchanged
-with tabs[3]:
-    # ... existing Admin / Config code ...
-
+            st.markdown("---")
 
 # ======== ENHANCED AMBULANCE / EMT TAB ========
 with tabs[1]:
