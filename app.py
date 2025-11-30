@@ -15,12 +15,122 @@ import requests
 import urllib.parse
 from pathlib import Path
 
+# ==========================
+# Facility database loading
+# ==========================
+FACILITY_BOOL_COLS = [
+    "has_ed",
+    "has_icu",
+    "has_nicu",
+    "has_oti",
+    "has_ct",
+    "has_mri",
+    "has_blood_bank",
+    "has_obgyn",
+    "has_peds",
+    "has_ortho",
+    "has_cardiology",
+    "is_network_member",
+]
+
+
+@st.cache_data
+def load_meghalaya_facilities(csv_path: str = "meghalaya_facilities.csv"):
+    """
+    Load the real Meghalaya facility master from CSV and
+    normalise it into a list[dict] with a 'capabilities' sub-dict.
+    """
+    df = pd.read_csv(csv_path)
+
+    # Ensure correct dtypes
+    df["lat"] = df["lat"].astype(float)
+    df["lon"] = df["lon"].astype(float)
+
+    # Convert 0/1 cols to bool
+    for col in FACILITY_BOOL_COLS:
+        if col in df.columns:
+            df[col] = df[col].astype(int).astype(bool)
+
+    facilities = []
+    for _, row in df.iterrows():
+        facilities.append(
+            {
+                "facility_id": row["facility_id"],
+                "name": row["name"],
+                "lat": float(row["lat"]),
+                "lon": float(row["lon"]),
+                "level": row.get("level", ""),
+                "ownership": row.get("ownership", ""),
+                "district": row.get("district", ""),
+                # Normalised capability bundle used by matching logic
+                "capabilities": {
+                    "ed": bool(row.get("has_ed", False)),
+                    "icu": bool(row.get("has_icu", False)),
+                    "nicu": bool(row.get("has_nicu", False)),
+                    "oti": bool(row.get("has_oti", False)),
+                    "ct": bool(row.get("has_ct", False)),
+                    "mri": bool(row.get("has_mri", False)),
+                    "blood_bank": bool(row.get("has_blood_bank", False)),
+                    "obgyn": bool(row.get("has_obgyn", False)),
+                    "peds": bool(row.get("has_peds", False)),
+                    "ortho": bool(row.get("has_ortho", False)),
+                    "cardiology": bool(row.get("has_cardiology", False)),
+                    "network": bool(row.get("is_network_member", False)),
+                },
+            }
+        )
+    return facilities
+
+
 # === PAGE CONFIG MUST BE FIRST STREAMLIT COMMAND ===
 st.set_page_config(
     page_title="AHECN MVP v1.9",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
+# -----------------------------
+# Facility database from CSV
+# -----------------------------
+@st.cache_data
+def load_meghalaya_facilities(csv_path: str = "meghalaya_facilities.csv"):
+    """
+    Load real Meghalaya facilities from CSV and map them into the structure
+    used by the facility matching / routing logic.
+    """
+    df = pd.read_csv(csv_path)
+
+    facilities = []
+    for _, row in df.iterrows():
+        # Capability flags from 0/1 to bool
+        caps = {
+            "ED": bool(row.get("has_ed", 0)),
+            "ICU": bool(row.get("has_icu", 0)),
+            "NICU": bool(row.get("has_nicu", 0)),
+            "OTI": bool(row.get("has_oti", 0)),           # OT / intubation
+            "CT": bool(row.get("has_ct", 0)),
+            "MRI": bool(row.get("has_mri", 0)),
+            "BloodBank": bool(row.get("has_blood_bank", 0)),
+            "OBGYN": bool(row.get("has_obgyn", 0)),
+            "Peds": bool(row.get("has_peds", 0)),
+            "Ortho": bool(row.get("has_ortho", 0)),
+            "Cardiology": bool(row.get("has_cardiology", 0)),
+        }
+
+        facilities.append(
+            {
+                "id": str(row["facility_id"]),
+                "name": str(row["name"]),
+                "lat": float(row["lat"]),
+                "lon": float(row["lon"]),
+                "level": str(row.get("level", "")),
+                "ownership": str(row.get("ownership", "")),
+                "district": str(row.get("district", "")),
+                "caps": caps,
+                "is_network_member": bool(row.get("is_network_member", 1)),
+            }
+        )
+
+    return facilities
 
 # === AI TRIAGE MODEL - TEMPORARILY DISABLED ===
 import os
@@ -37,6 +147,15 @@ if "triage_features" not in st.session_state:
         'on_oxygen', 'sex_M', 'avpu_ord', 'case_type_cardiac', 'case_type_maternal',
         'case_type_sepsis', 'case_type_stroke', 'case_type_trauma', 'case_type_other'
     ]
+# ==========================
+# Facility DB in session_state
+# ==========================
+if "facility_db" not in st.session_state:
+    try:
+        st.session_state["facility_db"] = load_meghalaya_facilities()
+    except Exception as e:
+        st.warning(f"Could not load meghalaya_facilities.csv: {e}")
+        st.session_state["facility_db"] = []
 
 # Show status in sidebar
 st.sidebar.info("🤖 AI Features: Temporarily Disabled")
@@ -1743,51 +1862,134 @@ def rand_geo(rng):
 SPECIALTIES = ["Obstetrics","Paediatrics","Cardiology","Neurology","Orthopaedics","General Surgery","Anaesthesia","ICU"]
 INTERVENTIONS = ["CathLab","OBGYN_OT","CT","MRI","Dialysis","Thrombolysis","Ventilator","BloodBank","OR","Neurosurgery"]
 
-def default_facilities(count=15):
-    rng = random.Random(17)
-    base_names = [
-        "Civil Hospital Shillong","NEIGRIHMS","Nazareth Hospital","Ganesh Das Maternal & Child",
-        "Shillong Polyclinic & Trauma Center","Smit CHC","Pynursla CHC",
-        "Mawsynram PHC","Sohra Civil Hospital","Madansynram CHC","Jowai (ref) Hub","Mawlai CHC"
-    ]
-    names = (base_names * ((count // len(base_names)) + 1))[:count]
-    fac=[]
-    for idx, n in enumerate(names):
-        lat, lon = rand_geo(rng)
-        
-        # Create realistic capability profiles based on facility type
-        if "Tertiary" in n or "NEIGRIHMS" in n:
-            # Tertiary facilities have most capabilities
-            caps = {c: 1 for c in ["ICU","Ventilator","BloodBank","OR","CT","Thrombolysis","OBGYN_OT","CathLab","Dialysis","Neurosurgery"]}
-            specs = {s: 1 for s in SPECIALTIES}
-            hi = {i: 1 for i in INTERVENTIONS}
-            icu_beds = rng.randint(4, 8)
-            acceptance = round(0.8 + rng.random()*0.15, 2)
-        elif "District" in n:
-            # District hospitals have good capabilities
-            caps = {c: int(rng.random()<0.8) for c in ["ICU","Ventilator","BloodBank","OR","CT","Thrombolysis","OBGYN_OT"]}
-            caps["CathLab"] = 0; caps["Dialysis"] = 0; caps["Neurosurgery"] = 0
-            specs = {s: int(rng.random()<0.7) for s in SPECIALTIES}
-            hi = {i: int(rng.random()<0.6) for i in INTERVENTIONS}
-            icu_beds = rng.randint(2, 5)
-            acceptance = round(0.7 + rng.random()*0.2, 2)
+def default_facilities(count: int | None = None):
+    """
+    Build facility objects for the dashboards from the real
+    meghalaya_facilities.csv that was loaded into st.session_state["facility_db"].
+    This keeps the same keys the rest of the app expects:
+    name, lat, lon, ICU_open, acceptanceRate, caps, specialties, highend, type.
+    """
+    all_facilities = st.session_state.get("facility_db", [])
+    if not all_facilities:
+        return []
+
+    # Optional: if caller passes a count, just trim; otherwise use all.
+    if count is not None:
+        facilities = all_facilities[:count]
+    else:
+        facilities = all_facilities
+
+    fac = []
+
+    for row in facilities:
+        # row is a dict built by load_meghalaya_facilities()
+        level = (row.get("level") or "").strip()
+        name = row.get("name", "Unknown Facility")
+        lat = float(row.get("lat"))
+        lon = float(row.get("lon"))
+
+        caps_raw = row.get("capabilities", {})
+
+        # Safely pull booleans either from top-level or from capabilities
+        has_icu        = bool(row.get("has_icu",        caps_raw.get("icu", False)))
+        has_bb         = bool(row.get("has_blood_bank", caps_raw.get("blood_bank", False)))
+        has_ct         = bool(row.get("has_ct",         caps_raw.get("ct", False)))
+        has_mri        = bool(row.get("has_mri",        caps_raw.get("mri", False)))
+        has_obgyn      = bool(row.get("has_obgyn",      caps_raw.get("obgyn", False)))
+        has_peds       = bool(row.get("has_peds",       caps_raw.get("peds", False)))
+        has_ortho      = bool(row.get("has_ortho",      caps_raw.get("ortho", False)))
+        has_cardio     = bool(row.get("has_cardiology", caps_raw.get("cardiology", False)))
+        in_network     = bool(row.get("is_network_member", caps_raw.get("network", False)))
+        has_oti        = bool(row.get("has_oti",        caps_raw.get("oti", False)))
+
+        # Map CSV level -> the "type" string already used in the UI
+        if level.lower() == "tertiary":
+            fac_type = "Tertiary"
+        elif level.lower() == "secondary":
+            fac_type = "District Hospital"
         else:
-            # CHC/PHC have basic capabilities
-            caps = {c: int(rng.random()<0.4) for c in ["ICU","Ventilator","BloodBank","OR","CT"]}
-            caps["Thrombolysis"] = 0; caps["OBGYN_OT"] = int("Maternal" in n)
-            caps["CathLab"] = 0; caps["Dialysis"] = 0; caps["Neurosurgery"] = 0
-            specs = {s: int(rng.random()<0.3) for s in SPECIALTIES}
-            hi = {i: int(rng.random()<0.2) for i in INTERVENTIONS}
-            icu_beds = rng.randint(0, 2)
-            acceptance = round(0.6 + rng.random()*0.25, 2)
-        
-        fac.append(dict(
-            name=f"{n} #{idx+1}" if names.count(n)>1 else n,
-            lat=lat, lon=lon, ICU_open=icu_beds,
-            acceptanceRate=acceptance,
-            caps=caps, specialties=specs, highend=hi,
-            type=rng.choice(["PHC","CHC","District Hospital","Tertiary"])
-        ))
+            fac_type = "CHC"
+
+        # Approximate ICU bed count (ICU_open) – keeps the old visual working
+        if has_icu:
+            if level.lower() == "tertiary":
+                icu_beds = 8
+            else:
+                icu_beds = 3
+        else:
+            icu_beds = 0
+
+        # Heuristic acceptanceRate based on level + network membership
+        if level.lower() == "tertiary":
+            base_accept = 0.82
+        elif level.lower() == "secondary":
+            base_accept = 0.75
+        else:
+            base_accept = 0.68
+        if in_network:
+            base_accept += 0.05
+        acceptance = round(min(base_accept, 0.95), 2)
+
+        # === caps dict: aligns with your existing map / filters ===
+        caps = {
+            "ICU":          int(has_icu),
+            "Ventilator":   int(has_icu),          # conservative assumption: ICU ⇒ ventilators available
+            "BloodBank":    int(has_bb),
+            "OR":           int(has_oti),
+            "CT":           int(has_ct),
+            "MRI":          int(has_mri),
+            "Thrombolysis": int(has_cardio),
+            "OBGYN_OT":     int(has_obgyn),
+            "CathLab":      int(has_cardio and level.lower() == "tertiary"),
+            "Dialysis":     int(level.lower() == "tertiary"),
+            "Neurosurgery": int(level.lower() == "tertiary"),
+        }
+
+        # === specialty profile: keeps SPECIALTIES heatmaps working ===
+        specs = {
+            "Obstetrics":     int(has_obgyn),
+            "Paediatrics":    int(has_peds),
+            "Cardiology":     int(has_cardio),
+            "Neurology":      int(level.lower() == "tertiary"),
+            "Orthopaedics":   int(has_ortho),
+            "General Surgery": int(level.lower() in ["secondary", "tertiary"]),
+            "Anaesthesia":    int(has_obgyn or level.lower() in ["secondary", "tertiary"]),
+            "ICU":            int(has_icu),
+        }
+
+        # === high-end interventions ===
+        hi = {
+            "CathLab":      caps["CathLab"],
+            "OBGYN_OT":     caps["OBGYN_OT"],
+            "CT":           caps["CT"],
+            "MRI":          caps["MRI"],
+            "Dialysis":     caps["Dialysis"],
+            "Thrombolysis": caps["Thrombolysis"],
+            "Ventilator":   caps["Ventilator"],
+            "BloodBank":    caps["BloodBank"],
+            "OR":           caps["OR"],
+            "Neurosurgery": caps["Neurosurgery"],
+        }
+
+        fac.append(
+            dict(
+                name=name,
+                lat=lat,
+                lon=lon,
+                ICU_open=icu_beds,
+                acceptanceRate=acceptance,
+                caps=caps,
+                specialties=specs,
+                highend=hi,
+                type=fac_type,
+                facility_id=row.get("facility_id"),
+                level=level,
+                district=row.get("district"),
+                ownership=row.get("ownership"),
+                is_network_member=in_network,
+            )
+        )
+
     return fac
 
 # === Schema safety helpers ===
