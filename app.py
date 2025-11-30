@@ -15,6 +15,163 @@ import requests
 import urllib.parse
 from pathlib import Path
 
+# --------------------------
+# Facility Catalog: Meghalaya (REAL DATA ONLY)
+# --------------------------
+def load_meghalaya_facilities() -> pd.DataFrame:
+    data_path = Path(__file__).parent / "data" / "meghalaya_facilities.csv"
+    try:
+        df = pd.read_csv(data_path)
+    except FileNotFoundError:
+        st.error(f"Facility catalog not found at: {data_path}")
+        st.stop()
+
+    # Minimal required columns
+    required_cols = ["facility_id", "name", "lat", "lon"]
+    missing = [c for c in required_cols if c not in df.columns]
+    if missing:
+        st.error(f"Facility catalog missing required columns: {missing}")
+        st.stop()
+
+    return df
+
+
+if "facility_catalog" not in st.session_state:
+    st.session_state.facility_catalog = load_meghalaya_facilities()
+# --------------------------
+# Candidate facility selection (REAL DATA from catalog)
+# --------------------------
+def get_candidate_facilities_for_case(case: dict) -> list[dict]:
+    """
+    Filter the REAL Meghalaya facility catalog based on case type
+    and basic capability flags.
+    """
+    df = st.session_state.get("facility_catalog")
+
+    if df is None or df.empty:
+        st.error("Facility catalog is empty or not loaded.")
+        return []
+
+    df = df.copy()
+
+    # Normalize capability flags if they exist
+    flag_cols = ["has_ed", "has_icu", "has_nicu", "has_obgyn", "has_peds"]
+    for col in flag_cols:
+        if col in df.columns:
+            df[col] = df[col].fillna(0).astype(int)
+
+    case_type = (case or {}).get("case_type", "Adult")
+
+    # Minimal capability logic – adjust to match your CSV columns
+    if case_type == "Maternal" and "has_obgyn" in df.columns:
+        df = df[df["has_obgyn"] == 1]
+
+    if case_type == "Paediatric" and "has_peds" in df.columns:
+        df = df[df["has_peds"] == 1]
+
+    # Require Emergency Department if present
+    if "has_ed" in df.columns:
+        df = df[df["has_ed"] == 1]
+
+    facilities = df.to_dict(orient="records")
+
+    st.write(
+        f"🔧 DEBUG Facilities: using REAL Meghalaya catalog, "
+        f"{len(facilities)} candidates after filtering."
+    )
+
+    return facilities
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """
+    Approximate great-circle distance between two points (km).
+    """
+    R = 6371.0  # Earth radius in km
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+
+    a = (
+        math.sin(dphi / 2.0) ** 2
+        + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2.0) ** 2
+    )
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+    return R * c
+
+
+def estimate_distance_and_time_simple(
+    patient_location: dict,
+    facility: dict,
+    avg_speed_kmph: float = 30.0,
+) -> tuple[float, float]:
+    """
+    Simple fallback routing: Haversine distance + constant speed estimate.
+    """
+    lat1 = float(patient_location["lat"])
+    lon1 = float(patient_location["lon"])
+    lat2 = float(facility["lat"])
+    lon2 = float(facility["lon"])
+
+    distance_km = _haversine_km(lat1, lon1, lat2, lon2)
+
+    if avg_speed_kmph <= 0:
+        return distance_km, None
+
+    travel_time_min = (distance_km / avg_speed_kmph) * 60.0
+    return round(distance_km, 1), round(travel_time_min, 1)
+
+def sort_facilities_by_priority(facilities: list[dict], case: dict) -> list[dict]:
+    """
+    For now, simply sort by travel_time_min ascending.
+    You can extend this to include ICU, NICU, etc.
+    """
+    return sorted(
+        facilities,
+        key=lambda f: f.get("travel_time_min", 1e9),
+    )
+def rank_facilities_free_routing(
+    candidate_facilities: list[dict],
+    patient_location: dict,
+    case: dict,
+    max_travel_time_min: int = 240,
+) -> list[dict]:
+    """
+    Pure free routing: no external APIs, no synthetic facilities.
+    All facilities come from the REAL Meghalaya CSV.
+    """
+    enriched: list[dict] = []
+
+    for fac in candidate_facilities:
+        try:
+            distance_km, travel_time_min = estimate_distance_and_time_simple(
+                patient_location=patient_location,
+                facility=fac,
+            )
+        except Exception as e:
+            st.write(f"🔧 DEBUG: failed distance for {fac.get('name')}: {e}")
+            continue
+
+        if travel_time_min is None:
+            continue
+
+        if travel_time_min <= max_travel_time_min:
+            fac_copy = fac.copy()
+            fac_copy["distance_km"] = distance_km
+            fac_copy["travel_time_min"] = travel_time_min
+            enriched.append(fac_copy)
+
+    st.write(
+        f"🔧 DEBUG Free Routing: received {len(candidate_facilities)} REAL facilities, "
+        f"returning {len(enriched)} after travel-time filter."
+    )
+    st.write(f"⚠️ Using estimated distances for all {len(enriched)} facilities")
+
+    enriched = sort_facilities_by_priority(enriched, case)
+    return enriched
+
+    
 # === AI TRIAGE MODEL - TEMPORARILY DISABLED ===
 import os
 
@@ -214,10 +371,18 @@ MEGHALAYA_FACILITIES = [
 ]
 # === INITIALIZATION FUNCTION (Step 2) ===
 def initialize_meghalaya_facilities():
-    """Initialize session state with Meghalaya hospital data"""
+    """Initialize session state with REAL Meghalaya hospital data from CSV, fallback to hard-coded list."""
+    # Prefer the CSV-backed facility_catalog
+    catalog_df = st.session_state.get("facility_catalog", None)
+
     if 'facilities' not in st.session_state:
-        st.session_state.facilities = MEGHALAYA_FACILITIES
-    
+        if isinstance(catalog_df, pd.DataFrame) and not catalog_df.empty:
+            # Use the REAL CSV as the main facilities list
+            st.session_state.facilities = catalog_df.to_dict(orient="records")
+        else:
+            # Fallback to the smaller hard-coded list if CSV missing/broken
+            st.session_state.facilities = MEGHALAYA_FACILITIES
+
     # Set Shillong Civil Hospital as default central point
     if 'central_referral_point' not in st.session_state:
         st.session_state.central_referral_point = {
@@ -226,6 +391,7 @@ def initialize_meghalaya_facilities():
             'lon': 91.8930,
             'type': 'Central Referral Point'
         }
+
 
 def verify_meghalaya_facilities():
     """Verify that Meghalaya facilities are being used"""
@@ -2056,128 +2222,222 @@ def calculate_enhanced_facility_score_free(facility, required_caps, route_data, 
     
     return final_score, scoring_details
 
-def rank_facilities_with_free_routing(origin_coords, required_caps, case_type, triage_color, top_k=8, provider=None):
+def rank_facilities_with_free_routing(
+    origin_coords,
+    required_caps,
+    case_type,
+    triage_color,
+    top_k=8,
+    provider=None
+):
     """
-    Enhanced facility ranking with free routing data and better error handling
+    Enhanced facility ranking with free routing data and better error handling,
+    using ONLY the real Meghalaya facility catalog (meghalaya_facilities.csv).
     """
     ranked_facilities = []
-    
-    # Validate inputs
+
+    # -------------------------
+    # 1. Validate origin coords
+    # -------------------------
     if not origin_coords or len(origin_coords) != 2:
         st.error("❌ Invalid origin coordinates")
         return []
-    
-    if not hasattr(st.session_state, 'facilities') or not st.session_state.facilities:
-        st.error("❌ No facilities data available")
+
+    # -------------------------
+    # 2. Pull REAL facilities from catalog
+    # -------------------------
+    df_catalog = st.session_state.get("facility_catalog", None)
+
+    if df_catalog is None or df_catalog.empty:
+        st.error("❌ No facility catalog loaded (facility_catalog is empty)")
         return []
-    
-    # Show progress for routing calculations
+
+    # Turn DataFrame into list[dict]
+    facilities_source = df_catalog.to_dict(orient="records")
+
+    # Optional: also keep for other parts of the app that still read st.session_state.facilities
+    st.session_state.facilities = facilities_source
+
+    total_facilities = len(facilities_source)
+
+    if total_facilities == 0:
+        st.error("❌ Facility catalog has no rows after loading meghalaya_facilities.csv")
+        return []
+
+    st.write(
+        f"🔧 DEBUG Facilities: using REAL Meghalaya catalog, "
+        f"{total_facilities} facilities before routing + scoring."
+    )
+
+    # -------------------------
+    # 3. Progress bar for routing
+    # -------------------------
     progress_bar = st.progress(0)
     status_text = st.empty()
-    
-    total_facilities = len(st.session_state.facilities)
+
     successful_routes = 0
-    
-    for i, facility in enumerate(st.session_state.facilities):
+
+    # -------------------------
+    # 4. Main loop over REAL facilities
+    # -------------------------
+    for i, facility in enumerate(facilities_source):
         try:
             # Update progress
             progress = (i + 1) / total_facilities
             progress_bar.progress(progress)
-            status_text.text(f"📍 Calculating routes... ({i + 1}/{total_facilities}) - {facility['name']}")
-            
-            # Validate facility data
-            if not facility or 'lat' not in facility or 'lon' not in facility:
-                continue
-            
-            # Get free route information
-            route_data = get_route_info_free(
-                origin_coords[0], origin_coords[1],
-                float(facility["lat"]), float(facility["lon"]),
-                provider=provider
+            status_text.text(
+                f"📍 Calculating routes... ({i + 1}/{total_facilities}) - "
+                f"{facility.get('name', 'Unknown Facility')}"
             )
-            
-            # Calculate enhanced score with routing data
+
+            # Validate lat/lon from CSV
+            if not facility or "lat" not in facility or "lon" not in facility:
+                continue
+
+            # Free routing calculation (OSRM-like)
+            route_data = get_route_info_free(
+                origin_coords[0],
+                origin_coords[1],
+                float(facility["lat"]),
+                float(facility["lon"]),
+                provider=provider,
+            )
+
+            # Score facility with your existing logic
             score, scoring_details = calculate_enhanced_facility_score_free(
                 facility, required_caps, route_data, case_type, triage_color
             )
-            
-            # Skip facilities with insufficient capabilities (but log why)
-            if score == 0:
-                # Show why facility was skipped for debugging
-                if scoring_details.get("reason") == "Insufficient capabilities":
-                    continue
-                else:
-                    # Facility has some score, include it
-                    pass
-            
-            # Generate route for visualization (always create basic route)
+
+            # Skip facilities with zero score due to insufficient capability
+            if score == 0 and scoring_details.get("reason") == "Insufficient capabilities":
+                continue
+
+            # Generate simple route for visualization
             try:
                 route_coords = interpolate_route(
-                    origin_coords[0], origin_coords[1],
-                    float(facility["lat"]), float(facility["lon"]), n=20
+                    origin_coords[0],
+                    origin_coords[1],
+                    float(facility["lat"]),
+                    float(facility["lon"]),
+                    n=20,
                 )
-            except:
-                # Fallback route if interpolation fails
+            except Exception:
                 route_coords = []
-            
-            # Prepare facility data for display
+
+            # --------- Safe handling of optional fields ----------
+            # ICU_open may not exist in CSV
+            icu_open = facility.get("ICU_open", facility.get("icu_open", 0))
+
+            # acceptanceRate may not exist; default 0.75
+            acceptance_rate = facility.get("acceptanceRate", 0.75)
+            try:
+                acceptance_rate = float(acceptance_rate)
+            except Exception:
+                acceptance_rate = 0.75
+
+            # specialties may be dict / string / missing
+            raw_specialties = facility.get("specialties")
+            if isinstance(raw_specialties, dict):
+                specialties_str = ", ".join(
+                    [s for s, v in raw_specialties.items() if v]
+                ) or "—"
+            elif isinstance(raw_specialties, str):
+                specialties_str = raw_specialties
+            else:
+                specialties_str = "—"
+
+            # highend may be dict / string / missing
+            raw_highend = facility.get("highend")
+            if isinstance(raw_highend, dict):
+                highend_str = ", ".join(
+                    [e for e, v in raw_highend.items() if v]
+                ) or "—"
+            elif isinstance(raw_highend, str):
+                highend_str = raw_highend
+            else:
+                highend_str = "—"
+            # ---------------------------------------------------
+
             facility_data = {
                 "name": facility.get("name", "Unknown Facility"),
-                "type": facility.get("type", "Unknown"),
+                "type": facility.get("type", facility.get("facility_type", "Unknown")),
                 "score": score,
                 "scoring_details": scoring_details,
-                "km": round(route_data.get('distance_km', 0), 1),
-                "ICU_open": facility.get("ICU_open", 0),
-                "accept": int(facility.get("acceptanceRate", 0.75) * 100),
-                "specialties": ", ".join([s for s, v in facility.get("specialties", {}).items() if v]) or "—",
-                "highend": ", ".join([e for e, v in facility.get("highend", {}).items() if v]) or "—",
+                "km": round(route_data.get("distance_km", 0) or 0, 1),
+                "ICU_open": icu_open,
+                "accept": int(acceptance_rate * 100),
+                "specialties": specialties_str,
+                "highend": highend_str,
                 "route": route_coords,
                 "lat": float(facility["lat"]),
                 "lon": float(facility["lon"]),
-                "routing_success": route_data.get('success', False),
-                "routing_provider": route_data.get('provider', 'Unknown')
+                "routing_success": route_data.get("success", False),
+                "routing_provider": route_data.get("provider", "Unknown"),
             }
-            
-            # Add ETA information if available
-            if route_data.get('success'):
-                eta_minutes = route_data.get('estimated_duration_min', route_data.get('duration_min', 0))
-                facility_data["eta_min"] = round(eta_minutes, 1)
-                facility_data["traffic_factor"] = route_data.get('traffic_multiplier', 1.0)
-                facility_data["estimated"] = route_data.get('estimated', False)
-                facility_data["peak_hour"] = route_data.get('peak_hour', False)
+
+            # Add ETA information
+            if route_data.get("success"):
+                eta_minutes = route_data.get(
+                    "estimated_duration_min",
+                    route_data.get("duration_min", 0),
+                )
+                facility_data["eta_min"] = round(eta_minutes or 0, 1)
+                facility_data["traffic_factor"] = route_data.get(
+                    "traffic_multiplier", 1.0
+                )
+                facility_data["estimated"] = route_data.get("estimated", False)
+                facility_data["peak_hour"] = route_data.get("peak_hour", False)
                 successful_routes += 1
             else:
-                # Estimate ETA based on distance
-                distance_km = route_data.get('distance_km', 0)
-                estimated_eta = max(10, distance_km * 1.5)  # Rough estimate: 1.5 min per km
+                # Estimate ETA from distance if routing fails
+                distance_km = route_data.get("distance_km", 0) or 0
+                estimated_eta = max(10, distance_km * 1.5)  # 1.5 min/km rough
                 facility_data["eta_min"] = round(estimated_eta, 1)
                 facility_data["traffic_factor"] = 1.0
                 facility_data["estimated"] = True
                 facility_data["peak_hour"] = False
-            
+
             ranked_facilities.append(facility_data)
-            
+
         except Exception as e:
             # Log error but continue processing other facilities
-            print(f"Error processing facility {facility.get('name', 'Unknown')}: {str(e)}")
+            print(
+                f"Error processing facility "
+                f"{facility.get('name', 'Unknown')}: {str(e)}"
+            )
             continue
-    
-    # Clear progress indicators
+
+    # -------------------------
+    # 5. Clear progress UI
+    # -------------------------
     progress_bar.empty()
     status_text.empty()
-    
-    # Show routing summary
+
+    # -------------------------
+    # 6. Routing summary
+    # -------------------------
     if successful_routes > 0:
-        st.success(f"✅ Successfully calculated routes to {successful_routes} out of {total_facilities} facilities")
+        st.success(
+            f"✅ Successfully calculated routes to {successful_routes} "
+            f"out of {total_facilities} facilities (REAL Meghalaya catalog)"
+        )
     else:
-        st.warning(f"⚠️ Using estimated distances for all {len(ranked_facilities)} facilities")
-    
-    # Sort by score (descending) and ensure we have facilities
+        st.warning(
+            f"⚠️ Using estimated distances for all {len(ranked_facilities)} "
+            f"facilities (routing provider failed)"
+        )
+
+    # -------------------------
+    # 7. Sort and cap by top_k
+    # -------------------------
     if ranked_facilities:
-        ranked_facilities.sort(key=lambda x: (-x["score"], x.get("eta_min", 999)))
+        ranked_facilities.sort(
+            key=lambda x: (-x["score"], x.get("eta_min", 999))
+        )
         return ranked_facilities[:top_k]
     else:
-        return []        
+        return []
+
 # === DEMO FACILITIES (East Khasi Hills) ===
 EH_BASE = dict(lat_min=25.45, lat_max=25.65, lon_min=91.80, lon_max=91.95)
 
@@ -3305,211 +3565,202 @@ with tabs[0]:
             st.session_state.triage_override_color = None
             st.session_state.triage_override_reason = ""
 
-# ======== Receiving Hospital Tab ========
+# NEW RECEIVING HOSPITAL IMPLEMENTATION
 with tabs[2]:
-    st.subheader("Incoming referrals & case actions")
-    
-    # Facility selection with enhanced information
-    fac_names = [f["name"] for f in st.session_state.facilities]
-    current_idx = fac_names.index(st.session_state.active_fac) if st.session_state.active_fac in fac_names else 0
-    selected_facility = st.selectbox("Select your facility", fac_names, index=current_idx, key="receiving_facility_select")
-    st.session_state.active_fac = selected_facility
-    
-    # Show facility capabilities
-    current_fac = next((f for f in st.session_state.facilities if f["name"] == selected_facility), None)
-    if current_fac:
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("ICU Beds Available", current_fac.get("ICU_open", 0))
-        with col2:
-            st.metric("Acceptance Rate", f"{current_fac.get('acceptanceRate', 0.75)*100:.0f}%")
-        with col3:
-            specialties = [s for s, v in current_fac.get("specialties", {}).items() if v]
-            st.metric("Specialties", len(specialties))
-    
-    # Get incoming referrals for this facility
-    incoming = [
-        r for r in st.session_state.referrals
-        if (r["dest"] == selected_facility or selected_facility in r.get("alternates", []))
-        and r["status"] in ["PREALERT", "DISPATCHED", "ARRIVE_SCENE", "DEPART_SCENE", "ARRIVE_DEST"]
-    ]
-    
-    # Sort by priority and time
-    incoming.sort(key=lambda x: (
-        0 if x["dest"] == selected_facility else 1,  # Primary destinations first
-        -x["times"].get("decision_ts", 0)  # Most recent first
-    ))
+    st.markdown("## Receiving Hospital – Incoming Network Cases")
+
+    # --- Pull facility catalog (same as used by routing / referrer) ---
+    facilities = (
+        st.session_state.get("facility_catalog")
+        or st.session_state.get("facilities")
+        or []
+    )
+
+    if not facilities:
+        st.info("Facility catalog is empty. Load facilities from the admin/config tab first.")
+        st.stop()
+
+    # Make a simple lookup for later if needed
+    facility_lookup = {f.get("id") or f.get("facility_id"): f for f in facilities}
+
+    # --- Select which facility you are viewing as (receiving hospital POV) ---
+    selected_facility = st.selectbox(
+        "Viewing as receiving facility",
+        options=facilities,
+        format_func=lambda f: f.get("display_name") or f.get("name") or f.get("id", "Unknown"),
+        key="rh_selected_facility",
+    )
+    my_facility_id = selected_facility.get("id") or selected_facility.get("facility_id")
+
+    # --- Collect all referrals from session state ---
+    all_referrals = st.session_state.get("referrals", [])
+
+    # A referral is "incoming" if this facility is the primary dest or in alternates
+    incoming = []
+    for r in all_referrals:
+        dest = r.get("dest") or {}
+        dest_id = dest.get("id") or dest.get("facility_id")
+
+        alternates = r.get("alternates") or []
+        alt_ids = [(a.get("id") or a.get("facility_id")) for a in alternates]
+
+        if (my_facility_id is not None) and (
+            my_facility_id == dest_id or my_facility_id in alt_ids
+        ):
+            incoming.append(r)
 
     if not incoming:
-        st.info("No incoming referrals for your facility")
-    else:
-        st.markdown(f"### 📋 Incoming Referrals ({len(incoming)})")
-        
-        for r in incoming:
-            with st.container():
-                # Determine priority badge
-                is_primary = r["dest"] == selected_facility
-                priority_badge = "🥇 PRIMARY" if is_primary else "🥈 ALTERNATE"
-                badge_class = "priority-badge" if is_primary else "alternate-badge"
-                
-                col1, col2, col3 = st.columns([3, 1, 1])
-                with col1:
-                    st.write(f"**{r['patient']['name']}** — {r['triage']['complaint']} ")
-                    
-                    # Handle diagnosis display
-                    dx = r.get("provisionalDx", {})
-                    if isinstance(dx, dict):
-                        dx_txt = (dx.get("code", "") + " " + dx.get("label", "")).strip()
-                    else:
-                        dx_txt = str(dx)
-                    
-                    st.write(f"| Dx: **{dx_txt or '—'}**")
-                    
-                    # Show priority badge
-                    st.markdown(f'<span class="badge {badge_class}">{priority_badge}</span>', unsafe_allow_html=True)
-                    
-                    # Show referrer info
-                    referrer_info = r.get('referrer', {})
-                    if referrer_info.get('role'):
-                        st.caption(f"Referrer: {referrer_info.get('name', '')} ({referrer_info.get('role', '')}) from {referrer_info.get('facility', '')}")
-                
-                with col2:
-                    decision = r['triage']['decision']
-                    if decision.get('overridden'):
-                        st.markdown(f'<span class="pill {decision["color"].lower()} override-badge">{decision["color"]} (OVERRIDDEN)</span>', unsafe_allow_html=True)
-                    else:
-                        triage_pill(decision['color'])
-                
-                with col3:
-                    # Show ETA if available
-                    if r.get('transport', {}).get('eta_min'):
-                        st.write(f"**ETA:** {r['transport']['eta_min']} min")
-                    st.write(f"**Status:** {r['status']}")
+        st.success("No active incoming cases for this facility.")
+        st.stop()
 
-                # Case actions
-                open_key = f"open_{r['id']}"
-                if st.button("Open case details", key=open_key):
-                    # Show audit log if exists
-                    if r.get('audit_log'):
-                        st.markdown("#### Audit Trail")
-                        for audit in r['audit_log']:
-                            if audit['action'] == 'TRIAGE_OVERRIDE':
-                                st.markdown(f"""
-                                <div class="audit-log">
-                                    <strong>🔧 Triage Override</strong><br>
-                                    <small>{audit['timestamp']} by {audit['user']}</small><br>
-                                    {audit['details']['from']} → {audit['details']['to']}<br>
-                                    <em>Reason: {audit['details']['reason']}</em>
-                                </div>
-                                """, unsafe_allow_html=True)
-                    # Enhanced Interventions Display for Receiving Hospital
-                    st.markdown("#### 📋 Interventions Timeline")
-                    interventions = r.get("interventions", [])
-                    if interventions:
-                        # Group by performer
-                        referrer_iv = [iv for iv in interventions if iv.get("performed_by") == "referrer"]
-                        emt_iv = [iv for iv in interventions if iv.get("performed_by") == "emt"]
-                        
-                        if referrer_iv:
-                            st.markdown("**Referrer Interventions:**")
-                            for iv in referrer_iv:
-                                timestamp = datetime.fromtimestamp(iv.get("timestamp", now_ts())).strftime("%H:%M:%S")
-                                st.markdown(f"""
-                                <div style="background: #1e293b; padding: 6px 10px; border-radius: 6px; margin: 2px 0; border-left: 3px solid #3b82f6;">
-                                    <div style="font-weight: 500;">{iv['name']}</div>
-                                    <div style="font-size: 0.75rem; color: #9ca3af;">{timestamp} • {iv.get("type", 'custom').replace('_', ' ').title()}</div>
-                                </div>
-                                """, unsafe_allow_html=True)
-                        
-                        if emt_iv:
-                            st.markdown("**En-route Interventions:**")
-                            for iv in emt_iv:
-                                timestamp = datetime.fromtimestamp(iv.get("timestamp", now_ts())).strftime("%H:%M:%S")
-                                status_badge = {
-                                    "completed": "🟢",
-                                    "in_progress": "🟡", 
-                                    "planned": "🔵"
-                                }.get(iv.get("status", "completed"), "⚪")
-                                
-                                st.markdown(f"""
-                                <div style="background: #1e293b; padding: 6px 10px; border-radius: 6px; margin: 2px 0; border-left: 3px solid #10b981;">
-                                    <div style="display: flex; align-items: center; gap: 8px;">
-                                        <span style="font-weight: 500;">{iv['name']}</span>
-                                        <span style="margin-left: auto;">{status_badge}</span>
-                                    </div>
-                                    <div style="font-size: 0.75rem; color: #9ca3af;">{timestamp} • EMT • Status: {iv.get('status', 'completed').replace('_', ' ').title()}</div>
-                                </div>
-                                """, unsafe_allow_html=True)
-                    else:
-                        st.info("No interventions recorded")
-                        
-                    # Enhanced ISBAR format
-                    dx = r.get("provisionalDx", {})
-                    if isinstance(dx, dict):
-                        dx_txt = (dx.get("code", "") + " " + dx.get("label", "")).strip()
-                    else:
-                        dx_txt = str(dx)
-                    
-                    isbar = f"""**I (Identify):**
-- Patient: {r['patient']['name']}, {r['patient']['age']} {r['patient']['sex']}
-- Referrer: {r['referrer'].get('name', '')} ({r['referrer'].get('role', '')}) from {r['referrer'].get('facility', '')}
+    # --- Helper functions for triage + status ---
+    def triage_color(ref):
+        return (
+            ref.get("triage", {})
+              .get("decision", {})
+              .get("color", "UNKNOWN")
+              .upper()
+        )
 
-**S (Situation):**
-- Chief Complaint: {r['triage']['complaint']}
-- Provisional Diagnosis: {dx_txt}
-- Triage: {r['triage']['decision']['color']} {'(OVERRIDDEN)' if r['triage']['decision'].get('overridden') else ''}
+    def status(ref):
+        return str(ref.get("status", "REQUESTED")).upper()
 
-**B (Background):**
-- Vitals: HR {r['triage']['hr']}, SBP {r['triage']['sbp']}, RR {r['triage']['rr']}, Temp {r['triage']['temp']}, SpO2 {r['triage']['spo2']}, AVPU {r['triage']['avpu']}
-- Resuscitation: {", ".join(r.get('resuscitation', [])) or "None performed"}
-- Clinical Summary: {r['clinical'].get('summary', "—")}
+    SEVERITY_ORDER = {
+        "RED": 0,
+        "ORANGE": 1,
+        "YELLOW": 2,
+        "GREEN": 3,
+        "BLUE": 4,
+        "UNKNOWN": 9,
+    }
 
-**A (Assessment):**
-- Required Capabilities: {", ".join(r['reasons'].get('requiredCapabilities', [])) or "None specified"}
-- Referral Reasons: {"Bed/ICU unavailable; " if r['reasons'].get('bedOrICUUnavailable') else ""}{"Special test; " if r['reasons'].get('specialTest') else ""}Severity
+    # --- Filters (status, later you can add time/age filters if you want) ---
+    status_options = [
+        "REQUESTED",
+        "ACKNOWLEDGED",
+        "ACCEPTED",
+        "DISPATCHED",
+        "ENROUTE",
+        "COMPLETED",
+        "DECLINED",
+    ]
+    status_filter = st.multiselect(
+        "Status filter",
+        options=status_options,
+        default=[s for s in status_options if s not in ("COMPLETED", "DECLINED")],
+        key="rh_status_filter",
+    )
 
-**R (Recommendation):**
-- Priority: {r['transport'].get('priority', 'Urgent')}
-- Ambulance: {r['transport'].get('ambulance', '—')}
-- Consent: {'Yes' if r['transport'].get('consent') else 'No'}
-"""
-                    st.markdown(isbar)
+    filtered = [
+        r for r in incoming
+        if not status_filter or status(r) in status_filter
+    ]
 
-                    # Action buttons
-                    c1, c2, c3 = st.columns(3)
-                    if c1.button("Accept case", key=f"acc_{r['id']}", type="primary"):
-                        r["status"] = "ARRIVE_DEST"
-                        r["times"]["arrive_dest_ts"] = now_ts()
-                        st.success("Case accepted and marked as arrived")
-                        st.rerun()
+    # Sort by triage severity, then by time (if available)
+    def sort_key(ref):
+        c = triage_color(ref)
+        t = (
+            ref.get("times", {}).get("first_contact")
+            or ref.get("times", {}).get("created_at")
+            or ref.get("created_at")
+            or ""
+        )
+        return (SEVERITY_ORDER.get(c, 9), str(t))
 
-                    reject_reason = c2.selectbox(
-                        "Rejection reason",
-                        ["—", "No ICU bed", "No specialist", "Equipment down", "Over capacity", "Outside scope", "Patient diverted"],
-                        key=f"rejrs_{r['id']}",
-                    )
-                    if c3.button("Reject case", key=f"rej_{r['id']}") and reject_reason != "—":
-                        r["status"] = "PREALERT"
-                        r["reasons"]["rejected"] = True
-                        r["reasons"]["reject_reason"] = reject_reason
-                        
-                        # Log rejection in audit trail
-                        audit_entry = {
-                            "timestamp": datetime.now().isoformat(),
-                            "action": "CASE_REJECTED",
-                            "details": {
-                                "reason": reject_reason,
-                                "facility": selected_facility
-                            }
-                        }
-                        if "audit_log" not in r:
-                            r["audit_log"] = []
-                        r["audit_log"].append(audit_entry)
-                        
-                        st.warning(f"Case rejected: {reject_reason}")
-                        st.rerun()
-                
-                st.markdown("---")
+    filtered.sort(key=sort_key)
+
+    st.markdown(f"**Active incoming cases for this facility:** {len(filtered)}")
+
+    # --- Main loop: each incoming case for this receiving facility ---
+    for idx, ref in enumerate(filtered):
+        ref_id = ref.get("id", f"case_{idx+1}")
+        color = triage_color(ref)
+        from_fac = ref.get("origin") or {}
+        from_name = (
+            from_fac.get("name")
+            or from_fac.get("facility_name")
+            or from_fac.get("id")
+            or "Unknown origin facility"
+        )
+
+        vitals = ref.get("vitals") or {}
+        age = vitals.get("age") or ref.get("age")
+        diag = (
+            ref.get("provisional_diagnosis")
+            or ref.get("icd_label")
+            or ref.get("icd_code")
+            or "—"
+        )
+
+        with st.container():
+            top_cols = st.columns([0.6, 0.4])
+            with top_cols[0]:
+                st.markdown(f"### {color.title()} case – {ref_id}")
+                st.caption(f"Referred from: {from_name}")
+                st.caption(f"Current status: {status(ref)}")
+
+            with top_cols[1]:
+                st.markdown("**Clinical snapshot**")
+                st.write(
+                    f"- Age: {age if age is not None else 'NA'}\n"
+                    f"- Provisional Dx / ICD: {diag}\n"
+                )
+
+            # --- Core: use the SAME ranking and card helpers as referrer ---
+            try:
+                ranked_list = rank_facilities_with_free_routing(
+                    case=ref,
+                    all_facilities=facilities,
+                    # add other args here if your helper expects them
+                )
+            except Exception as e:
+                st.error(f"Error ranking facilities for this case: {e}")
+                ranked_list = []
+
+            # Pick THIS receiving facility’s row from the ranked list
+            my_row = None
+            for row in ranked_list or []:
+                fac = row.get("facility") or {}
+                fac_id = fac.get("id") or fac.get("facility_id")
+                if fac_id == my_facility_id:
+                    my_row = row
+                    break
+
+            if my_row is not None:
+                enhanced_facility_card(
+                    my_row,
+                    mode="receiving",        # if your card supports a mode flag
+                    show_rank=True,
+                    show_distance=True,
+                    show_actions=False,
+                )
+            else:
+                st.warning(
+                    "This facility did not appear in the ranked list for this case. "
+                    "Check that rank_facilities_with_free_routing() sees the same facility IDs."
+                )
+
+            # --- Case-level actions ---
+            action_cols = st.columns(3)
+            if action_cols[0].button("Accept", key=f"rh_accept_{ref_id}"):
+                ref["status"] = "ACCEPTED"
+                ref.setdefault("times", {})["accepted_at"] = datetime.utcnow().isoformat()
+                st.rerun()
+
+            if action_cols[1].button("Reject", key=f"rh_reject_{ref_id}"):
+                ref["status"] = "DECLINED"
+                ref.setdefault("times", {})["declined_at"] = datetime.utcnow().isoformat()
+                st.rerun()
+
+            if action_cols[2].button("Need more info", key=f"rh_moreinfo_{ref_id}"):
+                ref["status"] = "REQUESTED_INFO"
+                ref.setdefault("times", {})["info_requested_at"] = datetime.utcnow().isoformat()
+                st.rerun()
+
+# unchanged
+with tabs[3]:
+    # ... existing Admin / Config code ...
+
 
 # ======== ENHANCED AMBULANCE / EMT TAB ========
 with tabs[1]:
@@ -3831,6 +4082,7 @@ Notes: {emt_notes}
                 st.warning("Facility coordinates not found for route visualization")
         else:
             st.info("👆 Select an active case to view route optimization")
+            
 # ======== ENHANCED GOVERNMENT ANALYTICS DASHBOARD ========
 with tabs[3]:
     st.subheader("🏛️ Enhanced Government Analytics Dashboard")
