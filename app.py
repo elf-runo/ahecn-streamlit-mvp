@@ -2527,8 +2527,13 @@ def seed_referrals(n=500, rng_seed=42, append=False):
        Set append=True to append to existing data instead of wiping.
     """
     rng = random.Random(rng_seed)
-    facs = st.session_state.facilities
+    facs = st.session_state.get("facilities", [])
     conds = ["Maternal", "Trauma", "Stroke", "Cardiac", "Sepsis", "Other"]
+    
+    # If no facilities are loaded yet, avoid crashes and just bail out
+    if not facs:
+        st.session_state.referrals = []
+        return
     
     # Clear existing referrals unless in append mode
     if not append:
@@ -2601,20 +2606,29 @@ def seed_referrals(n=500, rng_seed=42, append=False):
 
         lat, lon = rand_geo(rng)
         
-        # Select appropriate destination
-        suitable_facs = [
-            f for f in facs 
-            if all(f["caps"].get(cap, 0) for cap in profile["required_caps"])
-        ]
-        
-        if not suitable_facs:
-            dest = rng.choice(facs)
-        else:
-            dest = rng.choice(suitable_facs)
+        # --- FIXED: Select appropriate destination safely ---
+        suitable_facs = []
+        for f in facs:
+            # Skip anything malformed
+            if not isinstance(f, dict):
+                continue
             
+            # Use .get so we don't crash if 'caps' is missing
+            caps = f.get("caps") or {}
+            
+            # Only count it suitable if it actually has the required caps
+            if all(caps.get(cap, 0) for cap in profile["required_caps"]):
+                suitable_facs.append(f)
+        
+        # If nothing matched capabilities, fall back to any facility
+        if suitable_facs:
+            dest = rng.choice(suitable_facs)
+        else:
+            dest = rng.choice(facs)
+            
+        # Distance, timing, and routing
         dkm = dist_km(lat, lon, dest["lat"], dest["lon"])
         
-        # More varied timestamps
         ts_first = base + rng.randint(0, 30 * 24 * 3600)
         hr_of_day = datetime.fromtimestamp(ts_first).hour
         traffic_mult = traffic_factor_for_hour(hr_of_day)
