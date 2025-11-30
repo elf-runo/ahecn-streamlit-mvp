@@ -15,169 +15,6 @@ import requests
 import urllib.parse
 from pathlib import Path
 
-# --------------------------
-# Facility Catalog: Meghalaya (REAL DATA ONLY)
-# --------------------------
-def load_meghalaya_facilities() -> pd.DataFrame:
-    data_path = Path(__file__).parent / "data" / "meghalaya_facilities.csv"
-    try:
-        df = pd.read_csv(data_path)
-    except FileNotFoundError:
-        st.error(f"Facility catalog not found at: {data_path}")
-        st.stop()
-
-    # Minimal required columns
-    required_cols = ["facility_id", "name", "lat", "lon"]
-    missing = [c for c in required_cols if c not in df.columns]
-    if missing:
-        st.error(f"Facility catalog missing required columns: {missing}")
-        st.stop()
-
-    return df
-
-
-if "facility_catalog" not in st.session_state:
-    st.session_state.facility_catalog = load_meghalaya_facilities()
-if "facility_matches" not in st.session_state:
-    st.session_state["facility_matches"] = []
-if "primary_facility_name" not in st.session_state:
-    st.session_state["primary_facility_name"] = None
-if "alternate_facilities" not in st.session_state:
-    st.session_state["alternate_facilities"] = []    
-# --------------------------
-# Candidate facility selection (REAL DATA from catalog)
-# --------------------------
-def get_candidate_facilities_for_case(case: dict) -> list[dict]:
-    """
-    Filter the REAL Meghalaya facility catalog based on case type
-    and basic capability flags.
-    """
-    df = st.session_state.get("facility_catalog")
-
-    if df is None or df.empty:
-        st.error("Facility catalog is empty or not loaded.")
-        return []
-
-    df = df.copy()
-
-    # Normalize capability flags if they exist
-    flag_cols = ["has_ed", "has_icu", "has_nicu", "has_obgyn", "has_peds"]
-    for col in flag_cols:
-        if col in df.columns:
-            df[col] = df[col].fillna(0).astype(int)
-
-    case_type = (case or {}).get("case_type", "Adult")
-
-    # Minimal capability logic – adjust to match your CSV columns
-    if case_type == "Maternal" and "has_obgyn" in df.columns:
-        df = df[df["has_obgyn"] == 1]
-
-    if case_type == "Paediatric" and "has_peds" in df.columns:
-        df = df[df["has_peds"] == 1]
-
-    # Require Emergency Department if present
-    if "has_ed" in df.columns:
-        df = df[df["has_ed"] == 1]
-
-    facilities = df.to_dict(orient="records")
-
-    st.write(
-        f"🔧 DEBUG Facilities: using REAL Meghalaya catalog, "
-        f"{len(facilities)} candidates after filtering."
-    )
-
-    return facilities
-
-def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """
-    Approximate great-circle distance between two points (km).
-    """
-    R = 6371.0  # Earth radius in km
-    phi1 = math.radians(lat1)
-    phi2 = math.radians(lat2)
-    dphi = math.radians(lat2 - lat1)
-    dlambda = math.radians(lon2 - lon1)
-
-    a = (
-        math.sin(dphi / 2.0) ** 2
-        + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2.0) ** 2
-    )
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-
-    return R * c
-
-
-def estimate_distance_and_time_simple(
-    patient_location: dict,
-    facility: dict,
-    avg_speed_kmph: float = 30.0,
-) -> tuple[float, float]:
-    """
-    Simple fallback routing: Haversine distance + constant speed estimate.
-    """
-    lat1 = float(patient_location["lat"])
-    lon1 = float(patient_location["lon"])
-    lat2 = float(facility["lat"])
-    lon2 = float(facility["lon"])
-
-    distance_km = _haversine_km(lat1, lon1, lat2, lon2)
-
-    if avg_speed_kmph <= 0:
-        return distance_km, None
-
-    travel_time_min = (distance_km / avg_speed_kmph) * 60.0
-    return round(distance_km, 1), round(travel_time_min, 1)
-
-def sort_facilities_by_priority(facilities: list[dict], case: dict) -> list[dict]:
-    """
-    For now, simply sort by travel_time_min ascending.
-    You can extend this to include ICU, NICU, etc.
-    """
-    return sorted(
-        facilities,
-        key=lambda f: f.get("travel_time_min", 1e9),
-    )
-def rank_facilities_free_routing(
-    candidate_facilities: list[dict],
-    patient_location: dict,
-    case: dict,
-    max_travel_time_min: int = 240,
-) -> list[dict]:
-    """
-    Pure free routing: no external APIs, no synthetic facilities.
-    All facilities come from the REAL Meghalaya CSV.
-    """
-    enriched: list[dict] = []
-
-    for fac in candidate_facilities:
-        try:
-            distance_km, travel_time_min = estimate_distance_and_time_simple(
-                patient_location=patient_location,
-                facility=fac,
-            )
-        except Exception as e:
-            st.write(f"🔧 DEBUG: failed distance for {fac.get('name')}: {e}")
-            continue
-
-        if travel_time_min is None:
-            continue
-
-        if travel_time_min <= max_travel_time_min:
-            fac_copy = fac.copy()
-            fac_copy["distance_km"] = distance_km
-            fac_copy["travel_time_min"] = travel_time_min
-            enriched.append(fac_copy)
-
-    st.write(
-        f"🔧 DEBUG Free Routing: received {len(candidate_facilities)} REAL facilities, "
-        f"returning {len(enriched)} after travel-time filter."
-    )
-    st.write(f"⚠️ Using estimated distances for all {len(enriched)} facilities")
-
-    enriched = sort_facilities_by_priority(enriched, case)
-    return enriched
-
-    
 # === AI TRIAGE MODEL - TEMPORARILY DISABLED ===
 import os
 
@@ -203,217 +40,8 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed"
 )
-# === MEGHALAYA HOSPITAL DATASET ===
-MEGHALAYA_FACILITIES = [
-    # Central Referral Point - Shillong Civil Hospital
-    {
-        "name": "Shillong Civil Hospital",
-        "type": "Public",
-        "lat": 25.5780,
-        "lon": 91.8930,
-        "caps": {
-            "Emergency": 1, "ICU": 1, "Pediatric": 1, "Maternal": 1, "Trauma": 1,
-            "Cardiac": 1, "Neuro": 1, "Oncology": 1, "Orthopedic": 1, "Radiology": 1,
-            "Lab": 1, "Pharmacy": 1, "Ambulance": 1
-        },
-        "ICU_open": 50,
-        "acceptanceRate": 0.85,
-        "specialties": {
-            "Cardiac": True, "Neuro": True, "Trauma": True, "Maternal": True,
-            "Pediatric": True, "Orthopedic": True
-        },
-        "highend": {
-            "CT": True, "MRI": True, "Ventilator": True, "ICU": True
-        }
-    },
-    
-    # East Khasi Hills - Public Hospitals
-    {
-        "name": "Ganesh Das Hospital",
-        "type": "Public", 
-        "lat": 25.5880,
-        "lon": 91.9030,
-        "caps": {
-            "Emergency": 1, "ICU": 1, "Pediatric": 1, "Maternal": 1, "Trauma": 1,
-            "Cardiac": 1, "Neuro": 1, "Oncology": 1, "Orthopedic": 1, "Radiology": 1,
-            "Lab": 1, "Pharmacy": 1, "Ambulance": 1
-        },
-        "ICU_open": 30,
-        "acceptanceRate": 0.80,
-        "specialties": {
-            "Cardiac": True, "Neuro": True, "Trauma": True, "Maternal": True,
-            "Pediatric": True, "Orthopedic": True
-        },
-        "highend": {
-            "CT": True, "MRI": True, "Ventilator": True, "ICU": True
-        }
-    },
-    {
-        "name": "NEIGRIHMS Hospital",
-        "type": "Public",
-        "lat": 25.5680,
-        "lon": 91.8830,
-        "caps": {
-            "Emergency": 1, "ICU": 1, "Pediatric": 1, "Maternal": 1, "Trauma": 1,
-            "Cardiac": 1, "Neuro": 1, "Oncology": 1, "Orthopedic": 1, "Radiology": 1,
-            "Lab": 1, "Pharmacy": 1, "Ambulance": 1
-        },
-        "ICU_open": 100,
-        "acceptanceRate": 0.90,
-        "specialties": {
-            "Cardiac": True, "Neuro": True, "Trauma": True, "Maternal": True,
-            "Pediatric": True, "Orthopedic": True
-        },
-        "highend": {
-            "CT": True, "MRI": True, "Ventilator": True, "ICU": True
-        }
-    },
-    
-    # East Khasi Hills - Private Hospitals
-    {
-        "name": "Bethany Hospital",
-        "type": "Private",
-        "lat": 25.5820,
-        "lon": 91.9000,
-        "caps": {
-            "Emergency": 1, "ICU": 1, "Pediatric": 1, "Maternal": 1, "Trauma": 1,
-            "Cardiac": 1, "Neuro": 1, "Oncology": 1, "Orthopedic": 1, "Radiology": 1,
-            "Lab": 1, "Pharmacy": 1, "Ambulance": 1
-        },
-        "ICU_open": 20,
-        "acceptanceRate": 0.95,
-        "specialties": {
-            "Cardiac": True, "Neuro": True, "Trauma": True, "Maternal": True,
-            "Pediatric": True, "Orthopedic": True
-        },
-        "highend": {
-            "CT": True, "MRI": True, "Ventilator": True, "ICU": True
-        }
-    },
-    {
-        "name": "Nazareth Hospital", 
-        "type": "Private",
-        "lat": 25.5740,
-        "lon": 91.8850,
-        "caps": {
-            "Emergency": 1, "ICU": 1, "Pediatric": 1, "Maternal": 1, "Trauma": 1,
-            "Cardiac": 1, "Neuro": 1, "Oncology": 1, "Orthopedic": 1, "Radiology": 1,
-            "Lab": 1, "Pharmacy": 1, "Ambulance": 1
-        },
-        "ICU_open": 10,
-        "acceptanceRate": 0.85,
-        "specialties": {
-            "Cardiac": True, "Neuro": True, "Trauma": True, "Maternal": True,
-            "Pediatric": True, "Orthopedic": True
-        },
-        "highend": {
-            "CT": True, "MRI": True, "Ventilator": True, "ICU": True
-        }
-    },
-    
-    # West Jaintia Hills - Public Hospitals
-    {
-        "name": "Civil Hospital Jowai",
-        "type": "Public",
-        "lat": 25.4447,
-        "lon": 92.2047,
-        "caps": {
-            "Emergency": 1, "ICU": 1, "Pediatric": 1, "Maternal": 1, "Trauma": 1,
-            "Cardiac": 1, "Neuro": 0, "Oncology": 0, "Orthopedic": 1, "Radiology": 1,
-            "Lab": 1, "Pharmacy": 1, "Ambulance": 1
-        },
-        "ICU_open": 10,
-        "acceptanceRate": 0.75,
-        "specialties": {
-            "Cardiac": False, "Neuro": False, "Trauma": True, "Maternal": True,
-            "Pediatric": True, "Orthopedic": True
-        },
-        "highend": {
-            "CT": False, "MRI": False, "Ventilator": True, "ICU": True
-        }
-    },
-    {
-        "name": "MCH Hospital Panaliar",
-        "type": "Public", 
-        "lat": 25.4500,
-        "lon": 92.2100,
-        "caps": {
-            "Emergency": 1, "ICU": 1, "Pediatric": 1, "Maternal": 1, "Trauma": 0,
-            "Cardiac": 0, "Neuro": 0, "Oncology": 0, "Orthopedic": 0, "Radiology": 1,
-            "Lab": 1, "Pharmacy": 1, "Ambulance": 1
-        },
-        "ICU_open": 5,
-        "acceptanceRate": 0.80,
-        "specialties": {
-            "Cardiac": False, "Neuro": False, "Trauma": False, "Maternal": True,
-            "Pediatric": True, "Orthopedic": False
-        },
-        "highend": {
-            "CT": False, "MRI": False, "Ventilator": True, "ICU": True
-        }
-    },
-    
-    # West Jaintia Hills - Private Hospitals  
-    {
-        "name": "K.J.P. Assembly Hospital",
-        "type": "Private",
-        "lat": 25.4400,
-        "lon": 92.2000,
-        "caps": {
-            "Emergency": 1, "ICU": 1, "Pediatric": 1, "Maternal": 1, "Trauma": 1,
-            "Cardiac": 1, "Neuro": 0, "Oncology": 0, "Orthopedic": 1, "Radiology": 1,
-            "Lab": 1, "Pharmacy": 1, "Ambulance": 1
-        },
-        "ICU_open": 5,
-        "acceptanceRate": 0.85,
-        "specialties": {
-            "Cardiac": True, "Neuro": False, "Trauma": True, "Maternal": True,
-            "Pediatric": True, "Orthopedic": True
-        },
-        "highend": {
-            "CT": True, "MRI": False, "Ventilator": True, "ICU": True
-        }
-    }
-]
-# === INITIALIZATION FUNCTION (Step 2) ===
-def initialize_meghalaya_facilities():
-    """Initialize session state with REAL Meghalaya hospital data from CSV, fallback to hard-coded list."""
-    # Prefer the CSV-backed facility_catalog
-    catalog_df = st.session_state.get("facility_catalog", None)
 
-    if 'facilities' not in st.session_state:
-        if isinstance(catalog_df, pd.DataFrame) and not catalog_df.empty:
-            # Use the REAL CSV as the main facilities list
-            st.session_state.facilities = catalog_df.to_dict(orient="records")
-        else:
-            # Fallback to the smaller hard-coded list if CSV missing/broken
-            st.session_state.facilities = MEGHALAYA_FACILITIES
-
-    # Set Shillong Civil Hospital as default central point
-    if 'central_referral_point' not in st.session_state:
-        st.session_state.central_referral_point = {
-            'name': 'Shillong Civil Hospital',
-            'lat': 25.5780,
-            'lon': 91.8930,
-            'type': 'Central Referral Point'
-        }
-
-
-def verify_meghalaya_facilities():
-    """Verify that Meghalaya facilities are being used"""
-    if not st.session_state.get('facilities'):
-        return False
-    
-    # Check if we have known Meghalaya facilities
-    meghalaya_facility_names = ["Shillong Civil Hospital", "Ganesh Das Hospital", "NEIGRIHMS Hospital", 
-                               "Bethany Hospital", "Nazareth Hospital", "Civil Hospital Jowai"]
-    
-    actual_names = [f['name'] for f in st.session_state.facilities]
-    meghalaya_count = sum(1 for name in actual_names if any(meghalaya_name in name for meghalaya_name in meghalaya_facility_names))
-    
-    return meghalaya_count > 0        
-
-    # === FREE ROUTING CONFIGURATION ===
+# === FREE ROUTING CONFIGURATION ===
 # Choose your free routing provider: 'osrm' (recommended) or 'openrouteservice'
 ROUTING_PROVIDER = 'osrm'
 
@@ -471,268 +99,94 @@ def show_free_routing_configuration():
     
     return provider, enable_traffic
 
-def test_meghalaya_routes():
-    """Test routing between Meghalaya hospitals"""
-    st.markdown("### 🧪 Meghalaya Route Testing")
-    
-    # Test routes from Shillong Civil Hospital to other facilities
-    origin = st.session_state.central_referral_point
-    
-    test_destinations = [
-        ("Ganesh Das Hospital", 25.5880, 91.9030),
-        ("NEIGRIHMS", 25.5680, 91.8830), 
-        ("Civil Hospital Jowai", 25.4447, 92.2047),
-        ("Bethany Hospital", 25.5820, 91.9000)
-    ]
-    
-    for dest_name, dest_lat, dest_lon in test_destinations:
-        with st.expander(f"Route: Shillong → {dest_name}"):
-            # Test with professional routing
-            ORS_API_KEY = os.getenv('ORS_API_KEY', 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjAzZmM5ZTViYTI5ZjQzNGM5OTY0ODU5ZTJlZThlYjNjIiwiaCI6Im11cm11cjY0In0=')
-            if ORS_API_KEY and ORS_API_KEY != "your_free_api_key_here":
-                route_data = get_ors_route(
-                    origin['lat'], origin['lon'],
-                    dest_lat, dest_lon,
-                    ORS_API_KEY
-                )
-                
-                if route_data['success']:
-                    st.success(f"✅ {route_data['distance_km']:.1f} km • {route_data['duration_min']:.1f} min")
-                    st.write(f"**Provider:** {route_data['provider']}")
-                else:
-                    st.error(f"❌ Routing failed: {route_data.get('error')}")
-                    # Fallback to free routing
-                    free_route = get_route_info_free(
-                        origin['lat'], origin['lon'],
-                        dest_lat, dest_lon,
-                        provider="osrm"
-                    )
-                    if free_route.get('success'):
-                        st.info(f"🔄 Fallback: {free_route.get('distance_km', 0):.1f} km")
-
-# === ADD THIS RIGHT AFTER THE ROUTING CONFIGURATION ===
-st.sidebar.markdown("---")
-st.sidebar.markdown("### 🏥 Data Source Verification")
-
-if verify_meghalaya_facilities():
-    st.sidebar.success("✅ Using Meghalaya Hospital Data")
-    facility_count = len(st.session_state.facilities)
-    st.sidebar.write(f"**Active Facilities:** {facility_count}")
-else:
-    st.sidebar.error("❌ Synthetic Data Detected")
-    if st.sidebar.button("Fix Data Source"):
-        initialize_meghalaya_facilities()
-        st.rerun()
-st.sidebar.markdown("---")
-st.sidebar.markdown("### 🐛 Debug Facilities")
-
-if st.sidebar.button("Debug Facility Data"):
-    st.sidebar.write("**Current Facilities:**")
-    if "facilities" in st.session_state:
-        facility_names = [f["name"] for f in st.session_state.facilities[:5]]  # First 5
-        for name in facility_names:
-            st.sidebar.write(f"- {name}")
-        st.sidebar.write(f"Total: {len(st.session_state.facilities)} facilities")
-    else:
-        st.sidebar.error("No facilities in session state")
-    
-    st.sidebar.write("**Verification Result:**", verify_meghalaya_facilities())
-
-if st.sidebar.button("Force Load Meghalaya Data"):
-    initialize_meghalaya_facilities()
-    st.sidebar.success("Meghalaya data reloaded!")
-    st.rerun()
-
 # === ENHANCED FACILITY CARD WITH ROUTING INFO ===
-def enhanced_facility_card(row, rank):
+def enhanced_facility_card(row, rank, is_primary=False, is_alternate=False):
     """
-    Render one facility card and handle selection of primary/alternate
-    via st.session_state.matched_primary / matched_alts.
+    Enhanced facility card with routing information
     """
-    # Ensure selection state exists
-    if "matched_primary" not in st.session_state:
-        st.session_state.matched_primary = None
-    if "matched_alts" not in st.session_state:
-        st.session_state.matched_alts = set()
-
-    name = row.get("name", "Unknown Facility")
-    is_primary = (st.session_state.matched_primary == name)
-    is_alternate = (name in st.session_state.matched_alts)
-
     with st.container():
         st.markdown('<div class="card">', unsafe_allow_html=True)
-
-        # --- Header ---
+        
+        # Header with routing status indicator
         header_col1, header_col2 = st.columns([3, 1])
         with header_col1:
-            # Title + badge
             if is_primary:
-                st.markdown(
-                    f"#### 🏥 {name} 🥇 "
-                    "<span class='priority-badge'>PRIMARY</span>",
-                    unsafe_allow_html=True,
-                )
+                st.markdown(f"#### 🏥 {row['name']} 🥇 <span class='priority-badge'>PRIMARY</span>", unsafe_allow_html=True)
             elif is_alternate:
-                st.markdown(
-                    f"#### 🏥 {name} 🥈 "
-                    "<span class='alternate-badge'>ALTERNATE</span>",
-                    unsafe_allow_html=True,
-                )
+                st.markdown(f"#### 🏥 {row['name']} 🥈 <span class='alternate-badge'>ALTERNATE</span>", unsafe_allow_html=True)
             else:
-                st.markdown(
-                    f"#### 🏥 {name} #{rank}",
-                    unsafe_allow_html=True,
-                )
-
+                st.markdown(f"#### 🏥 {row['name']} #{rank}", unsafe_allow_html=True)
+            
             # Routing status indicator
-            if row.get("routing_success"):
-                if row.get("estimated"):
-                    st.markdown(
-                        '<span class="badge warn">⚠ Estimated ETA</span>',
-                        unsafe_allow_html=True,
-                    )
+            if row.get('routing_success'):
+                if row.get('estimated'):
+                    st.markdown('<span class="badge warn">⚠ Estimated ETA</span>', unsafe_allow_html=True)
                 else:
-                    st.markdown(
-                        '<span class="badge ok">✓ Live Routing</span>',
-                        unsafe_allow_html=True,
-                    )
+                    st.markdown('<span class="badge ok">✓ Live Routing</span>', unsafe_allow_html=True)
             else:
-                st.markdown(
-                    '<span class="badge warn">⚠ Estimated ETA</span>',
-                    unsafe_allow_html=True,
-                )
-
+                st.markdown('<span class="badge warn">⚠ Estimated ETA</span>', unsafe_allow_html=True)
+        
         with header_col2:
-            score_val = row.get("score", 0)
-            try:
-                score_val = float(score_val)
-            except Exception:
-                pass
-            st.markdown(f"**Match Score: {score_val:.1f}**")
-
-        # --- Sub-line: distance / ETA / ICU / acceptance ---
-        eta_val = row.get("eta_min")
-        km_val = row.get("km", 0)
-        icu_open = row.get("ICU_open", 0)
-        accept_pct = row.get("accept", 0)
-
-        if isinstance(eta_val, (int, float)):
-            traffic_factor = row.get("traffic_factor", 1.0)
-            provider_info = row.get("routing_provider", "")
-            traffic_info = (
-                f" (Traffic: {traffic_factor}x)"
-                if isinstance(traffic_factor, (int, float)) and traffic_factor > 1.0
-                else ""
-            )
-            provider_str = f" • {provider_info}" if provider_info else ""
-            sub = (
-                f"ETA ~ {eta_val} min{traffic_info}{provider_str} • "
-                f"{km_val} km • ICU beds: {icu_open} • Acceptance: {accept_pct}%"
-            )
+            st.markdown(f"**Match Score: {row['score']}**", unsafe_allow_html=True)
+        
+        # Enhanced info with real routing data
+        if isinstance(row['eta_min'], (int, float)):
+            traffic_info = f" (Traffic: {row.get('traffic_factor')}x)" if row.get('traffic_factor', 1.0) > 1.0 else ""
+            provider_info = f" • {row.get('routing_provider', '')}"
+            sub = f"ETA ~ {row['eta_min']} min{traffic_info}{provider_info} • {row['km']} km • ICU beds: {row['ICU_open']} • Acceptance: {row['accept']}%"
         else:
-            sub = (
-                f"Distance: {km_val} km • ICU beds: {icu_open} "
-                f"• Acceptance: {accept_pct}%"
-            )
-
+            sub = f"Distance: {row['km']} km • ICU beds: {row['ICU_open']} • Acceptance: {row['accept']}%"
+        
         st.markdown(f'<div class="small">{sub}</div>', unsafe_allow_html=True)
-
-        # --- Score breakdown ---
+        
+        # Enhanced scoring breakdown
         with st.expander("Enhanced Score Details"):
             details = row.get("scoring_details", {})
             st.write(f"**Capability Match:** {details.get('capability_score', 0)}")
             st.write(f"**Proximity (ETA-based):** {details.get('proximity_score', 0)}")
-            if isinstance(details.get("eta_minutes"), (int, float)):
+            if 'eta_minutes' in details and isinstance(details['eta_minutes'], (int, float)):
                 st.write(f"**Driving Time:** {details['eta_minutes']} min")
-            if "traffic_factor" in details:
+            if 'traffic_factor' in details:
                 st.write(f"**Traffic Impact:** {details['traffic_factor']}x")
             st.write(f"**ICU Availability:** {details.get('icu_score', 0)}")
             st.write(f"**Acceptance Rate:** {details.get('acceptance_score', 0)}")
             st.write(f"**Specialization Bonus:** {details.get('specialization_bonus', 0)}")
-
-        # --- Capabilities display ---
+        
         st.markdown("**Specialties**")
-        cap_badges(row.get("specialties", ""))
-
+        cap_badges(row.get("specialties",""))
+        
         st.markdown("**High-end equipment**")
-        cap_badges(row.get("highend", ""))
-
+        cap_badges(row.get("highend",""))
+        
         st.markdown('<hr class="soft" />', unsafe_allow_html=True)
-
-        # --- Action buttons (update session_state directly) ---
+        
+        # Action buttons
         cta1, cta2 = st.columns(2)
         pick_label = "Select as primary" if not is_primary else "✓ Primary selected"
         alt_label = "Add as alternate" if not is_alternate else "✓ Alternate"
-
-        pick = cta1.button(
-            pick_label,
-            key=f"pick_{name}",
-            disabled=is_primary,
-        )
-        alt = cta2.button(
-            alt_label,
-            key=f"alt_{name}",
-            disabled=is_alternate,
-        )
-
-        # Update selections – no heavy work here
-        if pick:
-            st.session_state.matched_primary = name
-            st.session_state.matched_alts.discard(name)
-
-        if alt and not is_alternate:
-            st.session_state.matched_alts.add(name)
-
-        st.markdown("</div>", unsafe_allow_html=True)
         
-def display_meghalaya_facility_info(facility):
-    """Display enhanced facility information with district classification"""
-    
-    # Determine district based on coordinates
-    lat, lon = facility['lat'], facility['lon']
-    if 25.4 <= lat <= 25.7 and 91.8 <= lon <= 92.0:
-        district = "East Khasi Hills"
-    elif 25.4 <= lat <= 25.5 and 92.1 <= lon <= 92.3:
-        district = "West Jaintia Hills" 
-    else:
-        district = "Meghalaya"
-    
-    # Create enhanced display
-    col1, col2, col3 = st.columns([2, 1, 1])
-    
-    with col1:
-        st.write(f"**{facility['name']}**")
-        st.write(f"*{facility['type']} Hospital • {district}*")
+        pick = cta1.button(pick_label, key=f"pick_{row['name']}", disabled=is_primary)
+        alt = cta2.button(alt_label, key=f"alt_{row['name']}", disabled=is_alternate)
         
-    with col2:
-        st.metric("ICU Beds", facility.get('ICU_open', 0))
-        
-    with col3:
-        acceptance = int(facility.get('acceptanceRate', 0.75) * 100)
-        st.metric("Acceptance", f"{acceptance}%")
-    
-    # Show capabilities
-    specialties = [s for s, v in facility.get('specialties', {}).items() if v]
-    if specialties:
-        st.write(f"**Specialties:** {', '.join(specialties)}")
+        st.markdown('</div>', unsafe_allow_html=True)
+        return pick, alt
+
 def enhanced_facility_ranking_with_ors(origin_coords, required_caps, case_type, triage_color, top_k=5, api_key=None):
     """
-    Rank facilities using OpenRouteService professional routing with fallbacks
+    Rank facilities using OpenRouteService professional routing
     """
     if not api_key:
+        # Fallback to existing free routing
         return rank_facilities_with_free_routing(origin_coords, required_caps, case_type, triage_color, top_k)
     
     ranked_facilities = []
-    processed_count = 0
     successful_routes = 0
     failed_routes = 0
     
-    st.write(f"🔧 DEBUG: Starting professional routing with {len(st.session_state.facilities[:8])} facilities")
-    
-    for i, facility in enumerate(st.session_state.facilities[:8]):
+    for facility in st.session_state.facilities[:8]:  # Limit API calls
         try:
-            processed_count += 1
-            facility_name = facility.get("name", "Unknown")
+            # DEBUG: Print facility being processed
+            print(f"Processing facility: {facility.get('name', 'Unknown')}")
             
             # Get professional route
             route_data = get_ors_route(
@@ -743,7 +197,6 @@ def enhanced_facility_ranking_with_ors(origin_coords, required_caps, case_type, 
             
             if route_data['success']:
                 successful_routes += 1
-                
                 # Use existing scoring with real routing data
                 score, scoring_details = calculate_enhanced_facility_score_free(
                     facility, required_caps, route_data, case_type, triage_color
@@ -764,7 +217,7 @@ def enhanced_facility_ranking_with_ors(origin_coords, required_caps, case_type, 
                     "accept": int(facility.get("acceptanceRate", 0.75) * 100),
                     "specialties": ", ".join([s for s, v in facility.get("specialties", {}).items() if v]) or "—",
                     "highend": ", ".join([e for e, v in facility.get("highend", {}).items() if v]) or "—",
-                    "route": [[point[1], point[0]] for point in route_data['geometry']],
+                    "route": [[point[1], point[0]] for point in route_data['geometry']],  # Convert to [lat, lon]
                     "lat": float(facility["lat"]),
                     "lon": float(facility["lon"]),
                     "routing_success": True,
@@ -772,84 +225,21 @@ def enhanced_facility_ranking_with_ors(origin_coords, required_caps, case_type, 
                 })
             else:
                 failed_routes += 1
-                # For facilities that fail professional routing, use free routing as fallback
-                st.write(f"🔧 DEBUG: Professional routing failed for '{facility_name}', using free routing fallback")
-                
-                # Get free route as fallback
-                free_route_data = get_route_info_free(
-                    origin_coords[0], origin_coords[1],
-                    float(facility["lat"]), float(facility["lon"]),
-                    provider="osrm"  # Use OSRM as fallback
-                )
-                
-                if free_route_data.get('success'):
-                    score, scoring_details = calculate_enhanced_facility_score_free(
-                        facility, required_caps, free_route_data, case_type, triage_color
-                    )
-                    
-                    if score > 0:
-                        ranked_facilities.append({
-                            "name": facility.get("name", "Unknown Facility"),
-                            "type": facility.get("type", "Unknown"),
-                            "score": score,
-                            "scoring_details": scoring_details,
-                            "km": round(free_route_data.get('distance_km', 0), 1),
-                            "eta_min": scoring_details.get("eta_minutes", "N/A"),
-                            "ICU_open": facility.get("ICU_open", 0),
-                            "accept": int(facility.get("acceptanceRate", 0.75) * 100),
-                            "specialties": ", ".join([s for s, v in facility.get("specialties", {}).items() if v]) or "—",
-                            "highend": ", ".join([e for e, v in facility.get("highend", {}).items() if v]) or "—",
-                            "route": interpolate_route(origin_coords[0], origin_coords[1], float(facility["lat"]), float(facility["lon"])),
-                            "lat": float(facility["lat"]),
-                            "lon": float(facility["lon"]),
-                            "routing_success": True,
-                            "routing_provider": "OSRM (Fallback)"
-                        })
+                print(f"Route failed for {facility.get('name')}: {route_data.get('error')}")
                 
         except Exception as e:
             failed_routes += 1
-            st.write(f"🔧 DEBUG Exception for '{facility.get('name')}': {str(e)}")
+            print(f"Exception for {facility.get('name')}: {str(e)}")
             continue
     
-    # Summary
-    st.write(f"🔧 DEBUG Professional Routing Summary:")
-    st.write(f"   - Processed: {processed_count} facilities")
-    st.write(f"   - Successful professional routes: {successful_routes}")
-    st.write(f"   - Failed professional routes: {failed_routes}")
-    st.write(f"   - Total ranked facilities: {len(ranked_facilities)}")
+    # DEBUG: Print routing statistics
+    print(f"Routing complete: {successful_routes} successful, {failed_routes} failed")
     
     # Sort by score (descending) and ETA (ascending)
-    ranked_facilities.sort(key=lambda x: (-x["score"], x["eta_min"] if isinstance(x["eta_min"], (int, float)) else 999))
+    ranked_facilities.sort(key=lambda x: (-x["score"], x["eta_min"]))
     return ranked_facilities[:top_k]
-
-# === API STATUS CHECK ===
-st.sidebar.markdown("---")
-st.sidebar.markdown("### 🔑 API Status")
-
-ORS_API_KEY = os.getenv('ORS_API_KEY', 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjAzZmM5ZTViYTI5ZjQzNGM5OTY0ODU5ZTJlZThlYjNjIiwiaCI6Im11cm11cjY0In0=')
-
-if ORS_API_KEY and ORS_API_KEY != "your_free_api_key_here":
-    st.sidebar.success("✅ OpenRouteService API: Configured")
     
-    # Test the API key with Meghalaya coordinates
-    if st.sidebar.button("Test API Connection", key="api_test_main"):
-        with st.sidebar:
-            with st.spinner("Testing API connection..."):
-                test_result = get_ors_route(
-                    25.5780, 91.8930,  # Shillong Civil Hospital
-                    25.5880, 91.9030,  # Ganesh Das Hospital
-                    ORS_API_KEY
-                )
-                if test_result['success']:
-                    st.success(f"✅ API Working! Distance: {test_result['distance_km']:.1f} km")
-                    st.info(f"Route from Shillong Civil Hospital to Ganesh Das Hospital")
-                else:
-                    st.error(f"❌ API Failed: {test_result.get('error')}")
-                    st.info("Falling back to free routing providers")
-else:
-    st.sidebar.warning("⚠️ Using Free Routing Only")
-    st.sidebar.info("Set ORS_API_KEY environment variable for professional routing")
-        
+    
 # === LOAD ICD CATALOG FROM CSV ===
 def load_icd_catalogue():
     """Load ICD catalog from CSV file with robust error handling."""
@@ -1729,7 +1119,7 @@ def rank_facilities_for_case(origin_coords, required_caps, case_type, triage_col
     ranked_facilities.sort(key=lambda x: (-x["score"], x["km"]))
     
     return ranked_facilities[:top_k]
-    
+
 def facility_card(row, rank, is_primary=False, is_alternate=False):
     """
     Enhanced facility card with scoring details and priority indicators
@@ -1842,13 +1232,14 @@ def get_route_osrm_free(origin_lat, origin_lon, dest_lat, dest_lon, profile='dri
 
 def get_ors_route(origin_lat, origin_lon, dest_lat, dest_lon, api_key):
     """
-    Get professional routing from OpenRouteService with robust error handling
+    Get professional routing from OpenRouteService with JWT token authentication
     """
     try:
         url = "https://api.openrouteservice.org/v2/directions/driving-car"
         
+        # CORRECT HEADERS for JWT token
         headers = {
-            'Authorization': f'Bearer {api_key}',
+            'Authorization': f'Bearer {api_key}',  # Add 'Bearer ' prefix for JWT
             'Content-Type': 'application/json'
         }
         
@@ -1865,39 +1256,22 @@ def get_ors_route(origin_lat, origin_lon, dest_lat, dest_lon, api_key):
         
         if response.status_code == 200:
             data = response.json()
+            route = data['features'][0]
             
-            # ROBUST RESPONSE HANDLING - Check if we have the expected structure
-            if 'features' in data and len(data['features']) > 0:
-                route = data['features'][0]
-                
-                # Check if we have the required properties
-                if ('properties' in route and 'segments' in route['properties'] and 
-                    len(route['properties']['segments']) > 0 and 'geometry' in route):
-                    
-                    return {
-                        'success': True,
-                        'distance_km': route['properties']['segments'][0]['distance'] / 1000,
-                        'duration_min': route['properties']['segments'][0]['duration'] / 60,
-                        'geometry': route['geometry']['coordinates'],
-                        'provider': 'OpenRouteService'
-                    }
-                else:
-                    return {'success': False, 'error': 'Incomplete route data in API response'}
-            else:
-                return {'success': False, 'error': 'No route features in API response'}
+            return {
+                'success': True,
+                'distance_km': route['properties']['segments'][0]['distance'] / 1000,
+                'duration_min': route['properties']['segments'][0]['duration'] / 60,
+                'geometry': route['geometry']['coordinates'],
+                'provider': 'OpenRouteService'
+            }
         else:
-            error_detail = "Unknown error"
-            try:
-                error_response = response.json()
-                error_detail = error_response.get('error', {}).get('message', f"HTTP {response.status_code}")
-            except:
-                error_detail = f"HTTP {response.status_code} - {response.text}"
-            
+            error_detail = response.json().get('error', {}).get('message', f"HTTP {response.status_code}")
             return {'success': False, 'error': f"API Error: {error_detail}"}
             
     except Exception as e:
         return {'success': False, 'error': str(e)}
-        
+
 def get_route_graphhopper_free(origin_lat, origin_lon, dest_lat, dest_lon, profile='car'):
     """
     Get route information from GraphHopper (free tier available)
@@ -2210,113 +1584,44 @@ def analyze_ambulance_utilization(referrals):
     
     return utilization_data
 
-def _ensure_meghalaya_caps_struct(facility: dict) -> None:
-    """
-    Ensure that a facility row coming from meghalaya_facilities.csv
-    has a `caps`, `specialties`, and `highend` dict.
-    """
-    # --- CAPS ---
-    caps = facility.get("caps")
-    # 👇 note: also rebuild if caps is an empty dict
-    if not isinstance(caps, dict) or not caps:
-        def b(x):
-            # convert 1/0, "1"/"0", True/False safely to bool
-            try:
-                return bool(int(x))
-            except Exception:
-                return bool(x)
-
-        caps = {
-            "ICU":          b(facility.get("has_icu", 0)),
-            "NICU":         b(facility.get("has_nicu", 0)),
-            "ED":           b(facility.get("has_ed", 0)),
-            "BloodBank":    b(facility.get("has_blood_bank", 0)),
-            "OBGYN_OT":     b(facility.get("has_obgyn", 0)) and b(facility.get("has_oti", 0)),
-            "Pediatrics":   b(facility.get("has_peds", 0)),
-            "Orthopedics":  b(facility.get("has_ortho", 0)),
-            "Cardiology":   b(facility.get("has_cardiology", 0)),
-            "CT":           b(facility.get("has_ct", 0)),
-            "MRI":          b(facility.get("has_mri", 0)),
-            "OR":           b(facility.get("has_oti", 0)),
-            # proxy mappings for older profiles:
-            "Ventilator":   b(facility.get("has_icu", 0)),
-            "Thrombolysis": b(facility.get("has_ct", 0)),   # stroke centre proxy
-            "Neurosurgery": b(facility.get("has_oti", 0)),  # crude proxy: has OT
-            "CathLab":      b(facility.get("has_cardiology", 0)),
-        }
-        facility["caps"] = caps
-
-    # --- SPECIALTIES (by case type) ---
-    specialties = facility.get("specialties")
-    if not isinstance(specialties, dict):
-        caps = facility["caps"]
-        specialties = {
-            "Maternal": caps.get("OBGYN_OT", False),
-            "Trauma":   caps.get("CT", False) or caps.get("OR", False),
-            "Stroke":   caps.get("CT", False),
-            "Cardiac":  caps.get("Cardiology", False),
-            "Sepsis":   caps.get("ICU", False),
-            "Other":    True,
-        }
-        facility["specialties"] = specialties
-
-    # --- HIGH-END EQUIPMENT ---
-    highend = facility.get("highend")
-    if not isinstance(highend, dict):
-        caps = facility["caps"]
-        highend = {
-            "CT":         caps.get("CT", False),
-            "MRI":        caps.get("MRI", False),
-            "Ventilator": caps.get("Ventilator", False),
-            "NICU":       caps.get("NICU", False),
-            "CathLab":    caps.get("CathLab", False),
-        }
-        facility["highend"] = highend
-
-
+# === ENHANCED FACILITY MATCHING WITH FREE ROUTING ===
 def calculate_enhanced_facility_score_free(facility, required_caps, route_data, case_type, triage_color):
     """
-    Enhanced facility scoring with free routing data (OSRM or fallback),
-    now safe for meghalaya_facilities.csv rows (no hard dependency on facility["caps"]).
+    Enhanced facility scoring with free routing data
     """
-    # Make sure caps/specialties/highend exist for this row
-    _ensure_meghalaya_caps_struct(facility)
-
     score = 0
     scoring_details = {}
-
-    caps = facility["caps"]
-    specialties = facility.get("specialties", {})
-    highend = facility.get("highend", {})
-
-    # 1. Capability Match (40% weight) - Less restrictive filter
+    
+    # 1. Capability Match (40% weight) - Hard filter
     if required_caps:
-        capability_match = sum(1 for cap in required_caps if caps.get(cap, 0)) / len(required_caps)
-        # Reduced threshold from 0.5 to 0.3 to include more facilities
-        if capability_match < 0.3:  # filter out only clearly unsuitable facilities
+        capability_match = sum(1 for cap in required_caps if facility["caps"].get(cap, 0)) / len(required_caps)
+        # Apply hard filter - must meet minimum capability threshold
+        if capability_match < 0.5:  # At least 50% of required capabilities
             return 0, {"capability_score": 0, "reason": "Insufficient capabilities"}
     else:
-        capability_match = 1.0  # No specific capabilities required
-
+        capability_match = 1.0
+    
     score += capability_match * 40
     scoring_details["capability_score"] = round(capability_match * 40, 1)
-
+    
     # 2. Proximity Score (30% weight) - Based on estimated ETA
     if route_data.get('success'):
+        # Use traffic-adjusted duration if available
         eta_minutes = route_data.get('estimated_duration_min', route_data.get('duration_min', 0))
-
-        # More generous ETA scoring
-        if eta_minutes <= 45:
+        
+        # Normalize ETA score (0-30 points)
+        # Shorter ETA = higher score, max score for <30min, linear decay to 60min
+        if eta_minutes <= 30:
             proximity_score = 30
-        elif eta_minutes <= 90:
-            proximity_score = 30 * (1 - (eta_minutes - 45) / 45)
+        elif eta_minutes <= 60:
+            proximity_score = 30 * (1 - (eta_minutes - 30) / 30)
         else:
-            proximity_score = max(5, 30 * (1 - (eta_minutes - 90) / 90))  # minimum 5 points
-
+            proximity_score = max(0, 30 * (1 - (eta_minutes - 60) / 60))
+            
         # Apply traffic factor adjustment
         traffic_factor = route_data.get('traffic_multiplier', 1.0)
-        proximity_score = proximity_score / max(traffic_factor, 0.5)
-
+        proximity_score = proximity_score / traffic_factor
+        
         score += proximity_score
         scoring_details["proximity_score"] = round(proximity_score, 1)
         scoring_details["eta_minutes"] = round(eta_minutes, 1)
@@ -2324,283 +1629,131 @@ def calculate_enhanced_facility_score_free(facility, required_caps, route_data, 
         scoring_details["estimated"] = route_data.get('estimated', False)
         scoring_details["peak_hour"] = route_data.get('peak_hour', False)
     else:
-        # Fallback proximity scoring based on straight-line distance
-        distance_km = route_data.get('distance_km', 0)
-        if distance_km <= 50:
-            proximity_score = 25
-        else:
-            proximity_score = max(10, 25 * (1 - (distance_km - 50) / 100))
-
-        score += proximity_score
-        scoring_details["proximity_score"] = round(proximity_score, 1)
+        # Fallback to straight-line distance if routing fails
+        scoring_details["proximity_score"] = 0
         scoring_details["eta_minutes"] = "N/A"
         scoring_details["traffic_factor"] = 1.0
-
+    
     # 3. ICU Availability (20% weight)
     icu_beds = facility.get("ICU_open", 0)
-    try:
-        icu_beds = float(icu_beds)
-    except Exception:
-        icu_beds = 0.0
-
     icu_score = min(1.0, icu_beds / 5.0) * 20  # Max score at 5+ ICU beds
     score += icu_score
     scoring_details["icu_score"] = round(icu_score, 1)
-
+    
     # 4. Acceptance Rate (10% weight)
     acceptance_rate = facility.get("acceptanceRate", 0.75)
-    try:
-        acceptance_rate = float(acceptance_rate)
-    except Exception:
-        acceptance_rate = 0.75
-
     acceptance_score = acceptance_rate * 10
     score += acceptance_score
     scoring_details["acceptance_score"] = round(acceptance_score, 1)
-
+    
     # 5. Specialization Bonuses
     specialization_bonus = 0
-
+    
     # Case type specialization matching
-    if case_type in specialties and specialties[case_type]:
-        specialization_bonus += 5
-
-    # High-end equipment bonus for RED cases
+    if case_type in facility.get("specialties", {}):
+        if facility["specialties"][case_type]:
+            specialization_bonus += 5
+    
+    # High-end equipment bonus for critical cases
     if triage_color == "RED":
-        high_end_count = sum(1 for eq in highend.values() if eq)
+        high_end_count = sum(1 for eq in facility.get("highend", {}).values() if eq)
         specialization_bonus += min(5, high_end_count)
-
+    
     score += specialization_bonus
     scoring_details["specialization_bonus"] = specialization_bonus
-
+    
+    # Ensure score is within bounds
     final_score = min(100, max(0, score))
     scoring_details["total_score"] = round(final_score, 1)
-
-    return final_score, scoring_details
     
-def rank_facilities_with_free_routing(
-    origin_coords,
-    required_caps,
-    case_type,
-    triage_color,
-    top_k=8,
-    provider=None
-):
+    return final_score, scoring_details
+
+def rank_facilities_with_free_routing(origin_coords, required_caps, case_type, triage_color, top_k=8, provider=None):
     """
-    Enhanced facility ranking with free routing data and better error handling,
-    using ONLY the real Meghalaya facility catalog (meghalaya_facilities.csv).
+    Enhanced facility ranking with free routing data
     """
     ranked_facilities = []
-
-    # -------------------------
-    # 1. Validate origin coords
-    # -------------------------
+    
+    # Validate inputs
     if not origin_coords or len(origin_coords) != 2:
-        st.error("❌ Invalid origin coordinates")
+        st.error("Invalid origin coordinates")
         return []
-
-    # -------------------------
-    # 2. Pull REAL facilities from catalog
-    # -------------------------
-    df_catalog = st.session_state.get("facility_catalog", None)
-
-    if df_catalog is None or df_catalog.empty:
-        st.error("❌ No facility catalog loaded (facility_catalog is empty)")
+    
+    if not hasattr(st.session_state, 'facilities') or not st.session_state.facilities:
+        st.error("No facilities data available")
         return []
-
-    # Turn DataFrame into list[dict]
-    facilities_source = df_catalog.to_dict(orient="records")
-
-    # Optional: also keep for other parts of the app that still read st.session_state.facilities
-    st.session_state.facilities = facilities_source
-
-    total_facilities = len(facilities_source)
-
-    if total_facilities == 0:
-        st.error("❌ Facility catalog has no rows after loading meghalaya_facilities.csv")
-        return []
-
-    st.write(
-        f"🔧 DEBUG Facilities: using REAL Meghalaya catalog, "
-        f"{total_facilities} facilities before routing + scoring."
-    )
-
-    # ---------------------------------------------------------
-    # Ensure each facility has caps/specialties/highend
-    # based on meghalaya_facilities.csv columns
-    # ---------------------------------------------------------
-    for f in facilities_source:
-        _ensure_meghalaya_caps_struct(f)
-
-
-    # -------------------------
-    # 3. Progress bar for routing
-    # -------------------------
+    
+    # Show progress for routing calculations
     progress_bar = st.progress(0)
     status_text = st.empty()
-
-    successful_routes = 0
-
-    # -------------------------
-    # 4. Main loop over REAL facilities
-    # -------------------------
-    for i, facility in enumerate(facilities_source):
+    
+    total_facilities = len(st.session_state.facilities)
+    
+    for i, facility in enumerate(st.session_state.facilities):
         try:
             # Update progress
             progress = (i + 1) / total_facilities
             progress_bar.progress(progress)
-            status_text.text(
-                f"📍 Calculating routes... ({i + 1}/{total_facilities}) - "
-                f"{facility.get('name', 'Unknown Facility')}"
-            )
-
-            # Validate lat/lon from CSV
-            if not facility or "lat" not in facility or "lon" not in facility:
+            status_text.text(f"Calculating routes... ({i + 1}/{total_facilities})")
+            
+            # Validate facility data
+            if not facility or 'lat' not in facility or 'lon' not in facility:
                 continue
-
-            # Free routing calculation (OSRM-like)
+            
+            # Get free route information (respect selected provider)
             route_data = get_route_info_free(
-                origin_coords[0],
-                origin_coords[1],
-                float(facility["lat"]),
-                float(facility["lon"]),
-                provider=provider,
+                origin_coords[0], origin_coords[1],
+                float(facility["lat"]), float(facility["lon"]),
+                provider=provider
             )
-
-            # Score facility with your existing logic
+            
+            # Calculate enhanced score with routing data
             score, scoring_details = calculate_enhanced_facility_score_free(
                 facility, required_caps, route_data, case_type, triage_color
             )
-
-            # Skip facilities with zero score due to insufficient capability
-            if score == 0 and scoring_details.get("reason") == "Insufficient capabilities":
+            
+            # Skip facilities with insufficient capabilities
+            if score == 0:
                 continue
-
-            # Generate simple route for visualization
-            try:
-                route_coords = interpolate_route(
-                    origin_coords[0],
-                    origin_coords[1],
-                    float(facility["lat"]),
-                    float(facility["lon"]),
-                    n=20,
-                )
-            except Exception:
-                route_coords = []
-
-            # --------- Safe handling of optional fields ----------
-            # ICU_open may not exist in CSV
-            icu_open = facility.get("ICU_open", facility.get("icu_open", 0))
-
-            # acceptanceRate may not exist; default 0.75
-            acceptance_rate = facility.get("acceptanceRate", 0.75)
-            try:
-                acceptance_rate = float(acceptance_rate)
-            except Exception:
-                acceptance_rate = 0.75
-
-            # specialties may be dict / string / missing
-            raw_specialties = facility.get("specialties")
-            if isinstance(raw_specialties, dict):
-                specialties_str = ", ".join(
-                    [s for s, v in raw_specialties.items() if v]
-                ) or "—"
-            elif isinstance(raw_specialties, str):
-                specialties_str = raw_specialties
-            else:
-                specialties_str = "—"
-
-            # highend may be dict / string / missing
-            raw_highend = facility.get("highend")
-            if isinstance(raw_highend, dict):
-                highend_str = ", ".join(
-                    [e for e, v in raw_highend.items() if v]
-                ) or "—"
-            elif isinstance(raw_highend, str):
-                highend_str = raw_highend
-            else:
-                highend_str = "—"
-            # ---------------------------------------------------
-
-            facility_data = {
+            
+            # Generate route for visualization
+            route_coords = interpolate_route(
+                origin_coords[0], origin_coords[1],
+                float(facility["lat"]), float(facility["lon"]), n=20
+            )
+            
+            ranked_facilities.append({
                 "name": facility.get("name", "Unknown Facility"),
-                "type": facility.get("type", facility.get("facility_type", "Unknown")),
+                "type": facility.get("type", "Unknown"),
                 "score": score,
                 "scoring_details": scoring_details,
-                "km": round(route_data.get("distance_km", 0) or 0, 1),
-                "ICU_open": icu_open,
-                "accept": int(acceptance_rate * 100),
-                "specialties": specialties_str,
-                "highend": highend_str,
+                "km": round(route_data.get('distance_km', 0), 1),
+                "eta_min": scoring_details.get("eta_minutes", "N/A"),
+                "traffic_factor": scoring_details.get("traffic_factor", 1.0),
+                "estimated": scoring_details.get("estimated", False),
+                "peak_hour": scoring_details.get("peak_hour", False),
+                "ICU_open": facility.get("ICU_open", 0),
+                "accept": int(facility.get("acceptanceRate", 0.75) * 100),
+                "specialties": ", ".join([s for s, v in facility.get("specialties", {}).items() if v]) or "—",
+                "highend": ", ".join([e for e, v in facility.get("highend", {}).items() if v]) or "—",
                 "route": route_coords,
                 "lat": float(facility["lat"]),
                 "lon": float(facility["lon"]),
-                "routing_success": route_data.get("success", False),
-                "routing_provider": route_data.get("provider", "Unknown"),
-            }
-
-            # Add ETA information
-            if route_data.get("success"):
-                eta_minutes = route_data.get(
-                    "estimated_duration_min",
-                    route_data.get("duration_min", 0),
-                )
-                facility_data["eta_min"] = round(eta_minutes or 0, 1)
-                facility_data["traffic_factor"] = route_data.get(
-                    "traffic_multiplier", 1.0
-                )
-                facility_data["estimated"] = route_data.get("estimated", False)
-                facility_data["peak_hour"] = route_data.get("peak_hour", False)
-                successful_routes += 1
-            else:
-                # Estimate ETA from distance if routing fails
-                distance_km = route_data.get("distance_km", 0) or 0
-                estimated_eta = max(10, distance_km * 1.5)  # 1.5 min/km rough
-                facility_data["eta_min"] = round(estimated_eta, 1)
-                facility_data["traffic_factor"] = 1.0
-                facility_data["estimated"] = True
-                facility_data["peak_hour"] = False
-
-            ranked_facilities.append(facility_data)
-
+                "routing_success": route_data.get('success', False),
+                "routing_provider": route_data.get('provider', 'Unknown')
+            })
         except Exception as e:
-            # Log error but continue processing other facilities
-            print(
-                f"Error processing facility "
-                f"{facility.get('name', 'Unknown')}: {str(e)}"
-            )
+            st.error(f"Error processing facility {facility.get('name', 'Unknown')}: {str(e)}")
             continue
-
-    # -------------------------
-    # 5. Clear progress UI
-    # -------------------------
+    
+    # Clear progress indicators
     progress_bar.empty()
     status_text.empty()
-
-    # -------------------------
-    # 6. Routing summary
-    # -------------------------
-    if successful_routes > 0:
-        st.success(
-            f"✅ Successfully calculated routes to {successful_routes} "
-            f"out of {total_facilities} facilities (REAL Meghalaya catalog)"
-        )
-    else:
-        st.warning(
-            f"⚠️ Using estimated distances for all {len(ranked_facilities)} "
-            f"facilities (routing provider failed)"
-        )
-
-    # -------------------------
-    # 7. Sort and cap by top_k
-    # -------------------------
-    if ranked_facilities:
-        ranked_facilities.sort(
-            key=lambda x: (-x["score"], x.get("eta_min", 999))
-        )
-        return ranked_facilities[:top_k]
-    else:
-        return []
+    
+    # Sort by score (descending)
+    ranked_facilities.sort(key=lambda x: (-x["score"], x["eta_min"] if isinstance(x["eta_min"], (int, float)) else 999))
+    
+    return ranked_facilities[:top_k]
 
 # === DEMO FACILITIES (East Khasi Hills) ===
 EH_BASE = dict(lat_min=25.45, lat_max=25.65, lon_min=91.80, lon_max=91.95)
@@ -2691,13 +1844,8 @@ def seed_referrals(n=500, rng_seed=42, append=False):
        Set append=True to append to existing data instead of wiping.
     """
     rng = random.Random(rng_seed)
-    facs = st.session_state.get("facilities", [])
+    facs = st.session_state.facilities
     conds = ["Maternal", "Trauma", "Stroke", "Cardiac", "Sepsis", "Other"]
-    
-    # If no facilities are loaded yet, avoid crashes and just bail out
-    if not facs:
-        st.session_state.referrals = []
-        return
     
     # Clear existing referrals unless in append mode
     if not append:
@@ -2770,40 +1918,20 @@ def seed_referrals(n=500, rng_seed=42, append=False):
 
         lat, lon = rand_geo(rng)
         
-        # Select appropriate destination – robust to real Meghalaya catalog
-        suitable_facs = []
-        for f in facs:
-            # Ensure "caps" exists for each facility (works for both synthetic & CSV)
-            caps = f.get("caps")
-            if not caps:
-                caps = {}
-                if "has_icu" in f:
-                    caps["ICU"] = bool(f.get("has_icu", 0))
-                if "has_ct" in f:
-                    caps["CT"] = bool(f.get("has_ct", 0))
-                if "has_blood_bank" in f:
-                    caps["BloodBank"] = bool(f.get("has_blood_bank", 0))
-                if "has_obgyn" in f:
-                    caps["OBGYN_OT"] = bool(f.get("has_obgyn", 0))
-                if "has_cardiology" in f:
-                    caps["CathLab"] = bool(f.get("has_cardiology", 0))
-                if "has_oti" in f:
-                    caps["Ventilator"] = bool(f.get("has_oti", 0))
-                f["caps"] = caps
-
-            if all(caps.get(cap, 0) for cap in profile["required_caps"]):
-                suitable_facs.append(f)
-
+        # Select appropriate destination
+        suitable_facs = [
+            f for f in facs 
+            if all(f["caps"].get(cap, 0) for cap in profile["required_caps"])
+        ]
         
-        # If nothing matched capabilities, fall back to any facility
-        if suitable_facs:
-            dest = rng.choice(suitable_facs)
-        else:
+        if not suitable_facs:
             dest = rng.choice(facs)
+        else:
+            dest = rng.choice(suitable_facs)
             
-        # Distance, timing, and routing
         dkm = dist_km(lat, lon, dest["lat"], dest["lon"])
         
+        # More varied timestamps
         ts_first = base + rng.randint(0, 30 * 24 * 3600)
         hr_of_day = datetime.fromtimestamp(ts_first).hour
         traffic_mult = traffic_factor_for_hour(hr_of_day)
@@ -2895,23 +2023,9 @@ def seed_referrals(n=500, rng_seed=42, append=False):
         ))
 
 # === SESSION STATE INITIALIZATION ===
-# === FORCE MEGHALAYA FACILITIES ===
-# Completely replace the facilities initialization
-if "facilities" in st.session_state:
-    # Clear existing facilities (synthetic/admin-edited from previous runs)
-    del st.session_state.facilities
+if "facilities" not in st.session_state:
+    st.session_state.facilities = default_facilities(count=15)
 
-# Initialize with Meghalaya facilities
-initialize_meghalaya_facilities()
-
-# Verify it worked
-if verify_meghalaya_facilities():
-    print("✅ Meghalaya facilities loaded successfully")
-else:
-    print("❌ Failed to load Meghalaya facilities")
-    # Force reload from the hard-coded list
-    st.session_state.facilities = MEGHALAYA_FACILITIES
-    
 # Initialize session state variables
 if "patient_age" not in st.session_state: 
     st.session_state.patient_age = 30
@@ -2923,14 +2037,7 @@ if "pews_behavior" not in st.session_state:
     st.session_state.pews_behavior = "Normal"
 if "triage_mode" not in st.session_state:
     st.session_state.triage_mode = "rules"  # 'rules' | 'ai' | 'hybrid'
-
-# Initialize demo mode for Meghalaya
-if "demo_mode" not in st.session_state:
-    st.session_state.demo_mode = True
-
-if "demo_region" not in st.session_state:
-    st.session_state.demo_region = "Meghalaya"
-
+    
 # Initialize AI model in session state if not already there
 if "triage_model" not in st.session_state:
     st.session_state.triage_model = triage_model
@@ -2957,8 +2064,8 @@ if "matched_primary" not in st.session_state:
 if "matched_alts" not in st.session_state:
     st.session_state.matched_alts = set()
 
-# Normalize schema - COMMENTED OUT to preserve Meghalaya data structure
-# st.session_state.facilities = [normalize_facility(x) for x in st.session_state.facilities]
+# Normalize schema
+st.session_state.facilities = [normalize_facility(x) for x in st.session_state.facilities]
 
 # Auto-seed on first run (ensures ≥100)
 if len(st.session_state.referrals) < 100:
@@ -2982,10 +2089,8 @@ with tabs[0]:
 
     with c2:
         p_id = st.text_input("Patient ID", "PT-001")
-        # Default to Shillong Civil Hospital coordinates
-        p_lat = st.number_input("Latitude", value=25.5780, format="%.6f")
-        p_lon = st.number_input("Longitude", value=91.8930, format="%.6f")
-    
+        p_lat = st.number_input("Latitude", value=25.58, format="%.6f")
+        p_lon = st.number_input("Longitude", value=91.89, format="%.6f")
     with c3:
         r_name = st.text_input("Referrer name", "Dr. Smith")
         r_fac = st.text_input("Referrer facility", "PHC Mawlai")
@@ -2995,54 +2100,7 @@ with tabs[0]:
     referrer_role = st.radio("Referrer role", ["Doctor/Physician", "ANM/ASHA/EMT"], horizontal=True)
     
     ocr = st.text_area("Clinical Notes / OCR (paste)", height=100, placeholder="Paste clinical notes, observations, or free-text assessment here...")
-    
-    # === MEGHALAYA COMMON HEALTH SCENARIOS ===
-    # Check if demo_mode is enabled (you need to define demo_mode variable)
-    demo_mode = st.session_state.get('demo_mode', True)  # Default to True for Meghalaya demo
 
-    if demo_mode:
-        st.info("🎯 **Meghalaya Demo Mode**: Using actual hospital data from East Khasi Hills and West Jaintia Hills")
-    
-        # Pre-set common Meghalaya health scenarios
-        scenario = st.selectbox(
-            "Common Health Scenarios",
-            [
-                "Select Scenario",
-                "Cardiac Emergency", 
-                "Maternal Complication",
-                "Pediatric Critical Care", 
-                "Trauma/Accident",
-                "Neuro Emergency"
-            ]    
-        )
-    
-        # Auto-set capabilities based on scenario
-        scenario_caps = {
-            "Cardiac Emergency": ["Emergency", "ICU", "Cardiac"],
-            "Maternal Complication": ["Emergency", "Maternal", "ICU", "BloodBank"],
-            "Pediatric Critical Care": ["Emergency", "Pediatric", "ICU"], 
-            "Trauma/Accident": ["Emergency", "Trauma", "Orthopedic", "ICU"],
-            "Neuro Emergency": ["Emergency", "Neuro", "ICU", "CT"]
-        }
-    
-        if scenario != "Select Scenario":
-            # Store the scenario capabilities in session state for later use
-            st.session_state.scenario_caps = scenario_caps[scenario]
-            st.write(f"**Required Capabilities:** {', '.join(st.session_state.scenario_caps)}")
-        
-            # Auto-set complaint based on scenario
-            complaint_map = {
-                "Cardiac Emergency": "Cardiac",
-                "Maternal Complication": "Maternal", 
-                "Pediatric Critical Care": "Other",
-                "Trauma/Accident": "Trauma",
-                "Neuro Emergency": "Stroke"
-            }
-        
-            # Update the complaint in session state
-            st.session_state.complaint = complaint_map[scenario]
-            st.info(f"Complaint auto-set to: {st.session_state.complaint}")
-            
     # Vitals Section
     st.subheader("Vitals + Scores")
     v1, v2, v3 = st.columns(3)
@@ -3054,15 +2112,7 @@ with tabs[0]:
     with v2:
         spo2 = st.number_input("SpO₂ %", 50, 100, 92)
         avpu = st.selectbox("AVPU", ["A", "V", "P", "U"], index=0)
-    
-        # Use session state complaint if set by scenario, otherwise use default
-        complaint_default = st.session_state.get('complaint', 'Maternal')
-        complaint_index = ["Maternal", "Trauma", "Stroke", "Cardiac", "Sepsis", "Other"].index(complaint_default)
-        complaint = st.selectbox("Chief complaint", ["Maternal", "Trauma", "Stroke", "Cardiac", "Sepsis", "Other"], 
-                               index=complaint_index)
-    
-        # Update session state with current selection
-        st.session_state.complaint = complaint
+        complaint = st.selectbox("Chief complaint", ["Maternal", "Trauma", "Stroke", "Cardiac", "Sepsis", "Other"], index=0)
     with v3:
         st.info("**Score-based triage**\n\nTriage color determined by NEWS2/MEOWS/PEWS thresholds only")
 
@@ -3315,60 +2365,24 @@ with tabs[0]:
         st.caption("Select required capabilities for this case")
         cap_cols = st.columns(5)
         CAP_LIST = ["ICU", "Ventilator", "BloodBank", "OR", "CT", "Thrombolysis", "OBGYN_OT", "CathLab", "Dialysis", "Neurosurgery"]
-    
-        # Get scenario caps if available, otherwise use auto-suggested
-        scenario_caps = st.session_state.get('scenario_caps', [])
         for i, cap in enumerate(CAP_LIST):
-            # Pre-select scenario capabilities OR auto-suggested capabilities
-            pre_select = cap in scenario_caps or (chosen_icd and row is not None and cap in auto_suggested_caps)
+            # Pre-select auto-suggested capabilities
+            pre_select = cap in auto_suggested_caps
             if cap_cols[i % 5].checkbox(cap, value=pre_select, key=f"cap_{cap}"):
                 need_caps.append(cap)
 
-        # === ENHANCED FACILITY MATCHING WITH FREE ROUTING ===
+    # === ENHANCED FACILITY MATCHING WITH FREE ROUTING ===
     st.markdown("### 🎯 Enhanced Facility Matching (Free Routing)")
 
-    # HARDCODED configuration - guaranteed to work
-    current_provider = "osrm"
-    enable_traffic = True
+    # Show free routing configuration
+    current_provider, enable_traffic = show_free_routing_configuration()
 
-    # Show API status
-    st.markdown("#### 🔧 Routing Service Status")
-    api_status_col1, api_status_col2 = st.columns(2)
-
-    with api_status_col1:
-        ORS_API_KEY = os.getenv(
-            'ORS_API_KEY',
-            'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjAzZmM5ZTViYTI5ZjQzNGM5OTY0ODU5ZTJlZThlYjNjIiwiaCI6Im11cm11cjY0In0='
-        )
-
-        if ORS_API_KEY and ORS_API_KEY != "your_free_api_key_here":
-            st.success("✅ Professional Routing: Available")
-            st.caption("Using OpenRouteService with real road network data")
-        else:
-            st.warning("🔄 Professional Routing: Not Configured")
-            st.caption("Using free routing services")
-
-    with api_status_col2:
-        st.info(f"🆓 Free Routing: {current_provider.upper()}")
-        st.caption("Fallback routing with estimated travel times")
-
-    # ----------------------------------------------------
-    # HEAVY PART – run routing + ranking ONLY on button
-    # ----------------------------------------------------
-    if st.button(
-        "Find Best Matched Facilities with Free Routing",
-        type="primary",
-        key="btn_find_facilities",
-    ):
+    if st.button("Find Best Matched Facilities with Free Routing", type="primary"):
         # Validate diagnosis before proceeding
         if referrer_role == "Doctor/Physician" and dx_payload is None:
             st.error("Please select an ICD diagnosis to find matching facilities")
-            st.session_state["facility_matches"] = []
-            st.session_state["routing_provider"] = None
         elif referrer_role == "ANM/ASHA/EMT" and not dx_payload.get("label"):
             st.error("Please provide a reason for referral to find matching facilities")
-            st.session_state["facility_matches"] = []
-            st.session_state["routing_provider"] = None
         else:
             # Calculate triage color (respect selected mode + AI)
             vitals = dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu)
@@ -3378,7 +2392,7 @@ with tabs[0]:
                 infection=(complaint in ["Sepsis", "Other"]),
                 o2_device=st.session_state.o2_device,
                 spo2_scale=st.session_state.spo2_scale,
-                behavior=st.session_state.pews_behavior,
+                behavior=st.session_state.pews_behavior
             )
             triage_mode = st.session_state.get("triage_mode", "rules")
             triage_color_ai, meta = triage_with_ai(vitals, context, complaint, triage_mode)
@@ -3388,540 +2402,502 @@ with tabs[0]:
             if st.session_state.triage_override_active and st.session_state.triage_override_color:
                 triage_color = st.session_state.triage_override_color
 
-            ranked_facilities = []
-            routing_provider = None
-
-            # Get ranked facilities with proper error handling
-            with st.spinner("🚗 Calculating optimal routes with real-time traffic..."):
-                ORS_API_KEY = os.getenv(
-                    'ORS_API_KEY',
-                    'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjAzZmM5ZTViYTI5ZjQzNGM5OTY0ODU5ZTJlZThlYjNjIiwiaCI6Im11cm11cjY0In0='
-                )
-
-                if not ORS_API_KEY:
-                    ORS_API_KEY = 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjAzZmM5ZTViYTI5ZjQzNGM5OTY0ODU5ZTJlZThlYjNjIiwiaCI6Im11cm11cjY0In0='
-
-                # Try professional routing first if key present
-                if ORS_API_KEY and ORS_API_KEY != "your_free_api_key_here":
-                    try:
-                        professional_facilities = enhanced_facility_ranking_with_ors(
-                            origin_coords=(p_lat, p_lon),
-                            required_caps=need_caps,
-                            case_type=complaint,
-                            triage_color=triage_color,
-                            top_k=8,
-                            api_key=ORS_API_KEY,
-                        )
-
-                        if professional_facilities and len(professional_facilities) > 0:
-                            ranked_facilities = professional_facilities
-                            routing_provider = "OpenRouteService Professional"
-                        else:
-                            st.warning(
-                                "⚠️ Professional routing found no facilities, falling back to free routing"
-                            )
-                            ranked_facilities = rank_facilities_with_free_routing(
-                                origin_coords=(p_lat, p_lon),
-                                required_caps=need_caps,
-                                case_type=complaint,
-                                triage_color=triage_color,
-                                top_k=8,
-                                provider=current_provider,
-                            )
-                            routing_provider = f"{current_provider.upper()} (Free)"
-                    except Exception as e:
-                        st.error(f"Professional routing failed: {str(e)}")
-                        ranked_facilities = rank_facilities_with_free_routing(
-                            origin_coords=(p_lat, p_lon),
-                            required_caps=need_caps,
-                            case_type=complaint,
-                            triage_color=triage_color,
-                            top_k=8,
-                            provider=current_provider,
-                        )
-                        routing_provider = f"{current_provider.upper()} (Free Fallback)"
+            # Get ranked facilities with free routing - WITH DEBUG INFO
+            with st.spinner("Calculating optimal routes with free routing services..."):
+                ranked_facilities = rank_facilities_with_free_routing(
+                    origin_coords=(p_lat, p_lon),
+                    required_caps=need_caps,
+                    case_type=complaint,
+                    triage_color=triage_color,
+                    top_k=8,
+                    provider=current_provider
+                 )
+            
+                # DEBUG: Detailed diagnostic information
+                st.write(f"🔧 Number of facilities in database: {len(st.session_state.facilities)}")
+                st.write(f"🔧 Required capabilities: {need_caps}")
+                st.write(f"🔧 Found {len(ranked_facilities) if ranked_facilities else 0} ranked facilities")
+            
+                if ranked_facilities:
+                    st.write("🏆 **Top Facilities Found:**")
+                    for i, facility in enumerate(ranked_facilities[:3]):
+                        st.write(f"   {i+1}. {facility['name']} - Score: {facility['score']}")
                 else:
-                    # No valid API key, use free routing directly
-                    ranked_facilities = rank_facilities_with_free_routing(
-                        origin_coords=(p_lat, p_lon),
-                        required_caps=need_caps,
-                        case_type=complaint,
-                        triage_color=triage_color,
-                        top_k=8,
-                        provider=current_provider,
-                    )
-                    routing_provider = f"{current_provider.upper()} (Free)"
+                    st.error("❌ **DEBUG: No facilities passed the scoring filter**")
+                
+                    # Additional debug: Check first few facilities and their capabilities
+                    if st.session_state.facilities:
+                        st.write("🔍 **Sample facility capabilities check:**")
+                        for i, facility in enumerate(st.session_state.facilities[:2]):
+                            cap_match = []
+                            for cap in need_caps:
+                                has_cap = facility["caps"].get(cap, 0)
+                                cap_match.append(f"{cap}: {has_cap}")
+                            st.write(f"   Facility '{facility.get('name')}': {', '.join(cap_match)}")
 
-            # Store results in session_state so later clicks DON'T re-run routing
-            st.session_state["facility_matches"] = ranked_facilities
-            st.session_state["routing_provider"] = routing_provider
-
-            # Reset selection state
-            st.session_state["matched_primary"] = None
-            st.session_state["matched_alts"] = set()
-
+            # This part goes AFTER the with block (no indentation)
             if not ranked_facilities:
                 st.warning("No suitable facilities found. Try relaxing capability requirements.")
             else:
-                st.success(f"✓ Routing completed using {routing_provider}")
+                # Display routing provider info - FIXED: No ORS_API_KEY reference
+                provider_name = {
+                    "osrm": "OSRM (Free Open Source)",
+                    "graphhopper": "GraphHopper (Free Tier)", 
+                    "openrouteservice": "OpenRouteService (Free)"
+                }[current_provider]
+            
+                st.success(f"✓ Routing completed using {provider_name}")
+            
+                # Display ranked facilities
+                st.markdown(f"#### 🏆 Top {len(ranked_facilities)} Matched Facilities")
+            
+                # Show traffic simulation status
+                if enable_traffic:
+                    current_hour = datetime.now().hour
+                    if (7 <= current_hour <= 10) or (17 <= current_hour <= 20):
+                        st.info("🚗 **Peak hours detected**: Estimated travel times include traffic delays")
+                    else:
+                        st.info("🛣️ **Off-peak hours**: Normal travel conditions")
+            
+                st.info(f"**Case Type:** {complaint} | **Triage:** {triage_color} | **Required Capabilities:** {', '.join(need_caps) if need_caps else 'None'}")
+            
+                # Reset selection state
+                st.session_state.matched_primary = None
+                st.session_state.matched_alts = set()
 
-    # ----------------------------------------------------
-    # LIGHT PART – always read from cached matches
-    # ----------------------------------------------------
-    ranked_facilities = st.session_state.get("facility_matches", [])
-    routing_provider = st.session_state.get("routing_provider", None)
+                # Display facilities with enhanced cards
+                for i, facility in enumerate(ranked_facilities, 1):
+                    is_primary = (st.session_state.matched_primary == facility["name"])
+                    is_alternate = (facility["name"] in st.session_state.matched_alts)
+                    
+                    pick, alt = enhanced_facility_card(facility, i, is_primary, is_alternate)
+                    
+                    if pick:
+                        st.session_state.matched_primary = facility["name"]
+                        st.rerun()
+                    if alt:
+                        st.session_state.matched_alts.add(facility["name"])
+                        st.rerun()
 
-    if not ranked_facilities:
-        st.info("No facility matches yet. Click 'Find Best Matched Facilities with Free Routing' above.")
-    else:
-        st.markdown(f"#### 🏆 Top {len(ranked_facilities)} Matched Facilities")
-        if routing_provider:
-            st.info(f"Using routing provider: {routing_provider}")
+                # Set default primary if none selected
+                if not st.session_state.matched_primary and ranked_facilities:
+                    st.session_state.matched_primary = ranked_facilities[0]["name"]
 
-        # Show traffic simulation status
-        if enable_traffic:
-            current_hour = datetime.now().hour
-            if (7 <= current_hour <= 10) or (17 <= current_hour <= 20):
-                st.info("🚗 **Peak hours detected**: Estimated travel times include traffic delays")
-            else:
-                st.info("🛣️ **Off-peak hours**: Normal travel conditions")
+                # Show selection summary
+                st.markdown("---")
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.session_state.matched_primary:
+                        st.success(f"**Primary:** {st.session_state.matched_primary}")
+                    else:
+                        st.warning("No primary facility selected")
+                
+                with col2:
+                    if st.session_state.matched_alts:
+                        st.info(f"**Alternates:** {', '.join(sorted(st.session_state.matched_alts))}")
+                    else:
+                        st.info("No alternate facilities selected")
 
-            meta = st.session_state.get("facility_triage_meta", {})
-            meta_case_type = meta.get("case_type", complaint)
-            meta_triage_color = meta.get("triage_color", "Not computed yet")
-            meta_caps = meta.get("required_caps", need_caps)
-
-        st.info(
-            f"**Case Type:** {meta_case_type} | "
-            f"**Triage:** {meta_triage_color} | "
-            f"**Required Capabilities:** {', '.join(meta_caps) if meta_caps else 'None'}"
-        )
-
-
-        # Ensure selection state exists
-        if "matched_primary" not in st.session_state:
-            st.session_state["matched_primary"] = None
-        if "matched_alts" not in st.session_state:
-            st.session_state["matched_alts"] = set()
-
-        # Set default primary if none selected
-        if not st.session_state["matched_primary"] and ranked_facilities:
-            st.session_state["matched_primary"] = ranked_facilities[0]["name"]
-
-        # Show selection summary
-        st.markdown("---")
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.session_state["matched_primary"]:
-                st.success(f"**Primary:** {st.session_state['matched_primary']}")
-            else:
-                st.warning("No primary facility selected")
-
-        with col2:
-            if st.session_state["matched_alts"]:
-                st.info(f"**Alternates:** {', '.join(sorted(st.session_state['matched_alts']))}")
-            else:
-                st.info("No alternate facilities selected")
-
-        # Enhanced map visualization with actual routes
-        show_map = st.checkbox("Show detailed routes to facilities", value=True)
-        if show_map and st.session_state.get("matched_primary"):
-            try:
-                primary_name = st.session_state["matched_primary"]
-                primary_fac = next((f for f in ranked_facilities if f["name"] == primary_name), None)
-
-                if primary_fac and p_lat and p_lon:
-                    # Create enhanced layers for visualization
-                    layers = []
-
-                    # Origin layer
-                    layers.append(pdk.Layer(
-                        "ScatterplotLayer",
-                        data=[{"lon": p_lon, "lat": p_lat}],
-                        get_position="[lon, lat]",
-                        get_radius=200,
-                        get_fill_color=[66, 133, 244, 200],
-                        get_line_color=[0, 0, 0, 255],
-                        get_line_width=50,
-                    ))
-
-                    # Facility layers with color coding by score
-                    for i, fac in enumerate(ranked_facilities[:6]):  # Top 6 facilities
-                        if fac["score"] >= 80:
-                            color = [34, 197, 94, 200]   # Green
-                        elif fac["score"] >= 60:
-                            color = [245, 158, 11, 200]  # Yellow
-                        else:
-                            color = [239, 68, 68, 200]   # Red
-
-                        # Highlight primary facility
-                        if fac["name"] == primary_name:
-                            color = [139, 92, 246, 255]  # Purple for primary
-
-                        layers.append(pdk.Layer(
-                            "ScatterplotLayer",
-                            data=[{"lon": fac["lon"], "lat": fac["lat"]}],
-                            get_position="[lon, lat]",
-                            get_radius=180,
-                            get_fill_color=color,
-                            get_line_color=[255, 255, 255, 255],
-                            get_line_width=20,
-                        ))
-
-                        # Route visualization for primary only (to reduce clutter)
-                        if fac["name"] == primary_name and fac.get("route"):
-                            route_data = [{"lon": pt[1], "lat": pt[0]} for pt in fac["route"]]
+                # Enhanced map visualization with actual routes
+                show_map = st.checkbox("Show detailed routes to facilities", value=True)
+                if show_map and st.session_state.matched_primary:
+                    try:
+                        primary_name = st.session_state.matched_primary
+                        primary_fac = next((f for f in ranked_facilities if f["name"] == primary_name), None)
+                        
+                        if primary_fac and p_lat and p_lon:
+                            # Create enhanced layers for visualization
+                            layers = []
+                            
+                            # Origin layer
                             layers.append(pdk.Layer(
-                                "PathLayer",
-                                data=[{"path": route_data}],
-                                get_path="path",
-                                get_color=[16, 185, 129, 180],
-                                get_width=8,
-                                width_scale=8,
-                                width_min_pixels=4,
+                                "ScatterplotLayer",
+                                data=[{"lon": p_lon, "lat": p_lat}],
+                                get_position="[lon, lat]",
+                                get_radius=200,
+                                get_fill_color=[66, 133, 244, 200],
+                                get_line_color=[0, 0, 0, 255],
+                                get_line_width=50,
                             ))
-
-                    st.pydeck_chart(pdk.Deck(
-                        layers=layers,
-                        initial_view_state=pdk.ViewState(latitude=p_lat, longitude=p_lon, zoom=10),
-                        map_style="mapbox://styles/mapbox/dark-v10",
-                    ))
-                else:
-                    st.warning("Could not render map: missing location data")
-            except Exception as e:
-                st.error(f"Map rendering error: {str(e)}")
-
+                            
+                            # Facility layers with color coding by score
+                            for i, fac in enumerate(ranked_facilities[:6]):  # Top 6 facilities
+                                # Color based on score (green=high, yellow=medium, red=low)
+                                if fac["score"] >= 80:
+                                    color = [34, 197, 94, 200]  # Green
+                                elif fac["score"] >= 60:
+                                    color = [245, 158, 11, 200]  # Yellow
+                                else:
+                                    color = [239, 68, 68, 200]  # Red
+                                    
+                                # Highlight primary facility
+                                if fac["name"] == primary_name:
+                                    color = [139, 92, 246, 255]  # Purple for primary
+                                
+                                layers.append(pdk.Layer(
+                                    "ScatterplotLayer",
+                                    data=[{"lon": fac["lon"], "lat": fac["lat"]}],
+                                    get_position="[lon, lat]",
+                                    get_radius=180,
+                                    get_fill_color=color,
+                                    get_line_color=[255, 255, 255, 255],
+                                    get_line_width=20,
+                                ))
+                                
+                                # Route visualization for primary only (to reduce clutter)
+                                if fac["name"] == primary_name and fac.get("route"):
+                                    route_data = []
+                                    for point in fac["route"]:
+                                        route_data.append({"lon": point[1], "lat": point[0]})
+                                    
+                                    layers.append(pdk.Layer(
+                                        "PathLayer",
+                                        data=[{"path": route_data}],
+                                        get_path="path",
+                                        get_color=[16, 185, 129, 180],
+                                        get_width=8,
+                                        width_scale=8,
+                                        width_min_pixels=4,
+                                    ))
+                            
+                            st.pydeck_chart(pdk.Deck(
+                                layers=layers,
+                                initial_view_state=pdk.ViewState(latitude=p_lat, longitude=p_lon, zoom=10),
+                                map_style="mapbox://styles/mapbox/dark-v10",
+                            ))
+                        else:
+                            st.warning("Could not render map: missing location data")
+                    except Exception as e:
+                        st.error(f"Map rendering error: {str(e)}")
+                        
     # Final referral details
     st.markdown("### Referral details")
     colA, colB, colC = st.columns(3)
-    ...
+    with colA:
+        priority = st.selectbox("Transport priority", ["Routine", "Urgent", "STAT"], index=1)
+    with colB:
+        amb_type = st.selectbox("Ambulance type", ["BLS", "ALS", "ALS + Vent", "Neonatal", "Other"], index=1)
+    with colC:
+        consent = st.checkbox("Patient/family consent obtained", value=True)
+
+    primary = st.session_state.get("matched_primary")
+    alternates = sorted(list(st.session_state.get("matched_alts", [])))
+
+    def _save_referral(dispatch=False):
+        # Validate based on role
+        if referrer_role == "Doctor/Physician" and dx_payload is None:
+            st.error("Please select an ICD diagnosis to create referral")
+            return False
+        elif referrer_role == "ANM/ASHA/EMT" and not dx_payload.get("label"):
+            st.error("Please provide a reason for referral")
+            return False
+        
+        if not primary:
+            st.error("Select a primary destination from 'Find Best Matched Facilities' above.")
+            return False
+        
+        vit = dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu, complaint=complaint)
+    
+        # Combine interventions properly
+        all_interventions = iv_selected if 'iv_selected' in locals() else []
+    
+        # Add resuscitation interventions
+        for resus in resus_done:
+            all_interventions.append({
+                "name": resus,
+                "type": "resuscitation",
+                "timestamp": now_ts(),
+                "performed_by": "referrer",
+                "status": "completed"
+            })
+    
+        # Calculate triage (guideline + AI overlay)
+        age = _num(p_age)
+        context = dict(
+            age=age,
+            pregnant=(complaint == "Maternal"),
+            infection=(complaint in ["Sepsis", "Other"]),
+            o2_device=st.session_state.o2_device,
+            spo2_scale=st.session_state.spo2_scale,
+            behavior=st.session_state.pews_behavior
+        )
+        triage_mode = st.session_state.get("triage_mode", "rules")
+    
+        # Get AI prediction with error handling
+        ai_color = None
+        ai_probs = None
+        ai_error = None
+    
+        try:
+            final_ai_colour, tri_meta = triage_with_ai(vit, context, complaint, triage_mode)
+            base_colour = tri_meta["rules_color"]
+            score_details = tri_meta["rules_details"]
+            ai_color = tri_meta.get("ai_color")
+            ai_probs = tri_meta.get("probs")
+        except Exception as e:
+            st.error(f"AI triage failed: {str(e)}")
+            # Fallback to rules-based triage
+            base_colour, score_details = triage_decision(vit, context)
+            final_ai_colour = base_colour
+            ai_error = str(e)
+
+        # Apply override if active (on top of AI/hybrid)
+        final_colour = final_ai_colour
+        audit_log = []
+
+        if st.session_state.triage_override_active and st.session_state.triage_override_color:
+            final_colour = st.session_state.triage_override_color
+            audit_entry = {
+                "timestamp": datetime.now().isoformat(),
+                "action": "TRIAGE_OVERRIDE",
+                "user": r_name,
+                "details": {
+                    "from": base_colour,
+                    "to": final_colour,
+                    "reason": st.session_state.triage_override_reason,
+                    "scores": {
+                        "NEWS2": score_details["NEWS2"]["score"],
+                        "qSOFA": score_details["qSOFA"]["score"],
+                        "MEOWS_red": len(score_details["MEOWS"]["red"]),
+                        "PEWS": score_details["PEWS"]["score"]
+                    },
+                    "triage_mode": triage_mode,
+                    "ai_color": ai_color,
+                }
+            }
+            audit_log.append(audit_entry)
+
+        # Enhanced triage decision logging for analytics
+        triage_decision_data = {
+            "color": final_colour,
+            "overridden": (final_colour != base_colour),
+            "base_color": base_colour,
+            "triage_mode": triage_mode,
+            "score_details": score_details
+        }
+    
+        # Add AI metadata if available
+        if ai_color is not None:
+            triage_decision_data["ai_color"] = ai_color
+        if ai_probs is not None:
+            triage_decision_data["ai_probabilities"] = ai_probs.tolist() if hasattr(ai_probs, 'tolist') else ai_probs
+        if ai_error is not None:
+            triage_decision_data["ai_error"] = ai_error
+
+        ref = dict(
+            id="R" + str(int(time.time()))[-6:],
+            patient=dict(
+                name=p_name, 
+                age=int(p_age), 
+                sex=p_sex, 
+                id=p_id, 
+                location=dict(lat=float(p_lat), lon=float(p_lon))
+            ),
+            referrer=dict(name=r_name, facility=r_fac, role=referrer_role),
+            provisionalDx=dx_payload,
+            interventions=all_interventions,
+            resuscitation=resus_done,
+
+            triage=dict(
+                complaint=complaint,
+                decision=triage_decision_data,  # Use enhanced decision data
+                hr=hr, sbp=sbp, rr=rr, temp=temp, spo2=spo2, avpu=avpu
+            ),
+            clinical=dict(
+                summary=" ".join(ocr.split()[:60]) if ocr else ""
+            ),
+            reasons=dict(
+                severity=True,
+                bedorICUUnavailable=ref_beds,
+                specialTest=ref_tests,
+                requiredCapabilities=need_caps,
+            ),
+            dest=primary,
+            alternates=alternates,
+            transport=dict(
+                priority=priority,
+                ambulance=amb_type,
+                consent=bool(consent),
+            ),
+            times=dict(
+                first_contact_ts=now_ts(),
+                decision_ts=now_ts(),
+            ),
+            status="PREALERT",
+            ambulance_available=None,
+            audit_log=audit_log,
+        )
+
+        if dispatch:
+            ref["times"]["dispatch_ts"] = now_ts()
+            ref["status"] = "DISPATCHED"
+            ref["ambulance_available"] = True
+        
+        st.session_state.referrals.insert(0, ref)
+        return True
+
+    col1, col2 = st.columns(2)
+    if col1.button("Create referral"):
+        if _save_referral(dispatch=False):
+            st.success(f"Referral created → {primary}")
+            # Reset override after successful referral
+            st.session_state.triage_override_active = False
+            st.session_state.triage_override_color = None
+            st.session_state.triage_override_reason = ""
+    if col2.button("Create & dispatch now"):
+        if _save_referral(dispatch=True):
+            st.success(f"Referral created and DISPATCHED → {primary}")
+            # Reset override after successful referral
+            st.session_state.triage_override_active = False
+            st.session_state.triage_override_color = None
+            st.session_state.triage_override_reason = ""
 
 # ======== Receiving Hospital Tab ========
 with tabs[2]:
     st.subheader("Incoming referrals & case actions")
-
-    # --- Facility selection & baseline data ---
-    facilities = st.session_state.get("facilities", [])
-    if not facilities:
-        st.info("No facilities loaded in session_state.facilities")
-        st.stop()
-
-    fac_names = [
-        f.get("name")
-        or f.get("display_name")
-        or f.get("id")
-        or f"Facility {idx+1}"
-        for idx, f in enumerate(facilities)
-    ]
-
-    active_fac = st.session_state.get("active_fac")
-    if active_fac in fac_names:
-        current_idx = fac_names.index(active_fac)
-    else:
-        current_idx = 0
-
-    selected_facility = st.selectbox(
-        "Select your facility",
-        fac_names,
-        index=current_idx,
-        key="receiving_facility_select",
-    )
+    
+    # Facility selection with enhanced information
+    fac_names = [f["name"] for f in st.session_state.facilities]
+    current_idx = fac_names.index(st.session_state.active_fac) if st.session_state.active_fac in fac_names else 0
+    selected_facility = st.selectbox("Select your facility", fac_names, index=current_idx, key="receiving_facility_select")
     st.session_state.active_fac = selected_facility
-
-    # Resolve the full facility dict and an ID we can match on
-    current_fac = next(
-        (
-            f
-            for f in facilities
-            if (f.get("name") or f.get("display_name") or f.get("id"))
-            == selected_facility
-        ),
-        None,
-    )
-
-    if current_fac:
-        current_fac_id = (
-            current_fac.get("id")
-            or current_fac.get("facility_id")
-            or current_fac.get("name")
-            or current_fac.get("display_name")
-        )
-    else:
-        current_fac_id = selected_facility
-
-    # --- Facility capability metrics (unchanged idea) ---
+    
+    # Show facility capabilities
+    current_fac = next((f for f in st.session_state.facilities if f["name"] == selected_facility), None)
     if current_fac:
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("ICU Beds Available", current_fac.get("ICU_open", 0))
         with col2:
-            st.metric(
-                "Acceptance Rate",
-                f"{current_fac.get('acceptanceRate', 0.75) * 100:.0f}%",
-            )
+            st.metric("Acceptance Rate", f"{current_fac.get('acceptanceRate', 0.75)*100:.0f}%")
         with col3:
-            specialties = [
-                s
-                for s, v in (current_fac.get("specialties") or {}).items()
-                if v
-            ]
+            specialties = [s for s, v in current_fac.get("specialties", {}).items() if v]
             st.metric("Specialties", len(specialties))
-
-    # --- Incoming referrals for this facility ---
-    all_refs = st.session_state.get("referrals", [])
+    
+    # Get incoming referrals for this facility
     incoming = [
-        r
-        for r in all_refs
-        if (
-            r.get("dest") == selected_facility
-            or selected_facility in r.get("alternates", [])
-        )
-        and r.get("status")
-        in [
-            "PREALERT",
-            "DISPATCHED",
-            "ARRIVE_SCENE",
-            "DEPART_SCENE",
-            "ARRIVE_DEST",
-        ]
+        r for r in st.session_state.referrals
+        if (r["dest"] == selected_facility or selected_facility in r.get("alternates", []))
+        and r["status"] in ["PREALERT", "DISPATCHED", "ARRIVE_SCENE", "DEPART_SCENE", "ARRIVE_DEST"]
     ]
-
-    def decision_ts(ref):
-        return ref.get("times", {}).get("decision_ts", 0)
-
-    incoming.sort(
-        key=lambda x: (
-            0 if x.get("dest") == selected_facility else 1,
-            -decision_ts(x),
-        )
-    )
+    
+    # Sort by priority and time
+    incoming.sort(key=lambda x: (
+        0 if x["dest"] == selected_facility else 1,  # Primary destinations first
+        -x["times"].get("decision_ts", 0)  # Most recent first
+    ))
 
     if not incoming:
         st.info("No incoming referrals for your facility")
-        st.stop()
+    else:
+        st.markdown(f"### 📋 Incoming Referrals ({len(incoming)})")
+        
+        for r in incoming:
+            with st.container():
+                # Determine priority badge
+                is_primary = r["dest"] == selected_facility
+                priority_badge = "🥇 PRIMARY" if is_primary else "🥈 ALTERNATE"
+                badge_class = "priority-badge" if is_primary else "alternate-badge"
+                
+                col1, col2, col3 = st.columns([3, 1, 1])
+                with col1:
+                    st.write(f"**{r['patient']['name']}** — {r['triage']['complaint']} ")
+                    
+                    # Handle diagnosis display
+                    dx = r.get("provisionalDx", {})
+                    if isinstance(dx, dict):
+                        dx_txt = (dx.get("code", "") + " " + dx.get("label", "")).strip()
+                    else:
+                        dx_txt = str(dx)
+                    
+                    st.write(f"| Dx: **{dx_txt or '—'}**")
+                    
+                    # Show priority badge
+                    st.markdown(f'<span class="badge {badge_class}">{priority_badge}</span>', unsafe_allow_html=True)
+                    
+                    # Show referrer info
+                    referrer_info = r.get('referrer', {})
+                    if referrer_info.get('role'):
+                        st.caption(f"Referrer: {referrer_info.get('name', '')} ({referrer_info.get('role', '')}) from {referrer_info.get('facility', '')}")
+                
+                with col2:
+                    decision = r['triage']['decision']
+                    if decision.get('overridden'):
+                        st.markdown(f'<span class="pill {decision["color"].lower()} override-badge">{decision["color"]} (OVERRIDDEN)</span>', unsafe_allow_html=True)
+                    else:
+                        triage_pill(decision['color'])
+                
+                with col3:
+                    # Show ETA if available
+                    if r.get('transport', {}).get('eta_min'):
+                        st.write(f"**ETA:** {r['transport']['eta_min']} min")
+                    st.write(f"**Status:** {r['status']}")
 
-    st.markdown(f"### 📋 Incoming Referrals ({len(incoming)})")
-
-    # Helper to extract a comparable facility identity from a ranked row
-    def facility_identity_from_row(row_dict):
-        """
-        Accepts either:
-        - row = {"facility": {..., "name": ...}, ...}
-        - or row = {..., "name": ...}
-        Returns a comparable ID string.
-        """
-        if not isinstance(row_dict, dict):
-            return None
-
-        fac_obj = row_dict.get("facility")
-        if fac_obj and isinstance(fac_obj, dict):
-            fac = fac_obj
-        else:
-            fac = row_dict
-
-        return (
-            fac.get("id")
-            or fac.get("facility_id")
-            or fac.get("name")
-            or fac.get("display_name")
-        )
-
-    # --- Main loop: each incoming case ---
-    for r in incoming:
-        with st.container():
-            # Priority badge (Primary vs Alternate)
-            is_primary_dest = r.get("dest") == selected_facility
-            priority_badge = "🥇 PRIMARY" if is_primary_dest else "🥈 ALTERNATE"
-            badge_class = "priority-badge" if is_primary_dest else "alternate-badge"
-
-            col1, col2, col3 = st.columns([3, 1, 1])
-            with col1:
-                st.write(f"**{r['patient']['name']}** — {r['triage']['complaint']} ")
-
-                # Dx text
-                dx = r.get("provisionalDx", {})
-                if isinstance(dx, dict):
-                    dx_txt = (dx.get("code", "") + " " + dx.get("label", "")).strip()
-                else:
-                    dx_txt = str(dx)
-                st.write(f"| Dx: **{dx_txt or '—'}**")
-
-                # Priority badge
-                st.markdown(
-                    f'<span class="badge {badge_class}">{priority_badge}</span>',
-                    unsafe_allow_html=True,
-                )
-
-                # Referrer info
-                referrer_info = r.get("referrer", {})
-                if referrer_info.get("role"):
-                    st.caption(
-                        f"Referrer: {referrer_info.get('name', '')} "
-                        f"({referrer_info.get('role', '')}) "
-                        f"from {referrer_info.get('facility', '')}"
-                    )
-
-            with col2:
-                decision = r["triage"]["decision"]
-                if decision.get("overridden"):
-                    st.markdown(
-                        f'<span class="pill {decision["color"].lower()} override-badge">'
-                        f'{decision["color"]} (OVERRIDDEN)</span>',
-                        unsafe_allow_html=True,
-                    )
-                else:
-                    triage_pill(decision["color"])
-
-            with col3:
-                if r.get("transport", {}).get("eta_min"):
-                    st.write(f"**ETA:** {r['transport']['eta_min']} min")
-                st.write(f"**Status:** {r['status']}")
-
-            # ========== NEW: ranked view for THIS facility & case ==========
-            ranked = []
-            try:
-                loc = r.get("patient", {}).get("location") or {}
-                if "lat" in loc and "lon" in loc:
-                    origin_coords = (loc["lat"], loc["lon"])
-                else:
-                    origin_coords = None
-
-                required_caps = r.get("reasons", {}).get("requiredCapabilities", [])
-                case_type = r.get("case_type", r["triage"]["complaint"])
-                triage_color = r["triage"]["decision"]["color"]
-
-                if origin_coords is not None:
-                    ranked = rank_facilities_with_free_routing(
-                        origin_coords=origin_coords,
-                        required_caps=required_caps,
-                        case_type=case_type,
-                        triage_color=triage_color,
-                    )
-                else:
-                    st.info(
-                        "No patient coordinates available for routing view for this case."
-                    )
-            except Exception as e:
-                st.error(f"Routing/Ranking error for this case: {e}")
-                ranked = []
-
-            if ranked:
-                my_row = None
-                my_rank = None
-                for idx, row in enumerate(ranked, start=1):
-                    if facility_identity_from_row(row) == current_fac_id:
-                        my_row = row
-                        my_rank = idx
-                        break
-
-                if my_row is not None:
-                    st.markdown(
-                        "**Routing & capacity for this facility (from ranked list):**"
-                    )
-                    enhanced_facility_card(
-                        my_row,
-                        rank=my_rank,
-                        is_primary=is_primary_dest,
-                        is_alternate=not is_primary_dest,
-                    )
-                else:
-                    st.info(
-                        "This facility did not appear in the ranked list for this case. "
-                        "Check that facility IDs/names match between catalog and referrals."
-                    )
-
-            # ========== Case details & actions (existing logic) ==========
-            open_key = f"open_{r['id']}"
-            if st.button("Open case details", key=open_key):
-                # Audit log
-                if r.get("audit_log"):
-                    st.markdown("#### Audit Trail")
-                    for audit in r["audit_log"]:
-                        if audit["action"] == "TRIAGE_OVERRIDE":
-                            st.markdown(
-                                f"""
+                # Case actions
+                open_key = f"open_{r['id']}"
+                if st.button("Open case details", key=open_key):
+                    # Show audit log if exists
+                    if r.get('audit_log'):
+                        st.markdown("#### Audit Trail")
+                        for audit in r['audit_log']:
+                            if audit['action'] == 'TRIAGE_OVERRIDE':
+                                st.markdown(f"""
                                 <div class="audit-log">
                                     <strong>🔧 Triage Override</strong><br>
                                     <small>{audit['timestamp']} by {audit['user']}</small><br>
                                     {audit['details']['from']} → {audit['details']['to']}<br>
                                     <em>Reason: {audit['details']['reason']}</em>
                                 </div>
-                                """,
-                                unsafe_allow_html=True,
-                            )
-
-                # Interventions timeline
-                st.markdown("#### 📋 Interventions Timeline")
-                interventions = r.get("interventions", [])
-                if interventions:
-                    referrer_iv = [
-                        iv
-                        for iv in interventions
-                        if iv.get("performed_by") == "referrer"
-                    ]
-                    emt_iv = [
-                        iv for iv in interventions if iv.get("performed_by") == "emt"
-                    ]
-
-                    if referrer_iv:
-                        st.markdown("**Referrer Interventions:**")
-                        for iv in referrer_iv:
-                            timestamp = datetime.fromtimestamp(
-                                iv.get("timestamp", now_ts())
-                            ).strftime("%H:%M:%S")
-                            st.markdown(
-                                f"""
-                                <div style="background: #1e293b; padding: 6px 10px;
-                                            border-radius: 6px; margin: 2px 0;
-                                            border-left: 3px solid #3b82f6;">
+                                """, unsafe_allow_html=True)
+                    # Enhanced Interventions Display for Receiving Hospital
+                    st.markdown("#### 📋 Interventions Timeline")
+                    interventions = r.get("interventions", [])
+                    if interventions:
+                        # Group by performer
+                        referrer_iv = [iv for iv in interventions if iv.get("performed_by") == "referrer"]
+                        emt_iv = [iv for iv in interventions if iv.get("performed_by") == "emt"]
+                        
+                        if referrer_iv:
+                            st.markdown("**Referrer Interventions:**")
+                            for iv in referrer_iv:
+                                timestamp = datetime.fromtimestamp(iv.get("timestamp", now_ts())).strftime("%H:%M:%S")
+                                st.markdown(f"""
+                                <div style="background: #1e293b; padding: 6px 10px; border-radius: 6px; margin: 2px 0; border-left: 3px solid #3b82f6;">
                                     <div style="font-weight: 500;">{iv['name']}</div>
-                                    <div style="font-size: 0.75rem; color: #9ca3af;">
-                                        {timestamp} • {iv.get("type", 'custom').replace('_', ' ').title()}
-                                    </div>
+                                    <div style="font-size: 0.75rem; color: #9ca3af;">{timestamp} • {iv.get("type", 'custom').replace('_', ' ').title()}</div>
                                 </div>
-                                """,
-                                unsafe_allow_html=True,
-                            )
-
-                    if emt_iv:
-                        st.markdown("**En-route Interventions:**")
-                        for iv in emt_iv:
-                            timestamp = datetime.fromtimestamp(
-                                iv.get("timestamp", now_ts())
-                            ).strftime("%H:%M:%S")
-                            status_badge = {
-                                "completed": "🟢",
-                                "in_progress": "🟡",
-                                "planned": "🔵",
-                            }.get(iv.get("status", "completed"), "⚪")
-
-                            st.markdown(
-                                f"""
-                                <div style="background: #1e293b; padding: 6px 10px;
-                                            border-radius: 6px; margin: 2px 0;
-                                            border-left: 3px solid #10b981;">
+                                """, unsafe_allow_html=True)
+                        
+                        if emt_iv:
+                            st.markdown("**En-route Interventions:**")
+                            for iv in emt_iv:
+                                timestamp = datetime.fromtimestamp(iv.get("timestamp", now_ts())).strftime("%H:%M:%S")
+                                status_badge = {
+                                    "completed": "🟢",
+                                    "in_progress": "🟡", 
+                                    "planned": "🔵"
+                                }.get(iv.get("status", "completed"), "⚪")
+                                
+                                st.markdown(f"""
+                                <div style="background: #1e293b; padding: 6px 10px; border-radius: 6px; margin: 2px 0; border-left: 3px solid #10b981;">
                                     <div style="display: flex; align-items: center; gap: 8px;">
                                         <span style="font-weight: 500;">{iv['name']}</span>
                                         <span style="margin-left: auto;">{status_badge}</span>
                                     </div>
-                                    <div style="font-size: 0.75rem; color: #9ca3af;">
-                                        {timestamp} • EMT • Status: {iv.get('status', 'completed').replace('_', ' ').title()}
-                                    </div>
+                                    <div style="font-size: 0.75rem; color: #9ca3af;">{timestamp} • EMT • Status: {iv.get('status', 'completed').replace('_', ' ').title()}</div>
                                 </div>
-                                """,
-                                unsafe_allow_html=True,
-                            )
-                else:
-                    st.info("No interventions recorded")
-
-                # ISBAR
-                dx = r.get("provisionalDx", {})
-                if isinstance(dx, dict):
-                    dx_txt = (dx.get("code", "") + " " + dx.get("label", "")).strip()
-                else:
-                    dx_txt = str(dx)
-
-                isbar = f"""**I (Identify):**
+                                """, unsafe_allow_html=True)
+                    else:
+                        st.info("No interventions recorded")
+                        
+                    # Enhanced ISBAR format
+                    dx = r.get("provisionalDx", {})
+                    if isinstance(dx, dict):
+                        dx_txt = (dx.get("code", "") + " " + dx.get("label", "")).strip()
+                    else:
+                        dx_txt = str(dx)
+                    
+                    isbar = f"""**I (Identify):**
 - Patient: {r['patient']['name']}, {r['patient']['age']} {r['patient']['sex']}
 - Referrer: {r['referrer'].get('name', '')} ({r['referrer'].get('role', '')}) from {r['referrer'].get('facility', '')}
 
@@ -3944,48 +2920,43 @@ with tabs[2]:
 - Ambulance: {r['transport'].get('ambulance', '—')}
 - Consent: {'Yes' if r['transport'].get('consent') else 'No'}
 """
-                st.markdown(isbar)
+                    st.markdown(isbar)
 
-                # Action buttons
-                c1, c2, c3 = st.columns(3)
-                if c1.button("Accept case", key=f"acc_{r['id']}", type="primary"):
-                    r["status"] = "ARRIVE_DEST"
-                    r.setdefault("times", {})["arrive_dest_ts"] = now_ts()
-                    st.success("Case accepted and marked as arrived")
-                    st.rerun()
+                    # Action buttons
+                    c1, c2, c3 = st.columns(3)
+                    if c1.button("Accept case", key=f"acc_{r['id']}", type="primary"):
+                        r["status"] = "ARRIVE_DEST"
+                        r["times"]["arrive_dest_ts"] = now_ts()
+                        st.success("Case accepted and marked as arrived")
+                        st.rerun()
 
-                reject_reason = c2.selectbox(
-                    "Rejection reason",
-                    [
-                        "—",
-                        "No ICU bed",
-                        "No specialist",
-                        "Equipment down",
-                        "Over capacity",
-                        "Outside scope",
-                        "Patient diverted",
-                    ],
-                    key=f"rejrs_{r['id']}",
-                )
-                if c3.button("Reject case", key=f"rej_{r['id']}") and reject_reason != "—":
-                    r["status"] = "PREALERT"
-                    r.setdefault("reasons", {})["rejected"] = True
-                    r["reasons"]["reject_reason"] = reject_reason
-
-                    audit_entry = {
-                        "timestamp": datetime.now().isoformat(),
-                        "action": "CASE_REJECTED",
-                        "details": {
-                            "reason": reject_reason,
-                            "facility": selected_facility,
-                        },
-                    }
-                    r.setdefault("audit_log", []).append(audit_entry)
-
-                    st.warning(f"Case rejected: {reject_reason}")
-                    st.rerun()
-
-            st.markdown("---")
+                    reject_reason = c2.selectbox(
+                        "Rejection reason",
+                        ["—", "No ICU bed", "No specialist", "Equipment down", "Over capacity", "Outside scope", "Patient diverted"],
+                        key=f"rejrs_{r['id']}",
+                    )
+                    if c3.button("Reject case", key=f"rej_{r['id']}") and reject_reason != "—":
+                        r["status"] = "PREALERT"
+                        r["reasons"]["rejected"] = True
+                        r["reasons"]["reject_reason"] = reject_reason
+                        
+                        # Log rejection in audit trail
+                        audit_entry = {
+                            "timestamp": datetime.now().isoformat(),
+                            "action": "CASE_REJECTED",
+                            "details": {
+                                "reason": reject_reason,
+                                "facility": selected_facility
+                            }
+                        }
+                        if "audit_log" not in r:
+                            r["audit_log"] = []
+                        r["audit_log"].append(audit_entry)
+                        
+                        st.warning(f"Case rejected: {reject_reason}")
+                        st.rerun()
+                
+                st.markdown("---")
 
 # ======== ENHANCED AMBULANCE / EMT TAB ========
 with tabs[1]:
@@ -4225,7 +3196,7 @@ Notes: {emt_notes}
         # === PROFESSIONAL ROUTE VISUALIZATION ===
         st.markdown("### 🗺️ Professional Route Optimization")
 
-        # Your ORS API Key
+        # Your ORS API Key - Using environment variable with fallback
         ORS_API_KEY = os.getenv('ORS_API_KEY', 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjAzZmM5ZTViYTI5ZjQzNGM5OTY0ODU5ZTJlZThlYjNjIiwiaCI6Im11cm11cjY0In0=')
 
         if st.session_state.get('active_case'):
@@ -4237,11 +3208,11 @@ Notes: {emt_notes}
             # Find facility coordinates
             facility = next((f for f in st.session_state.facilities if f['name'] == r['dest']), None)
     
-            if facility:
-                facility_coords = (float(facility['lat']), float(facility['lon']))
-        
-                # Use professional routing if available
-                if ORS_API_KEY and ORS_API_KEY != "your_free_api_key_here":
+            # Use professional routing if we have a valid API key
+            if ORS_API_KEY and ORS_API_KEY != "your_free_api_key_here":
+                if facility:
+                    facility_coords = (float(facility['lat']), float(facility['lon']))
+            
                     # Get professional route
                     with st.spinner("🔄 Calculating optimal route with OpenRouteService..."):
                         route_data = get_ors_route(
@@ -4255,59 +3226,39 @@ Notes: {emt_notes}
                         col1, col2, col3 = st.columns(3)
                         with col1:
                             st.metric("🏁 Distance", f"{route_data['distance_km']:.1f} km")
-                        with col2:
+                        with col2:  
                             st.metric("⏱️ Estimated Time", f"{route_data['duration_min']:.1f} min")
                         with col3:
                             st.metric("🛣️ Routing", "OpenRouteService")
                 
-                        # Enhanced map visualization with route
-                        st.markdown("##### 🗺️ Interactive Route Map")
-                
-                        # Create a DataFrame with the route coordinates
-                        route_points = [[point[1], point[0]] for point in route_data['geometry']]  # Convert to [lat, lon]
-                        route_df = pd.DataFrame(route_points, columns=['lat', 'lon'])
-                
-                        # Add start and end points
-                        points_df = pd.DataFrame({
+                        # Simple map visualization
+                        map_data = pd.DataFrame({
                             'lat': [patient_coords[0], facility_coords[0]],
-                            'lon': [patient_coords[1], facility_coords[1]],
-                            'type': ['Patient', 'Hospital']
+                            'lon': [patient_coords[1], facility_coords[1]]
                         })
-                
-                        # Display the map
-                        st.map(route_df)
+                        st.map(map_data)
                 
                         # Route details
                         with st.expander("📋 Professional Route Details"):
                             st.write(f"**Patient Location:** {patient_coords[0]:.4f}, {patient_coords[1]:.4f}")
                             st.write(f"**Destination:** {r['dest']} - {facility_coords[0]:.4f}, {facility_coords[1]:.4f}")
                             st.write(f"**Route Optimization:** Fastest driving route with real road network")
-                            st.write(f"**Traffic Consideration:** Real-time road conditions")
+                            st.write(f"**Traffic Consideration:** Yes")
                             st.write(f"**Route Points:** {len(route_data['geometry'])} coordinates")
-                            st.write(f"**Provider:** OpenRouteService Professional API")
                     
                     else:
                         st.error(f"❌ Professional routing failed: {route_data.get('error', 'Unknown error')}")
-                        # Fallback to basic visualization
-                        st.info("🔄 Using basic route visualization...")
-                        map_data = pd.DataFrame({
-                            'lat': [patient_coords[0], facility_coords[0]],
-                            'lon': [patient_coords[1], facility_coords[1]]
-                        })
-                        st.map(map_data)
+                        # Fallback to existing method
+                        st.info("🔄 Using fallback routing...")
+                        # Your existing fallback code here
                 else:
-                    # Basic route visualization when no professional key
-                    st.info("🗺️ Basic route visualization - Set OpenRouteService API key for professional routing")
-                    map_data = pd.DataFrame({
-                        'lat': [patient_coords[0], facility_coords[0]],
-                        'lon': [patient_coords[1], facility_coords[1]]
-                    })
-                    st.map(map_data)
+                    st.warning("Facility not found for route calculation")
             else:
-                st.warning("Facility coordinates not found for route visualization")
+                st.info("🗺️ Basic route visualization - Set OpenRouteService API key for professional routing")
+                # Your existing basic map code here
         else:
             st.info("👆 Select an active case to view route optimization")
-            
+
 # ======== ENHANCED GOVERNMENT ANALYTICS DASHBOARD ========
 with tabs[3]:
     st.subheader("🏛️ Enhanced Government Analytics Dashboard")
@@ -5054,11 +4005,6 @@ with tabs[4]:
 
     st.dataframe(ref_df, use_container_width=True, height=360)
 
-    # ---------- Meghalaya Route Testing ----------
-    st.markdown("#### 🧪 Meghalaya Route Testing")
-    if st.button("Test Routes from Shillong Civil Hospital"):
-        test_meghalaya_routes()
-    
     # ---------- Downloads / Uploads ----------
     st.markdown("#### Import/Export")
     d1, d2, d3 = st.columns(3)
@@ -5188,21 +4134,28 @@ with tabs[5]:
         return df.to_csv(index=False).encode("utf-8")
 
     # ---------- Seed/reset ----------
-        st.markdown("#### Demo Facilities Controls")
-        fc1, fc2, fc3 = st.columns(3)
-        with fc1:
-            if st.button("🔄 Reset to Meghalaya Facilities", key="fac_reset"):
-                initialize_meghalaya_facilities()
-                st.success("Facilities reset to Meghalaya dataset.")
-        with fc2:
-            if st.button("📊 Show Facility Summary", key="fac_summary"):
-                public_count = sum(1 for f in st.session_state.facilities if f['type'] == 'Public')
-                private_count = sum(1 for f in st.session_state.facilities if f['type'] == 'Private')
-                total_icu = sum(f.get('ICU_open', 0) for f in st.session_state.facilities)
-                st.info(f"**Meghalaya Facilities Summary:** {public_count} Public, {private_count} Private, {total_icu} Total ICU Beds")
-    
-        with fc3:
-            st.info("**Using Real Meghalaya Hospital Data**")
+    st.markdown("#### Demo Facilities Controls")
+    fc1, fc2, fc3 = st.columns(3)
+    with fc1:
+        if st.button("🔁 Reset to Default 15", key="fac_reset"):
+            st.session_state.facilities = default_facilities(count=15)
+            st.session_state.facilities = [normalize_facility(x) for x in st.session_state.facilities]
+            st.success("Facilities reset to default 15.")
+    with fc2:
+        gen_n = st.number_input("Generate facilities", 10, 200, 30, step=5, key="fac_gen_n")
+        if st.button("🎲 Generate New Set", key="fac_generate"):
+            st.session_state.facilities = default_facilities(count=int(gen_n))
+            st.session_state.facilities = [normalize_facility(x) for x in st.session_state.facilities]
+            st.success(f"Generated {gen_n} demo facilities.")
+    with fc3:
+        up_fac = st.file_uploader("⬆️ Upload facilities CSV", type=["csv"], key="fac_up")
+        if up_fac is not None:
+            try:
+                df_up = pd.read_csv(up_fac)
+                st.session_state.facilities = pack_facilities_from_df(df_up)
+                st.success(f"Imported {len(st.session_state.facilities)} facilities from CSV.")
+            except Exception as e:
+                st.error(f"Import failed: {e}")
 
     # ---------- Editor ----------
     st.markdown("#### Edit Facilities (inline)")
@@ -5292,11 +4245,5 @@ with tabs[5]:
                     st.write(f"Specialties: {r['specialties']}")
                     st.write(f"High-end equipment: {r['highend']}")
                     st.markdown("---")
-# Temporary fix for the chart error - wrap in try/except
-try:
-    if 'daily_trends' in locals() or 'daily_trends' in globals():
-        trend_chart = alt.Chart(daily_trends).mark_line(point=True).encode(
-            # ... your existing chart code ...
-        )
 except Exception as e:
     st.write("Chart not available: ", str(e))
