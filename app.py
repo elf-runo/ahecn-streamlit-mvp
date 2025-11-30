@@ -15,6 +15,13 @@ import requests
 import urllib.parse
 from pathlib import Path
 
+# === PAGE CONFIG MUST BE FIRST STREAMLIT COMMAND ===
+st.set_page_config(
+    page_title="AHECN MVP v1.9",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
 # ==========================
 # Facility database loading
 # ==========================
@@ -32,7 +39,6 @@ FACILITY_BOOL_COLS = [
     "has_cardiology",
     "is_network_member",
 ]
-
 
 @st.cache_data
 def load_meghalaya_facilities(csv_path: str = "meghalaya_facilities.csv"):
@@ -81,13 +87,6 @@ def load_meghalaya_facilities(csv_path: str = "meghalaya_facilities.csv"):
         )
     return facilities
 
-
-# === PAGE CONFIG MUST BE FIRST STREAMLIT COMMAND ===
-st.set_page_config(
-    page_title="AHECN MVP v1.9",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
 # -----------------------------
 # Facility database from CSV
 # -----------------------------
@@ -147,15 +146,6 @@ if "triage_features" not in st.session_state:
         'on_oxygen', 'sex_M', 'avpu_ord', 'case_type_cardiac', 'case_type_maternal',
         'case_type_sepsis', 'case_type_stroke', 'case_type_trauma', 'case_type_other'
     ]
-# ==========================
-# Facility DB in session_state
-# ==========================
-if "facility_db" not in st.session_state:
-    try:
-        st.session_state["facility_db"] = load_meghalaya_facilities()
-    except Exception as e:
-        st.warning(f"Could not load meghalaya_facilities.csv: {e}")
-        st.session_state["facility_db"] = []
 
 # Show status in sidebar
 st.sidebar.info("🤖 AI Features: Temporarily Disabled")
@@ -879,7 +869,6 @@ def tri_color(vit):
     colour, _ = triage_decision(v, context)
     return colour
 # === AI TRIAGE OVERLAY (Random Forest) ===
-
 label_to_color = {0: "GREEN", 1: "YELLOW", 2: "ORANGE", 3: "RED"}
 
 def _gcs_from_avpu(avpu: str) -> int:
@@ -1991,6 +1980,24 @@ def default_facilities(count: int | None = None):
         )
 
     return fac
+    
+# === Facility DB bootstrap (real Meghalaya facilities) ===
+if "facility_db" not in st.session_state:
+    try:
+        # Load from meghalaya_facilities.csv in repo root
+        st.session_state["facility_db"] = load_meghalaya_facilities()
+    except Exception as e:
+        st.warning(f"Could not load meghalaya_facilities.csv: {e}")
+        st.session_state["facility_db"] = []
+
+# Build the app-facing facility list used everywhere else
+if "facilities" not in st.session_state:
+    st.session_state["facilities"] = default_facilities()
+
+# Safe initialisation of active_fac (avoids index errors)
+facilities = st.session_state.get("facilities") or []
+if facilities and "active_fac" not in st.session_state:
+    st.session_state["active_fac"] = facilities[0]["name"]
 
 # === Schema safety helpers ===
 REQ_CAPS = ["ICU","Ventilator","BloodBank","OR","CT","Thrombolysis","OBGYN_OT","CathLab","Dialysis","Neurosurgery"]
@@ -2235,8 +2242,15 @@ if "triage_override_reason" not in st.session_state:
 
 if "referrals" not in st.session_state: 
     st.session_state.referrals = []
-if "active_fac" not in st.session_state: 
-    st.session_state.active_fac = st.session_state.facilities[0]["name"]
+    
+# === Active facility selection (safe init) ===
+if "active_fac" not in st.session_state:
+    facilities = st.session_state.get("facilities", [])
+    if facilities:
+        st.session_state.active_fac = facilities[0]["name"]
+    else:
+        # No facilities loaded – keep None so the UI can show a warning instead of crashing
+        st.session_state.active_fac = None
 
 # Initialize facility matching session state
 if "matched_primary" not in st.session_state:
