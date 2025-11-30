@@ -2136,90 +2136,147 @@ def analyze_ambulance_utilization(referrals):
 # === ENHANCED FACILITY MATCHING WITH FREE ROUTING ===
 def calculate_enhanced_facility_score_free(facility, required_caps, route_data, case_type, triage_color):
     """
-    Enhanced facility scoring with free routing data
+    Enhanced facility scoring with free routing data.
+
+    Works for:
+    - Synthetic facilities (already have facility["caps"], "specialties", "highend")
+    - Real Meghalaya catalog rows (meghalaya_facilities.csv) where we infer a minimal
+      capability dict from columns like has_icu, has_ct, has_blood_bank, etc.
     """
-    score = 0
+    score = 0.0
     scoring_details = {}
-    
-    # 1. Capability Match (40% weight) - Less restrictive filter
+
+    # ------------------------------------------------------------------
+    # 1. Capability Match (40% weight) - now robust to missing "caps"
+    # ------------------------------------------------------------------
+    caps = facility.get("caps")
+    if not caps:
+        # Infer caps from meghalaya_facilities.csv schema if present
+        caps = {}
+        if "has_icu" in facility:
+            caps["ICU"] = bool(facility.get("has_icu", 0))
+        if "has_ct" in facility:
+            caps["CT"] = bool(facility.get("has_ct", 0))
+        if "has_blood_bank" in facility:
+            caps["BloodBank"] = bool(facility.get("has_blood_bank", 0))
+        if "has_obgyn" in facility:
+            caps["OBGYN_OT"] = bool(facility.get("has_obgyn", 0))
+        if "has_cardiology" in facility:
+            # Use cardiology as proxy for CathLab
+            caps["CathLab"] = bool(facility.get("has_cardiology", 0))
+        if "has_oti" in facility:
+            # Use OTI as proxy for ventilator / OT capability
+            caps["Ventilator"] = bool(facility.get("has_oti", 0))
+        facility["caps"] = caps  # cache for subsequent calls
+
     if required_caps:
-        capability_match = sum(1 for cap in required_caps if facility["caps"].get(cap, 0)) / len(required_caps)
+        if caps:
+            capability_match = sum(
+                1 for cap in required_caps if caps.get(cap, 0)
+            ) / float(len(required_caps))
+        else:
+            capability_match = 0.0
+
         # Reduced threshold from 0.5 to 0.3 to include more facilities
-        if capability_match < 0.3:  # Only filter out completely unsuitable facilities
-            return 0, {"capability_score": 0, "reason": "Insufficient capabilities"}
+        if capability_match < 0.3:
+            return 0.0, {"capability_score": 0.0, "reason": "Insufficient capabilities"}
     else:
-        capability_match = 1.0  # No specific capabilities required
-    
-    score += capability_match * 40
-    scoring_details["capability_score"] = round(capability_match * 40, 1)
-    
+        capability_match = 1.0
+
+    score += capability_match * 40.0
+    scoring_details["capability_score"] = round(capability_match * 40.0, 1)
+
+    # ------------------------------------------------------------------
     # 2. Proximity Score (30% weight) - Based on estimated ETA
-    if route_data.get('success'):
-        eta_minutes = route_data.get('estimated_duration_min', route_data.get('duration_min', 0))
-        
+    # ------------------------------------------------------------------
+    if route_data.get("success"):
+        eta_minutes = route_data.get(
+            "estimated_duration_min", route_data.get("duration_min", 0.0)
+        )
+
         # More generous ETA scoring
         if eta_minutes <= 45:  # Increased from 30 to 45 minutes
-            proximity_score = 30
+            proximity_score = 30.0
         elif eta_minutes <= 90:  # Increased from 60 to 90 minutes
-            proximity_score = 30 * (1 - (eta_minutes - 45) / 45)
+            proximity_score = 30.0 * (1.0 - (eta_minutes - 45.0) / 45.0)
         else:
-            proximity_score = max(5, 30 * (1 - (eta_minutes - 90) / 90))  # Minimum 5 points
-            
+            proximity_score = max(5.0, 30.0 * (1.0 - (eta_minutes - 90.0) / 90.0))
+
         # Apply traffic factor adjustment
-        traffic_factor = route_data.get('traffic_multiplier', 1.0)
+        traffic_factor = route_data.get("traffic_multiplier", 1.0) or 1.0
         proximity_score = proximity_score / traffic_factor
-        
+
         score += proximity_score
         scoring_details["proximity_score"] = round(proximity_score, 1)
         scoring_details["eta_minutes"] = round(eta_minutes, 1)
         scoring_details["traffic_factor"] = round(traffic_factor, 2)
-        scoring_details["estimated"] = route_data.get('estimated', False)
-        scoring_details["peak_hour"] = route_data.get('peak_hour', False)
+        scoring_details["estimated"] = route_data.get("estimated", False)
+        scoring_details["peak_hour"] = route_data.get("peak_hour", False)
     else:
         # Fallback proximity scoring based on straight-line distance
-        distance_km = route_data.get('distance_km', 0)
-        if distance_km <= 50:
-            proximity_score = 25  # Reduced but still significant
+        distance_km = route_data.get("distance_km", 0.0) or 0.0
+        if distance_km <= 50.0:
+            proximity_score = 25.0
         else:
-            proximity_score = max(10, 25 * (1 - (distance_km - 50) / 100))
-        
+            proximity_score = max(
+                10.0, 25.0 * (1.0 - (distance_km - 50.0) / 100.0)
+            )
+
         score += proximity_score
         scoring_details["proximity_score"] = round(proximity_score, 1)
         scoring_details["eta_minutes"] = "N/A"
         scoring_details["traffic_factor"] = 1.0
-    
+
+    # ------------------------------------------------------------------
     # 3. ICU Availability (20% weight)
-    icu_beds = facility.get("ICU_open", 0)
-    icu_score = min(1.0, icu_beds / 5.0) * 20  # Max score at 5+ ICU beds
+    # ------------------------------------------------------------------
+    icu_beds = facility.get("ICU_open")
+    if icu_beds is None:
+        # For real catalog rows, treat presence of ICU capability as ">= 5 beds"
+        icu_beds = 5 if caps.get("ICU") else 0
+
+    icu_score = min(1.0, float(icu_beds) / 5.0) * 20.0  # Max score at 5+ ICU beds
     score += icu_score
     scoring_details["icu_score"] = round(icu_score, 1)
-    
+
+    # ------------------------------------------------------------------
     # 4. Acceptance Rate (10% weight)
+    # ------------------------------------------------------------------
     acceptance_rate = facility.get("acceptanceRate", 0.75)
-    acceptance_score = acceptance_rate * 10
+    try:
+        acceptance_rate = float(acceptance_rate)
+    except Exception:
+        acceptance_rate = 0.75
+    acceptance_score = acceptance_rate * 10.0
     score += acceptance_score
     scoring_details["acceptance_score"] = round(acceptance_score, 1)
-    
-    # 5. Specialization Bonuses
-    specialization_bonus = 0
-    
-    # Case type specialization matching
-    if case_type in facility.get("specialties", {}):
-        if facility["specialties"][case_type]:
-            specialization_bonus += 5
-    
-    # High-end equipment bonus for critical cases
+
+    # ------------------------------------------------------------------
+    # 5. Specialization Bonuses (robust to string / missing)
+    # ------------------------------------------------------------------
+    specialization_bonus = 0.0
+
+    specialties = facility.get("specialties")
+    if isinstance(specialties, dict):
+        if specialties.get(case_type):
+            specialization_bonus += 5.0
+
     if triage_color == "RED":
-        high_end_count = sum(1 for eq in facility.get("highend", {}).values() if eq)
-        specialization_bonus += min(5, high_end_count)
-    
+        highend = facility.get("highend")
+        if isinstance(highend, dict):
+            high_end_count = sum(1 for eq in highend.values() if eq)
+        else:
+            high_end_count = 0
+        specialization_bonus += min(5.0, float(high_end_count))
+
     score += specialization_bonus
-    scoring_details["specialization_bonus"] = specialization_bonus
-    
-    # Ensure score is within bounds
-    final_score = min(100, max(0, score))
+    scoring_details["specialization_bonus"] = round(specialization_bonus, 1)
+
+    # ------------------------------------------------------------------
+    # 6. Clamp and return
+    # ------------------------------------------------------------------
+    final_score = min(100.0, max(0.0, score))
     scoring_details["total_score"] = round(final_score, 1)
-    
     return final_score, scoring_details
 
 def rank_facilities_with_free_routing(
@@ -2636,19 +2693,30 @@ def seed_referrals(n=500, rng_seed=42, append=False):
 
         lat, lon = rand_geo(rng)
         
-        # --- FIXED: Select appropriate destination safely ---
+        # Select appropriate destination – robust to real Meghalaya catalog
         suitable_facs = []
         for f in facs:
-            # Skip anything malformed
-            if not isinstance(f, dict):
-                continue
-            
-            # Use .get so we don't crash if 'caps' is missing
-            caps = f.get("caps") or {}
-            
-            # Only count it suitable if it actually has the required caps
+            # Ensure "caps" exists for each facility (works for both synthetic & CSV)
+            caps = f.get("caps")
+            if not caps:
+                caps = {}
+                if "has_icu" in f:
+                    caps["ICU"] = bool(f.get("has_icu", 0))
+                if "has_ct" in f:
+                    caps["CT"] = bool(f.get("has_ct", 0))
+                if "has_blood_bank" in f:
+                    caps["BloodBank"] = bool(f.get("has_blood_bank", 0))
+                if "has_obgyn" in f:
+                    caps["OBGYN_OT"] = bool(f.get("has_obgyn", 0))
+                if "has_cardiology" in f:
+                    caps["CathLab"] = bool(f.get("has_cardiology", 0))
+                if "has_oti" in f:
+                    caps["Ventilator"] = bool(f.get("has_oti", 0))
+                f["caps"] = caps
+
             if all(caps.get(cap, 0) for cap in profile["required_caps"]):
                 suitable_facs.append(f)
+
         
         # If nothing matched capabilities, fall back to any facility
         if suitable_facs:
