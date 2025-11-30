@@ -3486,11 +3486,17 @@ with tabs[0]:
             else:
                 st.info("🛣️ **Off-peak hours**: Normal travel conditions")
 
+            meta = st.session_state.get("facility_triage_meta", {})
+            meta_case_type = meta.get("case_type", complaint)
+            meta_triage_color = meta.get("triage_color", "Not computed yet")
+            meta_caps = meta.get("required_caps", need_caps)
+
         st.info(
-            f"**Case Type:** {complaint} | "
-            f"**Triage:** {triage_color} | "
-            f"**Required Capabilities:** {', '.join(need_caps) if need_caps else 'None'}"
+            f"**Case Type:** {meta_case_type} | "
+            f"**Triage:** {meta_triage_color} | "
+            f"**Required Capabilities:** {', '.join(meta_caps) if meta_caps else 'None'}"
         )
+
 
         # Ensure selection state exists
         if "matched_primary" not in st.session_state:
