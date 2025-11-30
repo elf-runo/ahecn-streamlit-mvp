@@ -15,6 +15,13 @@ import requests
 import urllib.parse
 from pathlib import Path
 
+# === PAGE CONFIG MUST BE FIRST STREAMLIT COMMAND ===
+st.set_page_config(
+    page_title="AHECN MVP v1.9",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
 # === AI TRIAGE MODEL - TEMPORARILY DISABLED ===
 import os
 
@@ -33,13 +40,6 @@ if "triage_features" not in st.session_state:
 
 # Show status in sidebar
 st.sidebar.info("🤖 AI Features: Temporarily Disabled")
-    
-# === PAGE CONFIG MUST BE FIRST STREAMLIT COMMAND ===
-st.set_page_config(
-    page_title="AHECN MVP v1.9",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
 
 # === FREE ROUTING CONFIGURATION ===
 # Choose your free routing provider: 'osrm' (recommended) or 'openrouteservice'
@@ -940,25 +940,8 @@ def render_triage_banner(hr, rr, sbp, temp, spo2, avpu, complaint, override_appl
     )
 
     triage_mode = st.session_state.get("triage_mode", "rules")
-     # ======== TEMPORARY DEBUG ========
-    st.sidebar.markdown("### 🔴 DEBUG: Before triage_with_ai")
-    st.sidebar.write(f"Model available: {st.session_state.get('triage_model') is not None}")
-    st.sidebar.write(f"Features count: {len(st.session_state.get('triage_features', []))}")
-    st.sidebar.write(f"Triage mode: {triage_mode}")
-    
-    try:
-        # Test the function call
-        result = triage_with_ai(vitals, context, complaint, triage_mode)
-        st.sidebar.write(f"Result type: {type(result)}")
-        if result is not None:
-            st.sidebar.write(f"Result length: {len(result)}")
-        else:
-            st.sidebar.error("Result is None!")
-    except Exception as debug_e:
-        st.sidebar.error(f"Debug call failed: {debug_e}")
-    # ======== END DEBUG ========
 
-    # Combine guideline scores with AI overlay
+    # Always guideline-only, AI disabled
     final_colour_ai, meta = triage_with_ai(vitals, context, complaint, triage_mode)
     base_colour = meta["rules_color"]
     details = meta["rules_details"]
@@ -982,15 +965,7 @@ def render_triage_banner(hr, rr, sbp, temp, spo2, avpu, complaint, override_appl
     why = details["reasons"]
     st.caption("Why (guideline scores): " + (", ".join(why) if why else "All scores within normal thresholds"))
 
-    # Show AI meta if actually used
-    if meta.get("ai_color") and meta.get("probs") is not None and triage_mode != "rules":
-        probs = meta["probs"]
-        st.caption(
-            f"AI suggestion: **{meta['ai_color']}** | "
-            f"Probabilities – G={probs[0]:.2f}, Y={probs[1]:.2f}, "
-            f"O={probs[2]:.2f}, R={probs[3]:.2f} (mode: {triage_mode})"
-        )
-
+    # NOTE: AI bits intentionally suppressed – meta['ai_color'] is always None in triage_with_ai()
     with st.expander("Score details (guideline engines)"):
         st.write(details)
 
@@ -1585,22 +1560,25 @@ def analyze_ambulance_utilization(referrals):
     return utilization_data
 
 # === ENHANCED FACILITY MATCHING WITH FREE ROUTING ===
-def calculate_enhanced_facility_score_free(facility, required_caps, route_data, case_type, triage_color):
+def calculate_enhanced_facility_score_free(facility, required_caps, route_data, case_type, triage_color,
+                                           min_capability=0.3):
     """
     Enhanced facility scoring with free routing data
     """
     score = 0
     scoring_details = {}
-    
-    # 1. Capability Match (40% weight) - Hard filter
+
+    # 1. Capability Match (40% weight)
     if required_caps:
-        capability_match = sum(1 for cap in required_caps if facility["caps"].get(cap, 0)) / len(required_caps)
-        # Apply hard filter - must meet minimum capability threshold
-        if capability_match < 0.5:  # At least 50% of required capabilities
-            return 0, {"capability_score": 0, "reason": "Insufficient capabilities"}
+        capability_match = sum(
+            1 for cap in required_caps if facility["caps"].get(cap, 0)
+        ) / len(required_caps)
     else:
         capability_match = 1.0
-    
+
+    scoring_details["capability_fraction"] = round(capability_match, 2)
+
+    # Hard filter applied in the calling function if needed
     score += capability_match * 40
     scoring_details["capability_score"] = round(capability_match * 40, 1)
     
@@ -1712,9 +1690,9 @@ def rank_facilities_with_free_routing(origin_coords, required_caps, case_type, t
                 facility, required_caps, route_data, case_type, triage_color
             )
             
-            # Skip facilities with insufficient capabilities
-            if score == 0:
-                continue
+            if required_caps and scoring_details.get("capability_fraction", 0) < 0.3:
+                # Keep, but mark as low capability so you can visually label them
+                scoring_details["low_capability_flag"] = True
             
             # Generate route for visualization
             route_coords = interpolate_route(
@@ -2599,8 +2577,8 @@ with tabs[0]:
         vit = dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu, complaint=complaint)
     
         # Combine interventions properly
-        all_interventions = iv_selected if 'iv_selected' in locals() else []
-    
+        all_interventions = list(iv_selected) if iv_selected else []
+
         # Add resuscitation interventions
         for resus in resus_done:
             all_interventions.append({
@@ -2610,7 +2588,7 @@ with tabs[0]:
                 "performed_by": "referrer",
                 "status": "completed"
             })
-    
+
         # Calculate triage (guideline + AI overlay)
         age = _num(p_age)
         context = dict(
@@ -2708,10 +2686,11 @@ with tabs[0]:
             ),
             reasons=dict(
                 severity=True,
-                bedorICUUnavailable=ref_beds,
+                bedOrICUUnavailable=ref_beds,   # NOTE: capital 'O' to match seeded + analytics
                 specialTest=ref_tests,
                 requiredCapabilities=need_caps,
             ),
+
             dest=primary,
             alternates=alternates,
             transport=dict(
