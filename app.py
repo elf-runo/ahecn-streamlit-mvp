@@ -2269,6 +2269,36 @@ def rank_facilities_with_free_routing(
         f"{total_facilities} facilities before routing + scoring."
     )
 
+    # ---------------------------------------------------------
+    # Ensure each facility has a 'caps' dict for scoring logic
+    # ---------------------------------------------------------
+    CAP_KEYS = [
+        "OBGYN_OT", "BloodBank", "ICU",
+        "CT", "OR", "Neurosurgery",
+        "Thrombolysis", "CathLab", "Ventilator",
+    ]
+
+    for f in facilities_source:
+        # If a caps dict already exists (e.g., synthetic network), leave it.
+        if isinstance(f.get("caps"), dict):
+            continue
+
+        caps = {}
+
+        # Map flat CSV columns into a boolean caps dict
+        for key in CAP_KEYS:
+            if key in f:
+                val = f.get(key)
+                if isinstance(val, (int, float)):
+                    # numeric: 0/1, bed counts, etc.
+                    caps[key] = bool(val)
+                else:
+                    # string: "YES", "NO", "", etc.
+                    s = str(val).strip().upper()
+                    caps[key] = s not in ("", "NO", "N", "0", "FALSE")
+
+        f["caps"] = caps
+
     # -------------------------
     # 3. Progress bar for routing
     # -------------------------
