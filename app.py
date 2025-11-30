@@ -1984,20 +1984,18 @@ def default_facilities(count: int | None = None):
 # === Facility DB bootstrap (real Meghalaya facilities) ===
 if "facility_db" not in st.session_state:
     try:
-        # Load from meghalaya_facilities.csv in repo root
         st.session_state["facility_db"] = load_meghalaya_facilities()
     except Exception as e:
         st.warning(f"Could not load meghalaya_facilities.csv: {e}")
         st.session_state["facility_db"] = []
 
-# Build the app-facing facility list used everywhere else
 if "facilities" not in st.session_state:
+    # Build the app-facing facility objects from the DB
     st.session_state["facilities"] = default_facilities()
 
-# Safe initialisation of active_fac (avoids index errors)
-facilities = st.session_state.get("facilities") or []
-if facilities and "active_fac" not in st.session_state:
-    st.session_state["active_fac"] = facilities[0]["name"]
+# Set a default active facility if we have at least one
+if st.session_state.get("facilities"):
+    st.session_state.setdefault("active_fac", st.session_state["facilities"][0]["name"])
 
 # === Schema safety helpers ===
 REQ_CAPS = ["ICU","Ventilator","BloodBank","OR","CT","Thrombolysis","OBGYN_OT","CathLab","Dialysis","Neurosurgery"]
@@ -2025,13 +2023,22 @@ def facilities_df():
 
 # === ENHANCED SYNTHETIC DATA SEEDING ===
 RESUS = ["Airway positioning","Oxygen","IV fluids","Uterotonics","TXA","Bleeding control","Antibiotics","Nebulization","Immobilization","AED/CPR"]
+st.write("DEBUG facilities count:", len(st.session_state.get("facilities") or []))
 
 def seed_referrals(n=500, rng_seed=42, append=False):
     """Enhanced synthetic data seeding with proper structure.
        Set append=True to append to existing data instead of wiping.
     """
     rng = random.Random(rng_seed)
-    facs = st.session_state.facilities
+
+    # ✅ SAFER ACCESS TO FACILITIES
+    facs = st.session_state.get("facilities") or []
+
+    # ✅ GUARD: if there are no facilities, skip seeding
+    if not facs:
+        st.warning("No facilities available – skipping demo referral seeding.")
+        return
+
     conds = ["Maternal", "Trauma", "Stroke", "Cardiac", "Sepsis", "Other"]
     
     # Clear existing referrals unless in append mode
@@ -2208,7 +2215,7 @@ def seed_referrals(n=500, rng_seed=42, append=False):
             ambulance_available=amb_avail,
             audit_log=[]
         ))
-
+        
 # === SESSION STATE INITIALIZATION ===
 if "facilities" not in st.session_state:
     st.session_state.facilities = default_facilities(count=15)
