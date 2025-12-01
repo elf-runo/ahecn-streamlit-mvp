@@ -3804,7 +3804,7 @@ with analytics_tabs[0]:
                     y="count:Q",
                     tooltip=["date", "count"],
                 )
-                .properties(height=300)   # ❗ height only; no string width here
+                .properties(height=300)
             )
             st.altair_chart(trend_chart, width="stretch")
 
@@ -3829,7 +3829,7 @@ with analytics_tabs[0]:
             )
             st.altair_chart(hour_chart, width="stretch")
 
-               # ---- 3) Case type trends ----
+        # ---- 3) Case type trends ----
         st.markdown("**Case Type Trends Over Time**")
 
         case_trends = (
@@ -3868,8 +3868,10 @@ with analytics_tabs[1]:
         if time_series_df is None or time_series_df.empty:
             st.info("No referral data available yet for facility analytics.")
         else:
-            missing_cols = [c for c in ["facility", "triage_color"]
-                            if c not in time_series_df.columns]
+            missing_cols = [
+                c for c in ["facility", "triage_color"]
+                if c not in time_series_df.columns
+            ]
             if missing_cols:
                 st.warning(f"Time-series data missing columns: {missing_cols}")
             else:
@@ -3883,13 +3885,18 @@ with analytics_tabs[1]:
                 if facility_triage.empty:
                     st.info("No facility triage data available")
                 else:
-                    triage_chart = alt.Chart(facility_triage).mark_bar().encode(
-                        x='facility:N',
-                        y='count:Q',
-                        color='triage_color:N',
-                        tooltip=['facility', 'triage_color', 'count']
-                    ).properties(width=600, height=400)
-                    st.altair_chart(chart, width="stretch")
+                    triage_chart = (
+                        alt.Chart(facility_triage)
+                        .mark_bar()
+                        .encode(
+                            x="facility:N",
+                            y="count:Q",
+                            color="triage_color:N",
+                            tooltip=["facility", "triage_color", "count"],
+                        )
+                        .properties(width=600, height=400)
+                    )
+                    st.altair_chart(triage_chart, width="stretch")
 
     # RIGHT: Rejection Rates by Facility
     with col2:
@@ -3898,16 +3905,29 @@ with analytics_tabs[1]:
         if rejection_rates_df is None or rejection_rates_df.empty:
             st.info("No rejection data available")
         else:
-            rejection_chart = alt.Chart(rejection_rates_df).mark_bar().encode(
-                x='facility:N',
-                y='rejection_rate:Q',
-                color=alt.Color('rejection_rate:Q', scale=alt.Scale(scheme='reds')),
-                tooltip=['facility', 'rejection_rate', 'total_referrals', 'rejected']
-            ).properties(width=600, height=400)
-            st.altair_chart(chart, width="stretch")
+            rejection_chart = (
+                alt.Chart(rejection_rates_df)
+                .mark_bar()
+                .encode(
+                    x="facility:N",
+                    y="rejection_rate:Q",
+                    color=alt.Color(
+                        "rejection_rate:Q",
+                        scale=alt.Scale(scheme="reds")
+                    ),
+                    tooltip=["facility", "rejection_rate",
+                             "total_referrals", "rejected"],
+                )
+                .properties(width=600, height=400)
+            )
+            st.altair_chart(rejection_chart, width="stretch")
 
             st.markdown("**Detailed Rejection Metrics**")
-            st.dataframe(rejection_rates_df.sort_values('rejection_rate', ascending=False))
+            st.dataframe(
+                rejection_rates_df.sort_values(
+                    "rejection_rate", ascending=False
+                )
+            )
 
 # TAB 2 — Ambulance Analytics
 with analytics_tabs[2]:
@@ -3921,21 +3941,28 @@ with analytics_tabs[2]:
         ambulance_data = []
         for triage_color, ambulance_types in ambulance_utilization.items():
             for amb_type, count in ambulance_types.items():
-                ambulance_data.append({
-                    'triage_color': triage_color,
-                    'ambulance_type': amb_type,
-                    'count': count
-                })
+                ambulance_data.append(
+                    {
+                        "triage_color": triage_color,
+                        "ambulance_type": amb_type,
+                        "count": count,
+                    }
+                )
 
         if ambulance_data:
             ambulance_df = pd.DataFrame(ambulance_data)
-            amb_chart = alt.Chart(ambulance_df).mark_bar().encode(
-                x='triage_color:N',
-                y='count:Q',
-                color='ambulance_type:N',
-                tooltip=['triage_color', 'ambulance_type', 'count']
-            ).properties(width=600, height=400)
-            st.altair_chart(chart, width="stretch")
+            amb_chart = (
+                alt.Chart(ambulance_df)
+                .mark_bar()
+                .encode(
+                    x="triage_color:N",
+                    y="count:Q",
+                    color="ambulance_type:N",
+                    tooltip=["triage_color", "ambulance_type", "count"],
+                )
+                .properties(width=600, height=400)
+            )
+            st.altair_chart(amb_chart, width="stretch")
         else:
             st.info("No ambulance utilization data available")
 
@@ -3945,30 +3972,45 @@ with analytics_tabs[2]:
         ambulance_times = []
         for ref in referrals_data:
             try:
-                if ref.get('transport', {}).get('ambulance') in ['BLS', 'ALS', 'ALS + Vent']:
-                    times = ref.get('times', {})
-                    dispatch_ts = times.get('dispatch_ts')
-                    arrive_ts = times.get('arrive_dest_ts')
+                if ref.get("transport", {}).get("ambulance") in [
+                    "BLS",
+                    "ALS",
+                    "ALS + Vent",
+                ]:
+                    times = ref.get("times", {})
+                    dispatch_ts = times.get("dispatch_ts")
+                    arrive_ts = times.get("arrive_dest_ts")
 
                     if dispatch_ts and arrive_ts:
-                        transport_time = (arrive_ts - dispatch_ts) / 60  # minutes
-                        ambulance_times.append({
-                            'ambulance_type': ref['transport']['ambulance'],
-                            'transport_time': transport_time,
-                            'triage_color': ref['triage']['decision']['color']
-                        })
+                        transport_time = (arrive_ts - dispatch_ts) / 60.0
+                        ambulance_times.append(
+                            {
+                                "ambulance_type": ref["transport"]["ambulance"],
+                                "transport_time": transport_time,
+                                "triage_color": ref["triage"]["decision"]["color"],
+                            }
+                        )
             except (KeyError, TypeError):
                 continue
 
         if ambulance_times:
             efficiency_df = pd.DataFrame(ambulance_times)
-            efficiency_chart = alt.Chart(efficiency_df).mark_boxplot().encode(
-                x='ambulance_type:N',
-                y='transport_time:Q',
-                color='triage_color:N',
-                tooltip=['ambulance_type', 'triage_color', 'transport_time']
-            ).properties(width=600, height=400)
-            st.altair_chart(chart, width="stretch")
+            efficiency_chart = (
+                alt.Chart(efficiency_df)
+                .mark_boxplot()
+                .encode(
+                    x="ambulance_type:N",
+                    y="transport_time:Q",
+                    color="triage_color:N",
+                    tooltip=[
+                        "ambulance_type",
+                        "triage_color",
+                        "transport_time",
+                    ],
+                )
+                .properties(width=600, height=400)
+            )
+            st.altair_chart(efficiency_chart, width="stretch")
         else:
             st.info("No ambulance efficiency data available")
 
@@ -3981,66 +4023,87 @@ with analytics_tabs[3]:
     with col1:
         st.markdown("**Referral Reason Analysis**")
 
-        reasons_df = pd.DataFrame({
-            'Reason': ['Severity', 'Bed/ICU Unavailable', 'Special Test'],
-            'Count': [
-                referral_reasons['severity'],
-                referral_reasons['bed_icu_unavailable'],
-                referral_reasons['special_test']
-            ]
-        })
+        reasons_df = pd.DataFrame(
+            {
+                "Reason": ["Severity", "Bed/ICU Unavailable", "Special Test"],
+                "Count": [
+                    referral_reasons["severity"],
+                    referral_reasons["bed_icu_unavailable"],
+                    referral_reasons["special_test"],
+                ],
+            }
+        )
 
         if not reasons_df.empty:
-            reasons_chart = alt.Chart(reasons_df).mark_arc(innerRadius=50).encode(
-                theta='Count:Q',
-                color='Reason:N',
-                tooltip=['Reason', 'Count']
-            ).properties(width=400, height=400)
-            st.altair_chart(chart, width="stretch")
+            reasons_chart = (
+                alt.Chart(reasons_df)
+                .mark_arc(innerRadius=50)
+                .encode(
+                    theta="Count:Q",
+                    color="Reason:N",
+                    tooltip=["Reason", "Count"],
+                )
+                .properties(width=400, height=400)
+            )
+            st.altair_chart(reasons_chart, width="stretch")
 
         st.markdown("**Medical Specialty Requests**")
-        if referral_reasons['capabilities']:
-            caps_df = pd.DataFrame([
-                {'Capability': cap, 'Count': count}
-                for cap, count in referral_reasons['capabilities'].items()
-            ])
+        if referral_reasons["capabilities"]:
+            caps_df = pd.DataFrame(
+                [
+                    {"Capability": cap, "Count": count}
+                    for cap, count in referral_reasons["capabilities"].items()
+                ]
+            )
 
-            caps_chart = alt.Chart(caps_df).mark_bar().encode(
-                x='Count:Q',
-                y=alt.Y('Capability:N', sort='-x'),
-                color=alt.Color('Count:Q', scale=alt.Scale(scheme='blues')),
-                tooltip=['Capability', 'Count']
-            ).properties(width=400, height=400)
-            st.altair_chart(chart, width="stretch")
+            caps_chart = (
+                alt.Chart(caps_df)
+                .mark_bar()
+                .encode(
+                    x="Count:Q",
+                    y=alt.Y("Capability:N", sort="-x"),
+                    color=alt.Color("Count:Q", scale=alt.Scale(scheme="blues")),
+                    tooltip=["Capability", "Count"],
+                )
+                .properties(width=400, height=400)
+            )
+            st.altair_chart(caps_chart, width="stretch")
 
     with col2:
         st.markdown("**Case Type Distribution**")
 
         if case_type_breakdown:
-            case_df = pd.DataFrame([
-                {'Case Type': case, 'Count': count}
-                for case, count in case_type_breakdown.items()
-            ])
+            case_df = pd.DataFrame(
+                [
+                    {"Case Type": case, "Count": count}
+                    for case, count in case_type_breakdown.items()
+                ]
+            )
 
-            case_chart = alt.Chart(case_df).mark_bar().encode(
-                x='Count:Q',
-                y=alt.Y('Case Type:N', sort='-x'),
-                color=alt.Color('Count:Q', scale=alt.Scale(scheme='viridis')),
-                tooltip=['Case Type', 'Count']
-            ).properties(width=400, height=400)
-            st.altair_chart(chart, width="stretch")
+            case_chart = (
+                alt.Chart(case_df)
+                .mark_bar()
+                .encode(
+                    x="Count:Q",
+                    y=alt.Y("Case Type:N", sort="-x"),
+                    color=alt.Color("Count:Q", scale=alt.Scale(scheme="viridis")),
+                    tooltip=["Case Type", "Count"],
+                )
+                .properties(width=400, height=400)
+            )
+            st.altair_chart(case_chart, width="stretch")
 
         st.markdown("**Specialty by Case Type**")
         if specialty_data:
             top_caps = sorted(
                 specialty_data.items(),
-                key=lambda x: x[1]['total'],
-                reverse=True
+                key=lambda x: x[1]["total"],
+                reverse=True,
             )[:5]
 
             for cap, data in top_caps:
                 st.write(f"**{cap}** (Total: {data['total']})")
-                for case_type, count in list(data['by_case_type'].items())[:3]:
+                for case_type, count in list(data["by_case_type"].items())[:3]:
                     st.write(f"  - {case_type}: {count}")
                     
     # ---------- Policy Insights Section (Enhanced) ----------
