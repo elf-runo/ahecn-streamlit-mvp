@@ -3836,9 +3836,10 @@ with analytics_tabs[0]:
                                    y="count:Q",
                                    tooltip=["hour", "count"],
                                )
-                               .properties(width="stretch", height=300)
+                               .properties(height=300)   # ✅ only height here
                         )
-                        st.altair_chart(hour_chart, width="stretch")
+                        st.altair_chart(hour_chart, width="stretch")   # ✅ width handled by Streamlit
+
                     else:
                         st.info("No hourly data available.")
                 else:
@@ -3863,7 +3864,7 @@ with analytics_tabs[0]:
                                color="case_type:N",
                                tooltip=["date", "case_type", "count"],
                            )
-                           .properties(width="stretch", height=400)
+                           .properties(height=400) 
                     )
                     st.altair_chart(case_chart, width="stretch")
                 else:
