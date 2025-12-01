@@ -3780,93 +3780,76 @@ analytics_tabs = st.tabs([
 with analytics_tabs[0]:
     st.markdown("#### Referral Volume Trends")
 
-    # Safety: handle missing or empty DF
-    if time_series_df is None or getattr(time_series_df, "empty", True):
-        st.info("No time series data available")
+    # Guard against missing / empty time_series_df
+    if time_series_df is None or time_series_df.empty:
+        st.info("No time series data available yet.")
     else:
-        ts = time_series_df.copy()
+        # ---- 1) Daily referral volume ----
+        daily_trends = (
+            time_series_df
+            .groupby("date")
+            .size()
+            .reset_index(name="count")
+        )
 
-        # Ensure we have the expected columns
-        has_date = "date" in ts.columns
-        has_hour = "hour" in ts.columns
-        has_case_type = "case_type" in ts.columns
+        col1, col2 = st.columns(2)
 
-        if not has_date:
-            st.warning("Time series has no 'date' column – cannot build volume charts.")
-        else:
-            # Normalise date column
-            ts["date"] = pd.to_datetime(ts["date"])
-
-            # ---------- Daily volume ----------
-            daily_trends = (
-                ts.groupby("date", dropna=False)
-                  .size()
-                  .reset_index(name="count")
-                  .sort_values("date")
-            )
-
-            col1, col2 = st.columns(2)
-
-            with col1:
-                st.markdown("**Daily Referral Volume**")
-
-                if not daily_trends.empty:
-                    # Use Streamlit native chart to avoid Altair issues here
-                    daily_line = daily_trends.set_index("date")["count"]
-                    st.line_chart(daily_line, height=300)
-                else:
-                    st.info("No daily trend data available.")
-
-            # ---------- Hourly distribution ----------
-            with col2:
-                st.markdown("**Hourly Distribution**")
-                if has_hour:
-                    hourly_dist = (
-                        ts.groupby("hour", dropna=False)
-                          .size()
-                          .reset_index(name="count")
-                          .sort_values("hour")
-                    )
-                    if not hourly_dist.empty:
-                        hour_chart = (
-                            alt.Chart(hourly_dist)
-                               .mark_bar()
-                               .encode(
-                                   x="hour:O",
-                                   y="count:Q",
-                                   tooltip=["hour", "count"],
-                               )
-                               .properties(height=300)   # ✅ only height here
-                        )
-                        st.altair_chart(hour_chart, width="stretch")   # ✅ width handled by Streamlit
-
-                    else:
-                        st.info("No hourly data available.")
-                else:
-                    st.info("No hour-level data available.")
-
-            # ---------- Case-type trends ----------
-            st.markdown("**Case Type Trends Over Time**")
-            if has_case_type:
-                case_trends = (
-                    ts.groupby(["date", "case_type"], dropna=False)
-                      .size()
-                      .reset_index(name="count")
+        with col1:
+            st.markdown("**Daily Referral Volume**")
+            trend_chart = (
+                alt.Chart(daily_trends)
+                .mark_line(point=True)
+                .encode(
+                    x="date:T",
+                    y="count:Q",
+                    tooltip=["date", "count"],
                 )
-                if not case_trends.empty:
-                    case_trends["date"] = pd.to_datetime(case_trends["date"])
-                    case_chart = (
-                        alt.Chart(case_trends)
-                           .mark_line(point=True)
-                           .encode(
-                               x="date:T",
-                               y="count:Q",
-                               color="case_type:N",
-                               tooltip=["date", "case_type", "count"],
-                           )
-                           .properties(height=400) 
-                    )
-                    st.altair_chart(case_chart, width="stretch")
+                .properties(height=300)   # ❗ height only; no string width here
+            )
+            st.altair_chart(trend_chart, width="stretch")
+
+        # ---- 2) Hourly distribution ----
+        with col2:
+            st.markdown("**Hourly Distribution**")
+            hourly_dist = (
+                time_series_df
+                .groupby("hour")
+                .size()
+                .reset_index(name="count")
+            )
+            hour_chart = (
+                alt.Chart(hourly_dist)
+                .mark_bar()
+                .encode(
+                    x="hour:O",
+                    y="count:Q",
+                    tooltip=["hour", "count"],
+                )
+                .properties(height=300)
+            )
+            st.altair_chart(hour_chart, width="stretch")
+
+        # ---- 3) Case type trends ----
+        st.markdown("**Case Type Trends Over Time**")
+        case_trends = (
+            time_series_df
+            .groupby(["date", "case_type"])
+            .size()
+            .reset_index(name="count")
+        )
+        case_chart = (
+            alt.Chart(case_trends)
+            .mark_line(point=True)
+            .encode(
+                x="date:T",
+                y="count:Q",
+                color="case_type:N",
+                tooltip=["date", "case_type", "count"],
+            )
+            .properties(height=400)
+        )
+        st.altair_chart(case_chart, width="stretch")
+        
                 else:
                     st.info("No case-type trend data available.")
             else:
@@ -3907,7 +3890,7 @@ with analytics_tabs[1]:
                         color='triage_color:N',
                         tooltip=['facility', 'triage_color', 'count']
                     ).properties(width=600, height=400)
-                    st.altair_chart(triage_chart, use_container_width=True)
+                    st.altair_chart(chart, width="stretch")
 
     # RIGHT: Rejection Rates by Facility
     with col2:
@@ -3922,7 +3905,7 @@ with analytics_tabs[1]:
                 color=alt.Color('rejection_rate:Q', scale=alt.Scale(scheme='reds')),
                 tooltip=['facility', 'rejection_rate', 'total_referrals', 'rejected']
             ).properties(width=600, height=400)
-            st.altair_chart(rejection_chart, use_container_width=True)
+            st.altair_chart(chart, width="stretch")
 
             st.markdown("**Detailed Rejection Metrics**")
             st.dataframe(rejection_rates_df.sort_values('rejection_rate', ascending=False))
@@ -3953,7 +3936,7 @@ with analytics_tabs[2]:
                 color='ambulance_type:N',
                 tooltip=['triage_color', 'ambulance_type', 'count']
             ).properties(width=600, height=400)
-            st.altair_chart(amb_chart, use_container_width=True)
+            st.altair_chart(chart, width="stretch")
         else:
             st.info("No ambulance utilization data available")
 
@@ -3986,7 +3969,7 @@ with analytics_tabs[2]:
                 color='triage_color:N',
                 tooltip=['ambulance_type', 'triage_color', 'transport_time']
             ).properties(width=600, height=400)
-            st.altair_chart(efficiency_chart, use_container_width=True)
+            st.altair_chart(chart, width="stretch")
         else:
             st.info("No ambulance efficiency data available")
 
@@ -4014,7 +3997,7 @@ with analytics_tabs[3]:
                 color='Reason:N',
                 tooltip=['Reason', 'Count']
             ).properties(width=400, height=400)
-            st.altair_chart(reasons_chart, use_container_width=True)
+            st.altair_chart(chart, width="stretch")
 
         st.markdown("**Medical Specialty Requests**")
         if referral_reasons['capabilities']:
@@ -4029,7 +4012,7 @@ with analytics_tabs[3]:
                 color=alt.Color('Count:Q', scale=alt.Scale(scheme='blues')),
                 tooltip=['Capability', 'Count']
             ).properties(width=400, height=400)
-            st.altair_chart(caps_chart, use_container_width=True)
+            st.altair_chart(chart, width="stretch")
 
     with col2:
         st.markdown("**Case Type Distribution**")
@@ -4046,7 +4029,7 @@ with analytics_tabs[3]:
                 color=alt.Color('Count:Q', scale=alt.Scale(scheme='viridis')),
                 tooltip=['Case Type', 'Count']
             ).properties(width=400, height=400)
-            st.altair_chart(case_chart, use_container_width=True)
+            st.altair_chart(chart, width="stretch")
 
         st.markdown("**Specialty by Case Type**")
         if specialty_data:
