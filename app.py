@@ -3829,32 +3829,31 @@ with analytics_tabs[0]:
             )
             st.altair_chart(hour_chart, width="stretch")
 
-        # ---- 3) Case type trends ----
+               # ---- 3) Case type trends ----
         st.markdown("**Case Type Trends Over Time**")
+
         case_trends = (
             time_series_df
             .groupby(["date", "case_type"])
             .size()
             .reset_index(name="count")
         )
-        case_chart = (
-            alt.Chart(case_trends)
-            .mark_line(point=True)
-            .encode(
-                x="date:T",
-                y="count:Q",
-                color="case_type:N",
-                tooltip=["date", "case_type", "count"],
-            )
-            .properties(height=400)
-        )
-        st.altair_chart(case_chart, width="stretch")
-        
-                else:
-                    st.info("No case-type trend data available.")
-            else:
-                st.info("No case-type metadata available.")
 
+        if not case_trends.empty:
+            case_chart = (
+                alt.Chart(case_trends)
+                .mark_line(point=True)
+                .encode(
+                    x="date:T",
+                    y="count:Q",
+                    color="case_type:N",
+                    tooltip=["date", "case_type", "count"],
+                )
+                .properties(height=400)
+            )
+            st.altair_chart(case_chart, width="stretch")
+        else:
+            st.info("No case-type trend data available.")
 
 # TAB 1 — Facility Performance
 with analytics_tabs[1]:
