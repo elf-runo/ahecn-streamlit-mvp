@@ -25,7 +25,9 @@ st.set_page_config(
 # ==========================
 # Facility database loading
 # ==========================
-from pathlib import Path  # keep only once at top of file
+from pathlib import Path
+
+DATA_DIR = Path(__file__).parent / "data"
 
 FACILITY_BOOL_COLS = [
     "has_ed",
@@ -43,77 +45,52 @@ FACILITY_BOOL_COLS = [
 ]
 
 @st.cache_data
-def load_meghalaya_facilities():
+def load_meghalaya_facilities(csv_path: str | Path = DATA_DIR / "meghalaya_facilities.csv"):
     """
-    Load the real Meghalaya facility master from data/meghalaya_facilities.csv
-    and return a list[dict] with a 'capabilities' sub-dict per facility.
-    This is exactly what default_facilities() expects.
+    Load the real Meghalaya facility master from CSV and
+    normalise it into a list[dict] with a 'capabilities' sub-dict.
     """
-    base_dir = Path(__file__).parent
-    csv_path = base_dir / "data" / "meghalaya_facilities.csv"
-
     df = pd.read_csv(csv_path)
 
-    # normalise column names
-    df.columns = [c.strip().lower() for c in df.columns]
+    # Ensure correct dtypes
+    df["lat"] = df["lat"].astype(float)
+    df["lon"] = df["lon"].astype(float)
 
-    # ensure numeric lat/lon
-    if "lat" in df.columns:
-        df["lat"] = df["lat"].astype(float)
-    if "lon" in df.columns:
-        df["lon"] = df["lon"].astype(float)
-
-    # normalise capability flags as 0/1 ints
+    # Convert 0/1 cols to bool
     for col in FACILITY_BOOL_COLS:
         if col in df.columns:
-            df[col] = df[col].astype(int)
+            df[col] = df[col].astype(int).astype(bool)
 
     facilities = []
     for _, row in df.iterrows():
-        # build capability bundle used downstream
-        caps = {
-            "ed":          bool(row.get("has_ed", 0)),
-            "icu":         bool(row.get("has_icu", 0)),
-            "nicu":        bool(row.get("has_nicu", 0)),
-            "oti":         bool(row.get("has_oti", 0)),
-            "ct":          bool(row.get("has_ct", 0)),
-            "mri":         bool(row.get("has_mri", 0)),
-            "blood_bank":  bool(row.get("has_blood_bank", 0)),
-            "obgyn":       bool(row.get("has_obgyn", 0)),
-            "peds":        bool(row.get("has_peds", 0)),
-            "ortho":       bool(row.get("has_ortho", 0)),
-            "cardiology":  bool(row.get("has_cardiology", 0)),
-            "network":     bool(row.get("is_network_member", 0)),
-        }
-
-        fac = {
-            "facility_id": row.get("facility_id"),
-            "name": row.get("name", ""),
-            "lat": float(row.get("lat")),
-            "lon": float(row.get("lon")),
-            "level": row.get("level", ""),
-            "ownership": row.get("ownership", ""),
-            "district": row.get("district", ""),
-
-            # raw flags – keep them so default_facilities() can read them
-            "has_icu": int(row.get("has_icu", 0)),
-            "has_blood_bank": int(row.get("has_blood_bank", 0)),
-            "has_ct": int(row.get("has_ct", 0)),
-            "has_mri": int(row.get("has_mri", 0)),
-            "has_obgyn": int(row.get("has_obgyn", 0)),
-            "has_peds": int(row.get("has_peds", 0)),
-            "has_ortho": int(row.get("has_ortho", 0)),
-            "has_cardiology": int(row.get("has_cardiology", 0)),
-            "has_oti": int(row.get("has_oti", 0)),
-            "is_network_member": int(row.get("is_network_member", 0)),
-
-            # pre-built capability dict
-            "capabilities": caps,
-        }
-
-        facilities.append(fac)
-
+        facilities.append(
+            {
+                "facility_id": row["facility_id"],
+                "name": row["name"],
+                "lat": float(row["lat"]),
+                "lon": float(row["lon"]),
+                "level": row.get("level", ""),
+                "ownership": row.get("ownership", ""),
+                "district": row.get("district", ""),
+                # Normalised capability bundle used by matching logic
+                "capabilities": {
+                    "ed":           bool(row.get("has_ed", False)),
+                    "icu":          bool(row.get("has_icu", False)),
+                    "nicu":         bool(row.get("has_nicu", False)),
+                    "oti":          bool(row.get("has_oti", False)),
+                    "ct":           bool(row.get("has_ct", False)),
+                    "mri":          bool(row.get("has_mri", False)),
+                    "blood_bank":   bool(row.get("has_blood_bank", False)),
+                    "obgyn":        bool(row.get("has_obgyn", False)),
+                    "peds":         bool(row.get("has_peds", False)),
+                    "ortho":        bool(row.get("has_ortho", False)),
+                    "cardiology":   bool(row.get("has_cardiology", False)),
+                    "network":      bool(row.get("is_network_member", False)),
+                },
+            }
+        )
     return facilities
+
 
 # === AI TRIAGE MODEL - TEMPORARILY DISABLED ===
 import os
@@ -2011,14 +1988,18 @@ def default_facilities(count: int | None = None):
 if "facility_db" not in st.session_state:
     try:
         st.session_state["facility_db"] = load_meghalaya_facilities()
+        # Optional debug – you can comment this out later
+        st.write(
+            f"DEBUG facilities loaded: {len(st.session_state['facility_db'])}"
+        )
     except Exception as e:
         st.warning(f"Could not load data/meghalaya_facilities.csv: {e}")
-        st.session_state["facility_db"] = []   # list, not DataFrame
+        # IMPORTANT: keep this as a list, not a DataFrame
+        st.session_state["facility_db"] = []
 
 if "facilities" not in st.session_state:
+    # Build app-facing facility objects from the DB
     st.session_state["facilities"] = default_facilities()
-st.markdown(f"DEBUG facilities loaded: {len(st.session_state.get('facilities', []))}")
-
 
 # === Schema safety helpers ===
 REQ_CAPS = ["ICU","Ventilator","BloodBank","OR","CT","Thrombolysis","OBGYN_OT","CathLab","Dialysis","Neurosurgery"]
@@ -2049,78 +2030,88 @@ RESUS = ["Airway positioning","Oxygen","IV fluids","Uterotonics","TXA","Bleeding
 st.write("DEBUG facilities count:", len(st.session_state.get("facilities") or []))
 
 def seed_referrals(n=500, rng_seed=42, append=False):
+    """
+    Enhanced synthetic data seeding with proper structure.
+    Set append=True to append to existing data instead of wiping.
+    """
+    # Pull facilities from session
     facs = st.session_state.get("facilities", [])
+
+    # If no facilities (e.g. CSV not loaded), skip seeding
     if not facs:
         st.warning("No facilities available – skipping synthetic referral seeding.")
         return
 
-    # ✅ SAFER ACCESS TO FACILITIES
-    facs = st.session_state.get("facilities") or []
-
-    # ✅ GUARD: if there are no facilities, skip seeding
-    if not facs:
-        st.warning("No facilities available – skipping demo referral seeding.")
-        return
+    rng = random.Random(rng_seed)
 
     conds = ["Maternal", "Trauma", "Stroke", "Cardiac", "Sepsis", "Other"]
-    
-    # Clear existing referrals unless in append mode
-    if not append:
-        st.session_state.referrals = []
-    
+
     # Define medically appropriate case profiles
     case_profiles = {
         "Maternal": {
             "icd_codes": ["O72.0", "O72.1", "O14.1"],
-            "vitals_range": {"hr": (90, 140), "sbp": (80, 160), "rr": (18, 30), "spo2": (92, 99), "temp": (36.5, 38.5)},
+            "vitals_range": {"hr": (90, 140), "sbp": (80, 160), "rr": (18, 30),
+                             "spo2": (92, 99), "temp": (36.5, 38.5)},
             "required_caps": ["OBGYN_OT", "BloodBank", "ICU"],
             "typical_triage": ["RED", "YELLOW"],
-            "transport_types": ["BLS", "ALS", "ALS + Vent", "Neonatal"]
+            "transport_types": ["BLS", "ALS", "ALS + Vent", "Neonatal"],
         },
         "Trauma": {
             "icd_codes": ["S06.0", "S06.5"],
-            "vitals_range": {"hr": (70, 150), "sbp": (70, 180), "rr": (16, 35), "spo2": (88, 98), "temp": (36.0, 38.0)},
+            "vitals_range": {"hr": (70, 150), "sbp": (70, 180), "rr": (16, 35),
+                             "spo2": (88, 98), "temp": (36.0, 38.0)},
             "required_caps": ["CT", "OR", "ICU", "Neurosurgery"],
             "typical_triage": ["RED", "YELLOW"],
-            "transport_types": ["BLS", "ALS", "ALS + Vent"]
+            "transport_types": ["BLS", "ALS", "ALS + Vent"],
         },
         "Stroke": {
             "icd_codes": ["I63.9"],
-            "vitals_range": {"hr": (60, 120), "sbp": (100, 200), "rr": (14, 25), "spo2": (90, 98), "temp": (36.0, 37.5)},
+            "vitals_range": {"hr": (60, 120), "sbp": (100, 200), "rr": (14, 25),
+                             "spo2": (90, 98), "temp": (36.0, 37.5)},
             "required_caps": ["CT", "Thrombolysis", "ICU"],
             "typical_triage": ["RED", "YELLOW"],
-            "transport_types": ["BLS", "ALS"]
+            "transport_types": ["BLS", "ALS"],
         },
         "Cardiac": {
             "icd_codes": ["I21.9"],
-            "vitals_range": {"hr": (50, 130), "sbp": (80, 160), "rr": (16, 28), "spo2": (88, 96), "temp": (36.0, 37.8)},
+            "vitals_range": {"hr": (50, 130), "sbp": (80, 160), "rr": (16, 28),
+                             "spo2": (88, 96), "temp": (36.0, 37.8)},
             "required_caps": ["CathLab", "ICU"],
             "typical_triage": ["RED", "YELLOW"],
-            "transport_types": ["BLS", "ALS"]
+            "transport_types": ["BLS", "ALS"],
         },
         "Sepsis": {
             "icd_codes": ["A41.9"],
-            "vitals_range": {"hr": (100, 160), "sbp": (70, 120), "rr": (20, 35), "spo2": (85, 94), "temp": (38.0, 40.0)},
+            "vitals_range": {"hr": (100, 160), "sbp": (70, 120), "rr": (20, 35),
+                             "spo2": (85, 94), "temp": (38.0, 40.0)},
             "required_caps": ["ICU"],
             "typical_triage": ["RED", "YELLOW"],
-            "transport_types": ["BLS", "ALS"]
+            "transport_types": ["BLS", "ALS"],
         },
         "Other": {
             "icd_codes": ["J96.0"],
-            "vitals_range": {"hr": (80, 140), "sbp": (90, 150), "rr": (18, 32), "spo2": (86, 95), "temp": (36.5, 39.0)},
+            "vitals_range": {"hr": (80, 140), "sbp": (90, 150), "rr": (18, 32),
+                             "spo2": (86, 95), "temp": (36.5, 39.0)},
             "required_caps": ["Ventilator", "ICU"],
             "typical_triage": ["RED", "YELLOW", "GREEN"],
-            "transport_types": ["BLS", "Other"]
-        }
+            "transport_types": ["BLS", "Other"],
+        },
     }
-    
+
+    # Clear existing referrals unless in append mode
+    if not append:
+        st.session_state.referrals = []
+
     # Generate data over last 30 days
     base = time.time() - 30 * 24 * 3600
 
     for i in range(n):
-        cond = rng.choices(conds, weights=[0.22, 0.23, 0.18, 0.18, 0.14, 0.05])[0]
+        # Use module-level choices for maximum compatibility
+        cond = random.choices(
+            conds, weights=[0.22, 0.23, 0.18, 0.18, 0.14, 0.05], k=1
+        )[0]
         profile = case_profiles[cond]
-        
+
         # Generate medically appropriate vitals
         hr = rng.randint(*profile["vitals_range"]["hr"])
         sbp = rng.randint(*profile["vitals_range"]["sbp"])
@@ -2128,26 +2119,25 @@ def seed_referrals(n=500, rng_seed=42, append=False):
         spo2 = rng.randint(*profile["vitals_range"]["spo2"])
         temp = round(rng.uniform(*profile["vitals_range"]["temp"]), 1)
         avpu = "A"
-        
-        vit = dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu, complaint=cond)
-        color = tri_color(vit)
-        severity = {"RED": "Critical", "YELLOW": "Moderate", "GREEN": "Non-critical"}[color]
 
+        vit = dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2,
+                   avpu=avpu, complaint=cond)
+        color = tri_color(vit)
+        severity = {"RED": "Critical", "YELLOW": "Moderate",
+                    "GREEN": "Non-critical"}[color]
+
+        # Patient location
         lat, lon = rand_geo(rng)
-        
+
         # Select appropriate destination
         suitable_facs = [
-            f for f in facs 
+            f for f in facs
             if all(f["caps"].get(cap, 0) for cap in profile["required_caps"])
         ]
-        
-        if not suitable_facs:
-            dest = rng.choice(facs)
-        else:
-            dest = rng.choice(suitable_facs)
-            
+        dest = rng.choice(suitable_facs or facs)
+
         dkm = dist_km(lat, lon, dest["lat"], dest["lon"])
-        
+
         # More varied timestamps
         ts_first = base + rng.randint(0, 30 * 24 * 3600)
         hr_of_day = datetime.fromtimestamp(ts_first).hour
@@ -2159,85 +2149,113 @@ def seed_referrals(n=500, rng_seed=42, append=False):
         # Transport types
         transport_type = rng.choice(profile["transport_types"])
         amb_avail = (rng.random() > 0.25)
-        
+
         # Time intervals
         t_dec = ts_first + rng.randint(60, 6 * 60)
-        t_disp = t_dec + (rng.randint(2 * 60, 10 * 60) if amb_avail else rng.randint(15 * 60, 45 * 60))
+        t_disp = t_dec + (
+            rng.randint(2 * 60, 10 * 60)
+            if amb_avail
+            else rng.randint(15 * 60, 45 * 60)
+        )
         t_arr = t_disp + (eta_min * 60)
         t_hov = t_arr + rng.randint(5 * 60, 20 * 60)
 
-        # ICD code
+        # ICD code + label
         icd_code = rng.choice(profile["icd_codes"])
-        icd_label = next((item["label"] for item in ICD_LUT if item["icd_code"] == icd_code), f"{cond} Case")
-        
+        icd_label = next(
+            (item["label"] for item in ICD_LUT
+             if item["icd_code"] == icd_code),
+            f"{cond} Case",
+        )
         provisional_dx = dict(
             code=icd_code,
             label=icd_label,
-            case_type=cond
+            case_type=cond,
         )
 
         # Generate interventions
         interventions = []
         for intervention in rng.sample(RESUS, rng.randint(0, 3)):
-            interventions.append({
-                "name": intervention,
-                "type": "resuscitation",
-                "timestamp": ts_first,
-                "performed_by": "referrer",
-                "status": "completed"
-            })
+            interventions.append(
+                {
+                    "name": intervention,
+                    "type": "resuscitation",
+                    "timestamp": ts_first,
+                    "performed_by": "referrer",
+                    "status": "completed",
+                }
+            )
 
-        st.session_state.referrals.append(dict(
-            id=f"S{i:04d}",
-            patient=dict(
-                name=f"Pt{i:04d}", 
-                age=rng.randint(1, 85), 
-                sex=("Female" if rng.random() < 0.5 else "Male"),
-                id="", 
-                location=dict(lat=lat, lon=lon)
-            ),
-            referrer=dict(
-                name=rng.choice(["Dr. Rai", "Dr. Khonglah", "ANM Pynsuk", "Dr. Sharma", "Dr. Singh"]), 
-                facility=rng.choice(["PHC Mawlai", "CHC Smit", "CHC Pynursla", "District Hospital Shillong",
-                                   "Tertiary Shillong Hub", "PHC Nongpoh", "CHC Jowai"]),
-                role=rng.choice(["Doctor/Physician", "ANM/ASHA/EMT"])
-            ),
-            provisionalDx=provisional_dx,
-            interventions=interventions,
-            triage=dict(
-                complaint=cond, 
-                decision=dict(color=color), 
-                hr=hr, sbp=sbp, rr=rr, temp=temp, spo2=spo2, avpu=avpu
-            ),
-            clinical=dict(summary=f"Auto-seeded {cond.lower()} case"),
-            severity=severity,
-            reasons=dict(
-                severity=True, 
-                bedOrICUUnavailable=(rng.random() < 0.2), 
-                specialTest=(rng.random() < 0.3), 
-                requiredCapabilities=profile["required_caps"]
-            ),
-            dest=dest["name"],
-            alternates=[],
-            transport=dict(
-                eta_min=eta_min, 
-                traffic=traffic_mult, 
-                speed_kmh=speed_kmh, 
-                ambulance=transport_type, 
-                priority=rng.choice(["Routine", "Urgent", "STAT"])
-            ),
-            route=route,
-            times=dict(
-                first_contact_ts=ts_first, 
-                decision_ts=t_dec, 
-                dispatch_ts=t_disp, 
-                arrive_dest_ts=t_arr, 
-                handover_ts=t_hov
-            ),
-            status=rng.choice(["HANDOVER", "ARRIVE_DEST", "DEPART_SCENE", "DISPATCHED", "PREALERT"]),
-            ambulance_available=amb_avail,
-            audit_log=[]
-        ))
+        st.session_state.referrals.append(
+            dict(
+                id=f"S{i:04d}",
+                patient=dict(
+                    name=f"Pt{i:04d}",
+                    age=rng.randint(1, 85),
+                    sex=("Female" if rng.random() < 0.5 else "Male"),
+                    id="",
+                    location=dict(lat=lat, lon=lon),
+                ),
+                referrer=dict(
+                    name=rng.choice(
+                        ["Dr. Rai", "Dr. Khonglah", "ANM Pynsuk",
+                         "Dr. Sharma", "Dr. Singh"]
+                    ),
+                    facility=rng.choice(
+                        ["PHC Mawlai", "CHC Smit", "CHC Pynursla",
+                         "District Hospital Shillong",
+                         "Tertiary Shillong Hub",
+                         "PHC Nongpoh", "CHC Jowai"]
+                    ),
+                    role=rng.choice(
+                        ["Doctor/Physician", "ANM/ASHA/EMT"]
+                    ),
+                ),
+                provisionalDx=provisional_dx,
+                interventions=interventions,
+                triage=dict(
+                    complaint=cond,
+                    decision=dict(color=color),
+                    hr=hr,
+                    sbp=sbp,
+                    rr=rr,
+                    temp=temp,
+                    spo2=spo2,
+                    avpu=avpu,
+                ),
+                clinical=dict(summary=f"Auto-seeded {cond.lower()} case"),
+                severity=severity,
+                reasons=dict(
+                    severity=True,
+                    bedOrICUUnavailable=(rng.random() < 0.2),
+                    specialTest=(rng.random() < 0.3),
+                    requiredCapabilities=profile["required_caps"],
+                ),
+                dest=dest["name"],
+                alternates=[],
+                transport=dict(
+                    eta_min=eta_min,
+                    traffic=traffic_mult,
+                    speed_kmh=speed_kmh,
+                    ambulance=transport_type,
+                    priority=rng.choice(["Routine", "Urgent", "STAT"]),
+                ),
+                route=route,
+                times=dict(
+                    first_contact_ts=ts_first,
+                    decision_ts=t_dec,
+                    dispatch_ts=t_disp,
+                    arrive_dest_ts=t_arr,
+                    handover_ts=t_hov,
+                ),
+                status=rng.choice(
+                    ["HANDOVER", "ARRIVE_DEST", "DEPART_SCENE",
+                     "DISPATCHED", "PREALERT"]
+                ),
+                ambulance_available=amb_avail,
+                audit_log=[],
+            )
+        )
         
 # === SESSION STATE INITIALIZATION ===
 if "facilities" not in st.session_state:
