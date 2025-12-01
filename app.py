@@ -3780,46 +3780,97 @@ analytics_tabs = st.tabs([
 with analytics_tabs[0]:
     st.markdown("#### Referral Volume Trends")
 
-    if time_series_df is None or time_series_df.empty:
+    # Safety: handle missing or empty DF
+    if time_series_df is None or getattr(time_series_df, "empty", True):
         st.info("No time series data available")
     else:
-        daily_trends = time_series_df.groupby('date').size().reset_index(name='count')
+        ts = time_series_df.copy()
 
-        col1, col2 = st.columns(2)
+        # Ensure we have the expected columns
+        has_date = "date" in ts.columns
+        has_hour = "hour" in ts.columns
+        has_case_type = "case_type" in ts.columns
 
-        with col1:
-            st.markdown("**Daily Referral Volume**")
-            trend_chart = alt.Chart(daily_trends).mark_line(point=True).encode(
-                x='date:T',
-                y='count:Q',
-                tooltip=['date', 'count']
-            ).properties(width=600, height=300)
-            st.altair_chart(trend_chart, use_container_width=True)
+        if not has_date:
+            st.warning("Time series has no 'date' column – cannot build volume charts.")
+        else:
+            # Normalise date column
+            ts["date"] = pd.to_datetime(ts["date"])
 
-        with col2:
-            st.markdown("**Hourly Distribution**")
-            hourly_dist = time_series_df.groupby('hour').size().reset_index(name='count')
-            hour_chart = alt.Chart(hourly_dist).mark_bar().encode(
-                x='hour:O',
-                y='count:Q',
-                tooltip=['hour', 'count']
-            ).properties(width=600, height=300)
-            st.altair_chart(hour_chart, use_container_width=True)
+            # ---------- Daily volume ----------
+            daily_trends = (
+                ts.groupby("date", dropna=False)
+                  .size()
+                  .reset_index(name="count")
+                  .sort_values("date")
+            )
 
-        st.markdown("**Case Type Trends Over Time**")
-        case_trends = (
-            time_series_df
-            .groupby(['date', 'case_type'])
-            .size()
-            .reset_index(name='count')
-        )
-        case_chart = alt.Chart(case_trends).mark_line(point=True).encode(
-            x='date:T',
-            y='count:Q',
-            color='case_type:N',
-            tooltip=['date', 'case_type', 'count']
-        ).properties(width=700, height=400)
-        st.altair_chart(case_chart, use_container_width=True)
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.markdown("**Daily Referral Volume**")
+
+                if not daily_trends.empty:
+                    # Use Streamlit native chart to avoid Altair issues here
+                    daily_line = daily_trends.set_index("date")["count"]
+                    st.line_chart(daily_line, height=300)
+                else:
+                    st.info("No daily trend data available.")
+
+            # ---------- Hourly distribution ----------
+            with col2:
+                st.markdown("**Hourly Distribution**")
+                if has_hour:
+                    hourly_dist = (
+                        ts.groupby("hour", dropna=False)
+                          .size()
+                          .reset_index(name="count")
+                          .sort_values("hour")
+                    )
+                    if not hourly_dist.empty:
+                        hour_chart = (
+                            alt.Chart(hourly_dist)
+                               .mark_bar()
+                               .encode(
+                                   x="hour:O",
+                                   y="count:Q",
+                                   tooltip=["hour", "count"],
+                               )
+                               .properties(width="stretch", height=300)
+                        )
+                        st.altair_chart(hour_chart, width="stretch")
+                    else:
+                        st.info("No hourly data available.")
+                else:
+                    st.info("No hour-level data available.")
+
+            # ---------- Case-type trends ----------
+            st.markdown("**Case Type Trends Over Time**")
+            if has_case_type:
+                case_trends = (
+                    ts.groupby(["date", "case_type"], dropna=False)
+                      .size()
+                      .reset_index(name="count")
+                )
+                if not case_trends.empty:
+                    case_trends["date"] = pd.to_datetime(case_trends["date"])
+                    case_chart = (
+                        alt.Chart(case_trends)
+                           .mark_line(point=True)
+                           .encode(
+                               x="date:T",
+                               y="count:Q",
+                               color="case_type:N",
+                               tooltip=["date", "case_type", "count"],
+                           )
+                           .properties(width="stretch", height=400)
+                    )
+                    st.altair_chart(case_chart, width="stretch")
+                else:
+                    st.info("No case-type trend data available.")
+            else:
+                st.info("No case-type metadata available.")
+
 
 # TAB 1 — Facility Performance
 with analytics_tabs[1]:
