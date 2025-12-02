@@ -984,6 +984,68 @@ def cap_badges(list_or_csv):
     for i,cap in enumerate(items[:12]):
         cols[i%len(cols)].markdown(f'<span class="badge">{cap}</span>', unsafe_allow_html=True)
 
+# === TRIAGE SCORE TEXT RENDERER ==================================
+
+def render_guideline_scores_as_text(scores: dict) -> None:
+    """
+    Render NEWS2 / MEOWS / qSOFA / PEWS etc. in simple text form
+    instead of raw JSON.
+    Expected structure:
+      scores = {
+         "NEWS2": {"score": 7, "hits": ["NEWS2 RR ≥25 =3", ...]},
+         "MEOWS": {...},
+         ...
+      }
+    """
+    if not scores:
+        st.write("No guideline scores available for this case.")
+        return
+
+    # Friendly labels for known engines
+    nice_name = {
+        "NEWS2": "NEWS2 (Adult early warning)",
+        "MEOWS": "MEOWS (Maternal score)",
+        "qSOFA": "qSOFA (Sepsis risk)",
+        "PEWS": "PEWS (Paediatric early warning)",
+    }
+
+    for engine, data in scores.items():
+        if not isinstance(data, dict):
+            continue
+
+        score = data.get("score")
+        hits = data.get("hits", [])
+
+        label = nice_name.get(engine, engine)
+
+        if score is not None:
+            st.markdown(f"**{label}: {score} points**")
+        else:
+            st.markdown(f"**{label}:** score not available")
+
+        if hits:
+            st.markdown(
+                "\n".join(f"- {h}" for h in hits)
+            )
+        st.markdown("---")
+
+def has_minimum_triage_data(case: dict) -> bool:
+    """
+    Returns True only if there is enough data to safely run guideline scores.
+    Used to avoid showing a triage colour when the form is still blank.
+    """
+    if not isinstance(case, dict):
+        return False
+
+    # Adjust this list if your required fields differ
+    required_keys = ["age", "rr", "hr", "sbp", "spo2", "temp_c"]
+
+    for k in required_keys:
+        v = case.get(k)
+        if v is None or v == "":
+            return False
+
+    return True
 
 # TEMPORARY DEBUG - add this before the failing render_triage_banner call
 st.sidebar.markdown("### 🐛 AI Debug Info")
@@ -1007,6 +1069,20 @@ def render_triage_banner(hr, rr, sbp, temp, spo2, avpu, complaint, override_appl
         spo2_scale=spo2_scale,
         behavior=behavior
     )
+
+    # ✅ NEW: only proceed if minimum data is present
+    case_for_check = {
+        "age": age,
+        "rr": vitals["rr"],
+        "hr": vitals["hr"],
+        "sbp": vitals["sbp"],
+        "spo2": vitals["spo2"],
+        "temp_c": vitals["temp"],
+    }
+    if not has_minimum_triage_data(case_for_check):
+        st.markdown("### Triage decision")
+        st.info("Enter age and vital signs to calculate a triage decision.")
+        return
 
     triage_mode = st.session_state.get("triage_mode", "rules")
 
@@ -1032,12 +1108,17 @@ def render_triage_banner(hr, rr, sbp, temp, spo2, avpu, complaint, override_appl
 
     # Explain why (guideline-based rationale)
     why = details["reasons"]
-    st.caption("Why (guideline scores): " + (", ".join(why) if why else "All scores within normal thresholds"))
+    st.caption(
+        "Why (guideline scores): "
+        + (", ".join(why) if why else "All scores within normal thresholds")
+    )
 
     # NOTE: AI bits intentionally suppressed – meta['ai_color'] is always None in triage_with_ai()
-    with st.expander("Score details (guideline engines)"):
-        st.write(details)
-
+        with st.expander("Score details (guideline engines)"):
+        # `details` is the rules_details dict from triage_with_ai.
+        # It contains NEWS2 / MEOWS / qSOFA / PEWS entries plus "reasons".
+        render_guideline_scores_as_text(details)
+     
 # === ENHANCED FACILITY MATCHING SYSTEM ===
 def calculate_facility_score(facility, required_caps, distance_km, case_type, triage_color):
     """
