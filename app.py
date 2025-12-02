@@ -1054,23 +1054,28 @@ st.sidebar.write(f"Features count: {len(st.session_state.get('triage_features', 
 
 def render_triage_banner(hr, rr, sbp, temp, spo2, avpu, complaint, override_applied=False):
     vitals = dict(
-        hr=_num(hr), rr=_num(rr), sbp=_num(sbp), temp=_num(temp), spo2=_num(spo2),
-        avpu=(str(avpu).strip().upper() if avpu is not None else "A")
+        hr=_num(hr),
+        rr=_num(rr),
+        sbp=_num(sbp),
+        temp=_num(temp),
+        spo2=_num(spo2),
+        avpu=(str(avpu).strip().upper() if avpu is not None else "A"),
     )
     age = _num(st.session_state.get("patient_age", None))
     o2_device = st.session_state.get("o2_device", "Air")
     spo2_scale = _int(st.session_state.get("spo2_scale", 1), 1)
     behavior = st.session_state.get("pews_behavior", "Normal")
+
     context = dict(
         age=age,
         pregnant=(complaint == "Maternal"),
         infection=(complaint in ["Sepsis", "Other"]),
         o2_device=o2_device,
         spo2_scale=spo2_scale,
-        behavior=behavior
+        behavior=behavior,
     )
 
-    # ✅ NEW: only proceed if minimum data is present
+    # ✅ Only show triage decision when there is enough data
     case_for_check = {
         "age": age,
         "rr": vitals["rr"],
@@ -1086,7 +1091,7 @@ def render_triage_banner(hr, rr, sbp, temp, spo2, avpu, complaint, override_appl
 
     triage_mode = st.session_state.get("triage_mode", "rules")
 
-    # Always guideline-only, AI disabled
+    # Guideline rules only – AI disabled
     final_colour_ai, meta = triage_with_ai(vitals, context, complaint, triage_mode)
     base_colour = meta["rules_color"]
     details = meta["rules_details"]
@@ -1106,18 +1111,17 @@ def render_triage_banner(hr, rr, sbp, temp, spo2, avpu, complaint, override_appl
         st.warning(f"**Override applied**: {override_reason}")
         st.info(f"Original guideline triage: **{base_colour}**")
 
-    # Explain why (guideline-based rationale)
-    why = details["reasons"]
+    # Short “why” summary
+    why = details.get("reasons", [])
     st.caption(
         "Why (guideline scores): "
         + (", ".join(why) if why else "All scores within normal thresholds")
     )
 
-    # NOTE: AI bits intentionally suppressed – meta['ai_color'] is always None in triage_with_ai()
-        with st.expander("Score details (guideline engines)"):
-        # `details` is the rules_details dict from triage_with_ai.
-        # It contains NEWS2 / MEOWS / qSOFA / PEWS entries plus "reasons".
-        render_guideline_scores_as_text(details)
+    # Friendly, text-only scores instead of raw dict
+    scores = details.get("scores", details)  # handle both shapes safely
+    with st.expander("Score details (guideline engines)"):
+        render_guideline_scores_as_text(scores)
      
 # === ENHANCED FACILITY MATCHING SYSTEM ===
 def calculate_facility_score(facility, required_caps, distance_km, case_type, triage_color):
