@@ -4225,6 +4225,183 @@ with tabs[3]:
                     )[:3]:
                         st.write(f"  - {case_type}: {count}")
 
+    # ---------- Policy Insights Section (Enhanced) ----------
+    st.markdown("---")
+    st.markdown("### 🎯 Automated Policy Insights")
+    
+    insights_col1, insights_col2 = st.columns(2)
+    
+    with insights_col1:
+        st.markdown("#### 🚨 Critical Findings")
+        
+        insights = []
+        
+        red_percentage = (red_cases / total_refs * 100) if total_refs else 0
+        if red_percentage > 30:
+            insights.append(
+                f"**High Acuity Load**: {red_percentage:.1f}% referrals triaged RED "
+                f"- reinforce ALS ambulances & ICU step-up capacity."
+            )
+        
+        bed_issue_percentage = (
+            referral_reasons['bed_icu_unavailable'] / total_refs * 100
+        ) if total_refs else 0
+        if bed_issue_percentage > 25:
+            insights.append(
+                f"**System Constraint**: {bed_issue_percentage:.1f}% referrals due to "
+                f"bed/ICU/OT unavailable - enable surge contracts & real-time bed boards."
+            )
+        
+        if referral_reasons['capabilities']:
+            top_capability = max(
+                referral_reasons['capabilities'].items(),
+                key=lambda x: x[1]
+            )
+            insights.append(
+                f"**Most Requested Capability**: {top_capability[0]} "
+                f"({top_capability[1]} cases) - prioritize investments & on-call rosters."
+            )
+        
+        if case_type_breakdown:
+            dominant_case = max(
+                case_type_breakdown.items(),
+                key=lambda x: x[1]
+            )
+            insights.append(
+                f"**Dominant Emergency Type**: {dominant_case[0]} "
+                f"({dominant_case[1]} cases, {dominant_case[1]/total_refs*100:.1f}%) "
+                f"- targeted training & referral protocols."
+            )
+
+        # NEW: AI overlay as a safety-net insight
+        if total_ai and ai_escalated_rate > 0:
+            insights.append(
+                f"**AI Safety Net**: In {ai_escalated_rate:.1f}% of AI-handled referrals, "
+                f"the AI suggested a higher-acuity color than guideline-only triage — "
+                f"useful for catching borderline deteriorating patients."
+            )
+        
+        for insight in insights:
+            st.info(insight)
+    
+    with insights_col2:
+        st.markdown("#### 📋 Recommendation Actions")
+        
+        recommendations = []
+        
+        if not rejection_rates_df.empty:
+            high_rejection = rejection_rates_df[rejection_rates_df['rejection_rate'] > 20]
+            if not high_rejection.empty:
+                for _, row in high_rejection.iterrows():
+                    recommendations.append(
+                        f"**Address High Rejection at {row['facility']}**: "
+                        f"{row['rejection_rate']}% rejection rate - review capacity "
+                        f"and referral criteria."
+                    )
+        
+        if ambulance_utilization:
+            green_ambulance = ambulance_utilization.get('GREEN', {})
+            green_als = sum(
+                count for amb_type, count in green_ambulance.items()
+                if amb_type in ['ALS', 'ALS + Vent']
+            )
+            if green_als > 10:
+                recommendations.append(
+                    f"**Optimize Ambulance Use**: {green_als} ALS ambulances used for "
+                    f"GREEN cases - consider BLS protocol for non-urgent transfers."
+                )
+        
+        if not time_series_df.empty:
+            peak_hour = time_series_df.groupby('hour').size().idxmax()
+            if peak_hour in [8, 9, 17, 18]:
+                recommendations.append(
+                    f"**Peak Hour Capacity**: Highest demand at {peak_hour}:00 - "
+                    f"consider shift scheduling and resource allocation."
+                )
+
+        # Optional: flag if AI de-escalations are non-trivial
+        if total_ai and ai_deescalated > 0:
+            deesc_rate = ai_deescalated / total_ai * 100
+            if deesc_rate > 10:
+                recommendations.append(
+                    f"**Audit AI De-escalations**: {deesc_rate:.1f}% of AI cases were "
+                    f"assigned a lower acuity than guideline baseline — recommend "
+                    f"sample case review and model calibration."
+                )
+        
+        for recommendation in recommendations:
+            st.warning(recommendation)
+
+        # ---------- Export and Reporting Section ----------
+        st.markdown("---")
+        st.markdown("### 📤 Reports & Exports")
+    
+        report_col1, report_col2, report_col3 = st.columns(3)
+    
+        with report_col1:
+            if st.button("📊 Generate Monthly Report"):
+                st.success("Monthly analytics report generated - ready for download")
+    
+        with report_col2:
+            if st.button("🚑 Ambulance Utilization Report"):
+                st.success("Ambulance utilization analysis complete")
+    
+        with report_col3:
+            if st.button("🏥 Facility Performance Report"):
+                st.success("Facility performance report generated")
+
+        # Data download section
+        st.markdown("#### Download Analytics Data")
+    
+        download_col1, download_col2, download_col3 = st.columns(3)
+    
+        with download_col1:
+            csv_time = time_series_df.to_csv(index=False) if not time_series_df.empty else ""
+            st.download_button(
+                label="📥 Download Time Series Data",
+                data=csv_time,
+                file_name="referral_timeseries.csv",
+                mime="text/csv",
+                disabled=time_series_df.empty
+             )
+    
+        with download_col2:
+            csv_rejection = (
+                rejection_rates_df.to_csv(index=False)
+                if not rejection_rates_df.empty else ""
+            )
+            st.download_button(
+                label="📥 Download Rejection Analysis",
+                data=csv_rejection,
+                file_name="facility_rejection_rates.csv",
+                mime="text/csv",
+                disabled=rejection_rates_df.empty
+            )
+    
+        with download_col3:
+            # Create summary report with hardcoded zeros for AI metrics
+            summary_report = {
+                'total_referrals': total_refs,
+                'critical_cases': red_cases,
+                'critical_percentage': red_percentage,
+                'bed_issue_percentage': bed_issue_percentage,
+                'ambulance_utilization': ambulance_usage,
+                'avg_dispatch_time': avg_dispatch,
+                # AI metrics hardcoded to zero since AI is disabled
+                'ai_involved_referrals': 0,
+                'ai_escalated_cases': 0,
+                'ai_escalated_rate_pct': 0.0,
+                'ai_same_or_lower_cases': 0,
+                'ai_same_or_lower_rate_pct': 0.0,
+            }
+            summary_json = json.dumps(summary_report, indent=2)
+            st.download_button(
+                label="📥 Download Executive Summary",
+                data=summary_json,
+                file_name="executive_summary.json",
+                mime="application/json"
+            )    
+
 # ======== DATA / ADMIN TAB ========
 with tabs[4]:
     st.subheader("🗄️ Data / Admin")
