@@ -2487,132 +2487,201 @@ st.session_state.facilities = [normalize_facility(x) for x in st.session_state.f
 # Auto-seed on first run (ensures ≥100)
 if len(st.session_state.referrals) < 100:
     seed_referrals(n=500, append=False)
-def save_citizen_referral(
-    p_name,
-    p_age,
-    p_sex,
-    p_lat,
-    p_lon,
-    complaint,
-    hr,
-    rr,
-    sbp,
-    temp,
-    spo2,
-    avpu,
-    resus_done,
-    citizen_reason_options,
-    citizen_reason_other,
-    need_caps,
-    primary,
-    alternates,
-    priority,
-    amb_type,
-    consent
+
+# -------------------------------
+# Citizen-facing simple mapping logic
+# -------------------------------
+
+CITIZEN_MAIN_SYMPTOMS = [
+    "Sudden chest pain or pressure",
+    "Road accident / fall / serious injury",
+    "Pregnant woman with bleeding, severe pain, or fits",
+    "Child very sick (not feeding / very weak / breathing fast)",
+    "Face drooping / slurred speech / sudden weakness",
+    "Severe breathing difficulty / severe asthma",
+    "Very high fever and looks very unwell",
+    "Poisoning / suspected overdose / snake bite",
+    "Something else"
+]
+
+
+def citizen_map_case(main_symptom: str, age_years: float, flags: dict):
+    """
+    Map simple citizen inputs to:
+    - internal complaint (Maternal / Trauma / Stroke / Cardiac / Sepsis / Other)
+    - triage_color (RED / YELLOW / GREEN)
+    - required capability keys (ICU, CT, CathLab, etc.) for internal matching
+    """
+    s = (main_symptom or "").lower()
+    complaint = "Other"
+    caps = set()
+
+    # --- Rough complaint mapping ---
+    if "chest" in s:
+        complaint = "Cardiac"
+        caps.update(["ICU", "CathLab"])
+    elif "accident" in s or "fall" in s or "injury" in s or "road" in s:
+        complaint = "Trauma"
+        caps.update(["ICU", "OR", "CT"])
+    elif "pregnant" in s:
+        complaint = "Maternal"
+        caps.update(["ICU", "OBGYN_OT", "BloodBank"])
+    elif "child very sick" in s or ("child" in s and age_years is not None and age_years < 18):
+        complaint = "Other"
+        caps.update(["ICU"])
+    elif "face drooping" in s or "slurred speech" in s or "speech" in s or "sudden weakness" in s:
+        complaint = "Stroke"
+        caps.update(["CT", "ICU", "Thrombolysis"])
+    elif "breathing" in s or "asthma" in s:
+        complaint = "Sepsis"
+        caps.update(["ICU", "Ventilator"])
+    elif "fever" in s:
+        complaint = "Sepsis"
+        caps.update(["ICU"])
+    elif "poison" in s or "overdose" in s or "snake" in s:
+        complaint = "Sepsis"
+        caps.update(["ICU"])
+    else:
+        complaint = "Other"
+
+    # --- Triage colour from danger signs ---
+    red_flag = any([
+        flags.get("unconscious"),
+        flags.get("breathing_bad"),
+        flags.get("bleeding"),
+        flags.get("fits"),
+        flags.get("stroke_signs"),
+        flags.get("chest_pain_long"),
+    ])
+
+    yellow_flag = any([
+        flags.get("pregnant_bleeding"),
+        flags.get("child_not_feeding"),
+        flags.get("very_severe_pain"),
+    ])
+
+    if red_flag:
+        triage_color = "RED"
+    elif yellow_flag:
+        triage_color = "YELLOW"
+    else:
+        triage_color = "GREEN"
+
+    # Ensure at least ICU for RED if nothing else was mapped
+    if triage_color == "RED" and not caps:
+        caps.add("ICU")
+
+    return complaint, triage_color, sorted(caps)
+
+
+def save_citizen_referral_simple(
+    p_name: str,
+    p_age: float,
+    p_sex: str,
+    p_phone: str,
+    p_area: str,
+    p_landmark: str,
+    p_lat: float,
+    p_lon: float,
+    main_symptom: str,
+    other_symptom: str,
+    notes: str,
+    complaint: str,
+    triage_color: str,
+    need_caps: list,
+    flags: dict,
 ):
     """
-    Create a referral entry from the Patient/Citizen tab.
-    Uses the SAME schema as the regular _save_referral() so analytics still work.
+    Create a very simple citizen-initiated referral.
+
+    Shape is compatible with existing analytics:
+    - triage.decision.color
+    - reasons.requiredCapabilities
+    - status PREALERT
     """
-    # Basic validation
-    if not need_caps:
-        st.error("Please select at least one required capability for this referral.")
+    if "referrals" not in st.session_state:
+        st.session_state.referrals = []
+
+    if not main_symptom:
+        st.error("Please select what is happening.")
         return False
 
-    if not primary:
-        st.error("Please select a primary destination (run matching and choose one facility).")
+    if not (p_phone or p_area or p_landmark):
+        st.error("Please add at least a phone number or location / landmark.")
         return False
 
-    # Vitals + context for rules-based triage
-    vit = dict(hr=hr, rr=rr, sbp=sbp, temp=temp, spo2=spo2, avpu=avpu, complaint=complaint)
-
-    age = int(p_age) if p_age is not None else 0
-    context = dict(
-        age=age,
-        pregnant=(complaint == "Maternal"),
-        infection=(complaint in ["Sepsis", "Other"]),
-        o2_device="Air",
-        spo2_scale=1,
-        behavior="Normal",
-    )
-
-    # Use rules-based triage only (no AI) to keep this robust for citizens
     try:
-        base_colour, score_details = triage_decision(vit, context)
-    except Exception as e:
-        st.error(f"Triage calculation failed: {str(e)}")
-        return False
+        age_int = int(p_age) if p_age is not None else 0
+    except Exception:
+        age_int = 0
 
+    # Internal triage decision object – aligned with other flows
     triage_decision_data = {
-        "colour": base_colour,
-        "mode": "rules_only",
-        "source": "rules_only",
-        "score_details": score_details,
+        "color": triage_color,
+        "overridden": False,
+        "base_color": triage_color,
+        "triage_mode": "citizen_simple",
+        "score_details": {},  # no guideline scores exposed from citizen UI
     }
 
-    # Build a minimal interventions list – for now we only store basic resus items
-    all_interventions = []
-    for item in resus_done:
-        all_interventions.append(
-            {
-                "name": item,
-                "type": "resuscitation",
-                "timestamp": now_ts(),
-                "performed_by": "citizen",
-                "status": "completed",
-            }
-        )
-
-    # Reasons payload – keep backward compatible keys
+    # Reasons payload – keeps your existing keys
     reasons_payload = dict(
-        severity=True,
+        severity=(triage_color == "RED"),
         bedOrICUUnavailable=False,
         specialTest=False,
         requiredCapabilities=need_caps,
-        citizen_reason_options=citizen_reason_options,
-        citizen_reason_other=citizen_reason_other,
+        citizen_reason_options=[main_symptom],
+        citizen_reason_other=other_symptom,
+        red_flags=flags,
     )
 
-    # Referrer metadata (citizen-facing)
-    referrer = dict(
-        name=p_name or "Self / Family",
-        facility="Community / Home",
-        role="Citizen",
-        cadre="Citizen",
-    )
+    # Clinical summary – whatever citizen typed
+    summary_text = notes or other_symptom or main_symptom
 
-    # Build referral object in the same format used elsewhere
+    ref_id = "C" + str(int(now_ts()))[-6:]
+
     ref = dict(
-        id="C" + str(int(time.time()))[-6:],  # Prefix with C for "citizen"
+        id=ref_id,
         patient=dict(
             name=p_name,
-            age=int(p_age) if p_age is not None else 0,
+            age=age_int,
             sex=p_sex,
+            phone=p_phone,
             id="CITIZEN",
-            location=dict(lat=float(p_lat), lon=float(p_lon)),
+            location=dict(
+                lat=float(p_lat) if p_lat is not None else None,
+                lon=float(p_lon) if p_lon is not None else None,
+                area=p_area,
+                landmark=p_landmark,
+            ),
         ),
-        referrer=referrer,
-        provisionalDx=None,  # Citizen doesn't provide ICD diagnosis
-        interventions=all_interventions,
-        resuscitation=resus_done,
+        referrer=dict(
+            name="Self / Family",
+            facility="Community / Home",
+            role="Citizen",
+            cadre="Citizen",
+        ),
+        provisionalDx=None,
+        interventions=[],
+        resuscitation=[],
         triage=dict(
             complaint=complaint,
             decision=triage_decision_data,
-            hr=hr,
-            sbp=sbp,
-            rr=rr,
-            temp=temp,
-            spo2=spo2,
-            avpu=avpu,
+            hr=None,
+            sbp=None,
+            rr=None,
+            temp=None,
+            spo2=None,
+            avpu=None,
         ),
-        clinical=dict(summary="Citizen-initiated case"),
+        clinical=dict(summary=summary_text),
         reasons=reasons_payload,
-        dest=primary,
-        alternates=alternates,
+        dest="To be allocated by coordinator",
+        alternates=[],
         transport=dict(
-            priority=priority,
-            ambulance=amb_type,
-            consent=bool(consent),
+            priority="Urgent" if triage_color == "RED" else "Routine",
+            ambulance="Unknown",
+            consent=False,
         ),
         times=dict(
             first_contact_ts=now_ts(),
@@ -2620,12 +2689,23 @@ def save_citizen_referral(
         ),
         status="PREALERT",
         ambulance_available=None,
-        audit_log=[],
+        audit_log=[
+            {
+                "timestamp": datetime.utcnow().isoformat(),
+                "action": "CITIZEN_SUBMISSION",
+                "user": "citizen_ui",
+                "details": {
+                    "triage_color": triage_color,
+                    "complaint": complaint,
+                    "source": "citizen_ui_v1",
+                },
+            }
+        ],
     )
 
-    # Insert at top of list (like regular referrals)
     st.session_state.referrals.insert(0, ref)
     return True
+
 
 # === MAIN APP UI ===
 st.title("AHECN – Streamlit MVP v1.9 (Enhanced Analytics Dashboard)")
@@ -5144,325 +5224,215 @@ with tabs[5]:
         except Exception as e:
             st.write("Quick match not available: ", str(e))
 
-# ======== Patient / Citizen Tab ========
+# ======== Patient / Citizen Tab (Simple, Non-technical) ========
 with tabs[6]:
-    st.subheader("Patient / Citizen Emergency Companion (Demo)")
+    st.subheader("Patient / Citizen – Simple Emergency Help Request")
 
     st.info(
-        "⚠️ This demo is for testing the patient-facing flow. "
-        "In a production deployment, always show local emergency numbers (e.g. 108) prominently."
+        "Use this section when **you or a family member** needs help. "
+        "You do not need any medical knowledge – just answer in simple words."
     )
 
-    # --- Basic patient + location info ---
-    c1, c2 = st.columns(2)
-    with c1:
-        p_name_cit = st.text_input("Patient name", value="Unknown", key="cit_p_name")
-        p_age_cit = st.number_input("Age (years)", min_value=0, max_value=120, value=35, key="cit_p_age")
-        p_sex_cit = st.selectbox("Sex", ["Male", "Female", "Other"], key="cit_p_sex")
-    with c2:
-        p_lat_cit = st.number_input("Location latitude", value=25.58, format="%.6f", key="cit_p_lat")
-        p_lon_cit = st.number_input("Location longitude", value=91.89, format="%.6f", key="cit_p_lon")
-        citizen_phone = st.text_input("Contact number (optional)", "", key="cit_phone")
+    # ---------- STEP 1: Who needs help & where ----------
+    st.markdown("### Step 1 – Who needs help and where are you?")
 
-    st.markdown("### Emergency type & basic condition")
-
-    col_sym, col_v1, col_v2 = st.columns(3)
-    with col_sym:
-        complaint_cit = st.selectbox(
-            "What type of emergency is this?",
-            ["Maternal", "Trauma", "Stroke", "Cardiac", "Breathing difficulty", "Sepsis", "Other"],
-            index=1,
-            key="cit_complaint",
+    col_p1, col_p2 = st.columns(2)
+    with col_p1:
+        cit_name = st.text_input("Patient's name", key="cit_name")
+        cit_age = st.number_input(
+            "Approximate age (years)",
+            min_value=0,
+            max_value=120,
+            value=40,
+            key="cit_age",
+        )
+        cit_sex = st.selectbox(
+            "Gender",
+            ["Male", "Female", "Other"],
+            key="cit_sex",
         )
 
+    with col_p2:
+        cit_phone = st.text_input(
+            "Your phone number (for call-back)",
+            key="cit_phone",
+            help="A working mobile number helps the team call you back quickly.",
+        )
+        cit_area = st.text_input(
+            "Village / locality",
+            key="cit_area",
+            help="Example: 'Mawlai Nongkwar', 'Moodymmai', etc.",
+        )
+
+    cit_landmark = st.text_input(
+        "Nearest landmark (school, church, shop, etc.)",
+        key="cit_landmark",
+        help="Example: 'Near PHC gate', 'Opposite church', 'Near main market'.",
+    )
+
+    col_loc1, col_loc2 = st.columns(2)
+    with col_loc1:
+        cit_lat = st.number_input(
+            "Latitude (optional)",
+            value=25.580000,
+            format="%.6f",
+            key="cit_lat",
+            help="Only if you know it or can share from Google Maps.",
+        )
+    with col_loc2:
+        cit_lon = st.number_input(
+            "Longitude (optional)",
+            value=91.890000,
+            format="%.6f",
+            key="cit_lon",
+            help="Only if you know it or can share from Google Maps.",
+        )
+
+    st.markdown("---")
+
+    # ---------- STEP 2: What is happening? ----------
+    st.markdown("### Step 2 – What is happening?")
+
+    main_symptom = st.radio(
+        "Choose the option that is closest to the problem:",
+        CITIZEN_MAIN_SYMPTOMS,
+        index=0,
+        key="cit_main_symptom",
+    )
+
+    cit_other_symptom = ""
+    if main_symptom == "Something else":
+        cit_other_symptom = st.text_input(
+            "Describe in your own words",
+            key="cit_other_symptom",
+            placeholder="Example: 'Very high sugar and cannot talk properly', 'Severe stomach pain since morning', etc.",
+        )
+
+    st.markdown("---")
+
+    # ---------- STEP 3: Very serious danger signs ----------
+    st.markdown("### Step 3 – Tick if any of these are true (danger signs)")
+
+    col_rf1, col_rf2 = st.columns(2)
+    with col_rf1:
+        rf_unconscious = st.checkbox(
+            "Not waking up / very difficult to wake",
+            key="cit_rf_unconscious",
+        )
+        rf_breathing = st.checkbox(
+            "Very difficult or very fast breathing",
+            key="cit_rf_breathing",
+        )
+        rf_bleeding = st.checkbox(
+            "Severe bleeding that is not stopping",
+            key="cit_rf_bleeding",
+        )
+        rf_fits = st.checkbox(
+            "Fits / convulsions (shaking of body)",
+            key="cit_rf_fits",
+        )
+
+    with col_rf2:
+        rf_stroke = st.checkbox(
+            "Face drooping / slurred speech / sudden weakness of arm or leg",
+            key="cit_rf_stroke",
+        )
+        rf_chest = st.checkbox(
+            "Severe chest pain or pressure for more than 20 minutes",
+            key="cit_rf_chest",
+        )
+        rf_preg_bleeding = st.checkbox(
+            "Pregnant woman with heavy bleeding, fits or very severe pain",
+            key="cit_rf_preg",
+        )
+        rf_child_not_feeding = st.checkbox(
+            "Small child not feeding / not drinking / very weak",
+            key="cit_rf_child",
+        )
+
+    # Moderate concern flag (used for YELLOW)
+    rf_very_severe_pain = st.checkbox(
+        "Very severe pain (any part of body)",
+        key="cit_rf_pain",
+    )
+
+    # Build flags dict for mapping
+    citizen_flags = dict(
+        unconscious=rf_unconscious,
+        breathing_bad=rf_breathing,
+        bleeding=rf_bleeding,
+        fits=rf_fits,
+        stroke_signs=rf_stroke,
+        chest_pain_long=rf_chest,
+        pregnant_bleeding=rf_preg_bleeding,
+        child_not_feeding=rf_child_not_feeding,
+        very_severe_pain=rf_very_severe_pain,
+    )
+
+    st.markdown("---")
+
+    # ---------- STEP 4: Anything else you want to share ----------
+    st.markdown("### Step 4 – Anything else we should know? (optional)")
+
+    cit_notes = st.text_area(
+        "Write in your own words (optional)",
+        key="cit_notes",
+        height=80,
+        placeholder="Example: 'Already given 2 tablets of paracetamol', 'Happened 10 minutes ago', etc.",
+    )
+
+    # ---------- Internal mapping preview ----------
+    complaint_cit, triage_color_cit, need_caps_cit = citizen_map_case(
+        main_symptom=main_symptom,
+        age_years=cit_age,
+        flags=citizen_flags,
+    )
+
+    st.markdown("### How the coordination team will see this (internal triage)")
+
+    triage_pill(triage_color_cit)
+    st.caption(
+        f"This request will be treated internally as a **{complaint_cit}**-type emergency."
+    )
+    if need_caps_cit:
         st.caption(
-            "This is not a diagnosis. It just helps us choose the right kind of hospital "
-            "(e.g., trauma, cardiac, stroke, maternal, paediatric)."
+            "Internal required capabilities: "
+            + ", ".join(need_caps_cit)
         )
 
-    # Simplified vitals – citizens may not know exact numbers; defaults are safe placeholders
-    with col_v1:
-        hr_cit = st.number_input("Heart rate (if known)", 0, 220, 90, key="cit_hr")
-        sbp_cit = st.number_input("Blood pressure (SBP, if known)", 0, 260, 110, key="cit_sbp")
-        rr_cit = st.number_input("Breathing rate (if known)", 0, 80, 20, key="cit_rr")
-    with col_v2:
-        temp_cit = st.number_input("Temperature °C (if known)", 30.0, 43.0, 37.0, step=0.1, key="cit_temp")
-        spo2_cit = st.number_input("SpO₂ % (if known)", 50, 100, 96, key="cit_spo2")
-        avpu_cit = st.selectbox("Alertness (AVPU)", ["A", "V", "P", "U"], index=0, key="cit_avpu")
+    st.markdown("---")
 
-    # --- Resuscitation / stabilisation checklist (simple) ---
-    st.markdown("### Resuscitation / Stabilization already done (if any)")
-    RESUS_LIST = [
-        "Placed in recovery position",
-        "Stopped bleeding (pressure / bandage)",
-        "Gave basic first aid",
-        "Started CPR / chest compressions",
-        "None / not sure",
-    ]
-    resus_cols = st.columns(len(RESUS_LIST))
-    cit_resus_done = []
-    for i, item in enumerate(RESUS_LIST):
-        if resus_cols[i].checkbox(item, key=f"cit_resus_{i}"):
-            cit_resus_done.append(item)
-
-    # --- Reason for referral (citizen-friendly, uses your global REFERRAL_REASON_OPTIONS) ---
-    st.markdown("### Reason for Referral (optional but helpful)")
-    st.caption(
-        "If you know why the local hospital cannot manage the case, select one or more reasons. "
-        "If not sure, you can skip this."
-    )
-
-    citizen_reason_options = st.multiselect(
-        "Reason(s) for referral (if known)",
-        options=REFERRAL_REASON_OPTIONS,
-        default=[],
-        key="cit_reason_options",
-    )
-
-    citizen_reason_other = ""
-    if any(opt.endswith("— Other / not listed") for opt in citizen_reason_options):
-        citizen_reason_other = st.text_area(
-            "If other, please describe in simple words",
-            "",
-            key="cit_reason_other",
-        )
-
-    # --- Capabilities needed (departments / ICUs / diagnostics / procedures) ---
-    st.markdown("### Capabilities needed at destination hospital")
-    st.caption(
-        "Select what the receiving hospital MUST have. "
-        "These will drive how the system prioritises hospitals in the network."
-    )
-
-    # Specialist / Department
-    DEPT_LIST_CIT = [
-        "Emergency Medicine / ED review",
-        "Critical Care / ICU",
-        "Anaesthesia",
-        "General Surgery",
-        "Orthopaedics",
-        "Neurology / Neurosurgery",
-        "Cardiology",
-        "Obstetrics & Gynaecology",
-        "Paediatrics",
-        "Neonatology / NICU",
-        "ENT",
-        "Ophthalmology",
-        "Psychiatry",
-        "Pulmonology",
-        "Gastroenterology",
-        "Nephrology",
-        "Oncology (incl. Head & Neck Oncology)",
-        "Trauma / Polytrauma",
-    ]
-
-    ICU_LIST_CIT = [
-        "ICU",
-        "HDU",
-        "NICU",
-        "PICU",
-        "SICU",
-        "MICU",
-        "Neuro ICU",
-        "CCU",
-        "Burn ICU",
-        "Isolation bed",
-    ]
-
-    DIAG_LIST_CIT = [
-        "CT scan",
-        "MRI",
-        "USG / Ultrasound",
-        "X-ray",
-        "ECG",
-        "2D Echo",
-        "ABG",
-        "Advanced lab tests",
-    ]
-
-    PROC_LIST_CIT = [
-        "OT / Surgery (OR)",
-        "Neuro OT",
-        "Emergency C-section / OBGYN OT",
-        "Ventilator",
-        "Blood bank / blood products",
-        "Cath Lab / PCI",
-        "Dialysis / RRT",
-        "Thrombolysis (Stroke)",
-    ]
-
-    col_dept, col_icu = st.columns(2)
-    col_diag, col_proc = st.columns(2)
-    with col_dept:
-        dept_needed_cit = st.multiselect("Specialist / Department", DEPT_LIST_CIT, key="cit_need_depts")
-    with col_icu:
-        icu_needed_cit = st.multiselect("ICU / Critical-care", ICU_LIST_CIT, key="cit_need_icus")
-    with col_diag:
-        diag_needed_cit = st.multiselect(
-            "Diagnostics / Imaging / Equipment", DIAG_LIST_CIT, key="cit_need_diags"
-        )
-    with col_proc:
-        proc_needed_cit = st.multiselect(
-            "Procedures / Interventions / Resources", PROC_LIST_CIT, key="cit_need_procs"
-        )
-
-    # Map selections -> capability keys used by your existing facility matching
-    DEPT_TO_CAPS_CIT = {
-        "Cardiology": ["Cardiology"],
-        "Paediatrics": ["Paediatrics"],
-        "Obstetrics & Gynaecology": ["OBGYN"],
-        "Orthopaedics": ["Orthopaedics"],
-        "General Surgery": ["GeneralSurgery"],
-        "Neurology / Neurosurgery": ["Neurosurgery"],
-        "Neonatology / NICU": ["NICU"],
-        "Critical Care / ICU": ["ICU"],
-    }
-    ICU_TO_CAPS_CIT = {
-        "ICU": ["ICU"],
-        "HDU": ["ICU"],
-        "SICU": ["ICU"],
-        "MICU": ["ICU"],
-        "CCU": ["ICU"],
-        "Burn ICU": ["ICU"],
-        "NICU": ["NICU"],
-        "PICU": ["ICU", "Paediatrics"],
-        "Neuro ICU": ["ICU", "Neurosurgery"],
-        "Isolation bed": [],
-    }
-    DIAG_TO_CAPS_CIT = {
-        "CT scan": ["CT"],
-        "MRI": ["MRI"],
-        "USG / Ultrasound": [],
-        "X-ray": [],
-        "ECG": [],
-        "2D Echo": [],
-        "ABG": [],
-        "Advanced lab tests": [],
-    }
-    PROC_TO_CAPS_CIT = {
-        "OT / Surgery (OR)": ["OR"],
-        "Neuro OT": ["OR", "Neurosurgery"],
-        "Emergency C-section / OBGYN OT": ["OR", "OBGYN"],
-        "Ventilator": ["Ventilator"],
-        "Blood bank / blood products": ["BloodBank"],
-        "Cath Lab / PCI": ["CathLab"],
-        "Dialysis / RRT": ["Dialysis"],
-        "Thrombolysis (Stroke)": ["Thrombolysis"],
-    }
-
-    cap_keys_cit = set()
-    for d in dept_needed_cit:
-        cap_keys_cit.update(DEPT_TO_CAPS_CIT.get(d, []))
-    for i_name in icu_needed_cit:
-        cap_keys_cit.update(ICU_TO_CAPS_CIT.get(i_name, []))
-    for d in diag_needed_cit:
-        cap_keys_cit.update(DIAG_TO_CAPS_CIT.get(d, []))
-    for p in proc_needed_cit:
-        cap_keys_cit.update(PROC_TO_CAPS_CIT.get(p, []))
-
-    need_caps_cit = sorted(list(cap_keys_cit))
-
-    # Store for later analytics/debug
-    st.session_state["citizen_need_caps_verbose"] = dict(
-        departments=dept_needed_cit,
-        icu=icu_needed_cit,
-        diagnostics=diag_needed_cit,
-        procedures=proc_needed_cit,
-    )
-
-    st.markdown("### 🎯 Citizen Facility Matching (using same engine)")
-
-    # Re-use your free-routing configuration UI
-    current_provider_cit, enable_traffic_cit = show_free_routing_configuration()
-
-    origin_coords_cit = (p_lat_cit, p_lon_cit)
-
-    if st.button("Find best matched facilities (Citizen)", type="primary", key="cit_find_fac"):
-        if not need_caps_cit:
-            st.error("Please select at least one capability (department/ICU/diagnostics/procedure).")
-        else:
-            ranked_facilities_cit = rank_facilities_with_free_routing(
-                origin_coords=origin_coords_cit,
-                required_caps=need_caps_cit,
-                case_type=complaint_cit,
-                triage_color="Unknown",
-                top_k=5,
-                provider=current_provider_cit,
-            )
-            st.session_state["citizen_ranked_facilities"] = ranked_facilities_cit
-
-            if not ranked_facilities_cit:
-                st.warning("No suitable facilities found. Try changing capabilities or check your location.")
-            else:
-                st.success(f"Found {len(ranked_facilities_cit)} matched facilities for this case.")
-                for i, fac in enumerate(ranked_facilities_cit, 1):
-                    st.write(
-                        f"**#{i} {fac['name']}** — Score: {fac['score']:.1f}, "
-                        f"ETA: {fac.get('eta_min', 'NA')} min, Distance: {fac.get('km', 'NA')} km"
-                    )
-
-    ranked_facilities_cit = st.session_state.get("citizen_ranked_facilities", [])
-    primary_name_cit = None
-    alternate_names_cit = []
-
-    if ranked_facilities_cit:
-        st.markdown("#### Select primary and optional alternate facilities")
-        choices = [fac["name"] for fac in ranked_facilities_cit]
-        primary_name_cit = st.selectbox("Primary facility", choices, key="cit_primary")
-        alternate_names_cit = st.multiselect(
-            "Alternate facilities (optional)",
-            [c for c in choices if c != primary_name_cit],
-            key="cit_alternates",
-        )
-
-    st.markdown("### Final details & send to network")
-
-    cA, cB, cC = st.columns(3)
-    with cA:
-        priority_cit = st.selectbox(
-            "Transport priority (if ambulance is used)",
-            ["Routine", "Urgent", "STAT"],
-            index=1,
-            key="cit_priority",
-        )
-    with cB:
-        amb_type_cit = st.selectbox(
-            "Ambulance type (if used)",
-            ["BLS", "ALS", "ALS + Vent", "Neonatal", "Other"],
-            index=0,
-            key="cit_amb_type",
-        )
-    with cC:
-        consent_cit = st.checkbox(
-            "I consent to sharing case details with hospitals/ambulance for emergency care",
-            value=True,
-            key="cit_consent",
-        )
-
-    if st.button("Create citizen referral & send to network", type="primary", key="cit_create_referral"):
-        ok = save_citizen_referral(
-            p_name=p_name_cit,
-            p_age=p_age_cit,
-            p_sex=p_sex_cit,
-            p_lat=p_lat_cit,
-            p_lon=p_lon_cit,
+    # ---------- Submit button ----------
+    if st.button(
+        "Submit emergency help request",
+        type="primary",
+        key="cit_submit_btn",
+    ):
+        ok = save_citizen_referral_simple(
+            p_name=cit_name,
+            p_age=cit_age,
+            p_sex=cit_sex,
+            p_phone=cit_phone,
+            p_area=cit_area,
+            p_landmark=cit_landmark,
+            p_lat=cit_lat,
+            p_lon=cit_lon,
+            main_symptom=main_symptom,
+            other_symptom=cit_other_symptom,
+            notes=cit_notes,
             complaint=complaint_cit,
-            hr=hr_cit,
-            rr=rr_cit,
-            sbp=sbp_cit,
-            temp=temp_cit,
-            spo2=spo2_cit,
-            avpu=avpu_cit,
-            resus_done=cit_resus_done,
-            citizen_reason_options=citizen_reason_options,
-            citizen_reason_other=citizen_reason_other,
+            triage_color=triage_color_cit,
             need_caps=need_caps_cit,
-            primary=primary_name_cit,
-            alternates=alternate_names_cit,
-            priority=priority_cit,
-            amb_type=amb_type_cit,
-            consent=consent_cit,
+            flags=citizen_flags,
         )
+
         if ok:
-            st.success("✅ Citizen referral created and added to the network inbox.")
-            st.info("You can now see this case in the Referrer and Receiving Hospital tabs.")
+            st.success(
+                "Your request has been recorded and will be visible to the emergency coordination team."
+            )
+            st.info(
+                "Please keep your phone nearby. If the situation worsens, "
+                "call your local emergency number / 108 immediately."
+            )
+        else:
+            st.error("Could not save your request. Please check the details and try again.")
