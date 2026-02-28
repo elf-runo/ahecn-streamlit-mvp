@@ -1,61 +1,142 @@
-bundle,icd10,label,default_caps,age_min,age_max
-Maternal,O72.0,Third-stage haemorrhage,ICU;BloodBank;OBGYN_OT;OR;Ventilator,12,55
-Maternal,O72.1,Immediate postpartum haemorrhage,ICU;BloodBank;OBGYN_OT;OR;Ventilator,12,55
-Maternal,O72.2,Delayed secondary postpartum haemorrhage,ICU;BloodBank;OBGYN_OT,12,55
-Maternal,O14.1,Severe pre-eclampsia,ICU;OBGYN_OT,12,55
-Maternal,O15.0,Eclampsia in pregnancy,ICU;Ventilator;OBGYN_OT,12,55
-Maternal,O45.9,Placental abruption unspecified,ICU;BloodBank;OBGYN_OT;OR,12,55
-Maternal,O44.1,Placenta praevia with haemorrhage,ICU;BloodBank;OBGYN_OT;OR,12,55
-Maternal,O85,Puerperal sepsis,ICU,12,55
-Maternal,O88.1,Amniotic fluid embolism,ICU;Ventilator;OBGYN_OT,12,55
-Maternal,O75.1,Shock during after labour and delivery,ICU;BloodBank;OBGYN_OT,12,55
-Trauma,S06.0,Concussion,CT,0,120
-Trauma,S06.4,Traumatic epidural haemorrhage,CT;Neurosurgery;ICU;OR,0,120
-Trauma,S06.5,Traumatic subdural haemorrhage,CT;Neurosurgery;ICU;OR,0,120
-Trauma,S06.6,Traumatic subarachnoid haemorrhage,CT;Neurosurgery;ICU,0,120
-Trauma,S36.0,Injury of spleen,OR;ICU;BloodBank,0,120
-Trauma,S36.1,Injury of liver,OR;ICU;BloodBank,0,120
-Trauma,S72.0,Fracture of neck of femur,OR;ICU,0,120
-Trauma,S52.5,Fracture of lower end of radius,OR,0,120
-Trauma,S82.2,Fracture of shaft of tibia,OR;ICU,0,120
-Trauma,T31.0,Burns involving less than 10 percent TBSA,ICU;OR,0,120
-Stroke,I63.9,Cerebral infarction unspecified,CT;Thrombolysis;ICU,18,120
-Stroke,I63.3,Cerebral infarction due to thrombosis of cerebral arteries,CT;Thrombolysis;ICU,18,120
-Stroke,I61.9,Intracerebral haemorrhage unspecified,CT;Neurosurgery;ICU,18,120
-Stroke,I60.9,Subarachnoid haemorrhage unspecified,CT;Neurosurgery;ICU,18,120
-Stroke,I62.0,Non-traumatic subdural haemorrhage,CT;Neurosurgery;ICU,18,120
-Stroke,I64,Stroke not otherwise specified,CT;Thrombolysis,18,120
-Stroke,I65.2,Occlusion stenosis of carotid artery,CT;Neurosurgery;ICU,18,120
-Stroke,G45.9,Transient ischaemic attack TIA,CT,18,120
-Stroke,I67.4,Hypertensive encephalopathy,ICU;CT,18,120
-Stroke,I66.9,Occlusion stenosis of cerebral arteries no infarction,CT,18,120
-Cardiac,I21.9,Acute myocardial infarction unspecified,CathLab;ICU,18,120
-Cardiac,I21.0,Acute transmural MI of anterior wall,CathLab;ICU,18,120
-Cardiac,I20.0,Unstable angina,CathLab,18,120
-Cardiac,I24.9,Acute ischaemic heart disease unspecified,CathLab,18,120
-Cardiac,I46.9,Cardiac arrest unspecified,ICU;Ventilator,18,120
-Cardiac,I50.9,Heart failure unspecified acute decompensation,ICU;Ventilator,18,120
-Cardiac,I47.2,Ventricular tachycardia,ICU,18,120
-Cardiac,I44.2,Complete atrioventricular block,ICU;CathLab,18,120
-Cardiac,I48.0,Paroxysmal atrial fibrillation,ICU,18,120
-Cardiac,R07.4,Chest pain unspecified,CathLab,18,120
-Sepsis,A41.9,Sepsis unspecified organism,ICU,0,120
-Sepsis,A41.0,Sepsis due to Staphylococcus aureus,ICU,0,120
-Sepsis,A41.1,Sepsis due to other specified staphylococcus,ICU,0,120
-Sepsis,A41.2,Sepsis due to unspecified staphylococcus,ICU,0,120
-Sepsis,A41.5,Sepsis due to other Gram-negative organisms,ICU,0,120
-Sepsis,A40.0,Streptococcal sepsis group A,ICU,0,120
-Sepsis,A40.1,Streptococcal sepsis group B,ICU,0,120
-Sepsis,A40.3,Streptococcus pneumoniae sepsis,ICU,0,120
-Sepsis,A02.1,Salmonella septicaemia,ICU,0,120
-Sepsis,B37.7,Candidal sepsis,ICU,0,120
-Other,J96.0,Acute respiratory failure,Ventilator;ICU,0,120
-Other,J18.9,Pneumonia unspecified organism,ICU,0,120
-Other,J44.1,COPD with acute exacerbation,Ventilator;ICU,0,120
-Other,K92.2,Gastrointestinal haemorrhage unspecified,BloodBank;OR;ICU,0,120
-Other,K85.9,Acute pancreatitis unspecified,ICU,0,120
-Other,E10.1,Type 1 diabetes with ketoacidosis,ICU,0,120
-Other,E11.1,Type 2 diabetes with ketoacidosis,ICU,0,120
-Other,E16.2,Hypoglycaemia unspecified,ICU,0,120
-Other,N17.9,Acute kidney failure unspecified,Dialysis;ICU,0,120
-Other,T78.2,Anaphylactic shock unspecified,Ventilator;ICU,0,120
+bundle,icd10,label,default_caps,default_interventions,age_min,age_max
+Maternal,O72.0,Third-stage haemorrhage,ICU;BloodBank;OBGYN_OT;OR;Ventilator,IV access;IV fluids;TXA;Uterotonics;Crossmatch;Oxygen,12,55
+Maternal,O72.1,Immediate postpartum haemorrhage,ICU;BloodBank;OBGYN_OT;OR;Ventilator,IV access;IV fluids;TXA;Uterotonics;Crossmatch;Oxygen,12,55
+Maternal,O72.2,Delayed secondary postpartum haemorrhage,ICU;BloodBank;OBGYN_OT,IV access;IV fluids;Crossmatch;Antibiotics;Oxygen,12,55
+Maternal,O14.1,Severe pre-eclampsia,ICU;OBGYN_OT,IV access;BP monitoring;Seizure precautions;Oxygen;Rapid transfer,12,55
+Maternal,O15.0,Eclampsia in pregnancy,ICU;Ventilator;OBGYN_OT,Airway positioning;Oxygen;Seizure management;IV access;Rapid transfer,12,55
+Maternal,O71.1,Rupture of uterus during labour,ICU;BloodBank;OBGYN_OT;OR;Ventilator,IV access;IV fluids;Crossmatch;Oxygen;Prepare for OR,12,55
+Maternal,O85,Puerperal sepsis,ICU,IV access;IV fluids;Antibiotics;Oxygen;Temperature monitoring,12,55
+Maternal,O44.1,Placenta praevia with haemorrhage,ICU;BloodBank;OBGYN_OT;OR,IV access;IV fluids;Crossmatch;Oxygen;Prepare for OR,12,55
+Maternal,O45.9,Placental abruption unspecified,ICU;BloodBank;OBGYN_OT;OR,IV access;IV fluids;Crossmatch;Oxygen;Prepare for OR,12,55
+Maternal,O88.2,Obstetric embolism (other),ICU;Ventilator;OBGYN_OT,Airway positioning;Oxygen;IV access;Rapid transfer,12,55
+Maternal,O00.1,Tubal pregnancy (ectopic),ICU;BloodBank;OR,IV access;IV fluids;Crossmatch;Oxygen;Prepare for OR,12,55
+Maternal,O75.1,Shock during labour and delivery,ICU;BloodBank;Ventilator,Airway positioning;Oxygen;IV access;IV fluids;Crossmatch,12,55
+Maternal,O90.0,Postpartum renal failure,Dialysis;ICU,IV access;IV fluids (as guided);Monitor urine output;Rapid transfer,12,55
+Maternal,O68.0,Fetal distress (with meconium),ICU;OBGYN_OT;Ventilator,Oxygen;Airway readiness;Prepare for urgent delivery;Rapid transfer,12,55
+Maternal,O13,Gestation hypertension,ICU,BP monitoring;IV access;Oxygen if needed;Rapid transfer,12,55
+Maternal,O99.4,Circulatory disorders complicating pregnancy,ICU;Ventilator,ECG;Oxygen;IV access;Rapid transfer,12,55
+Maternal,O88.1,Amniotic fluid embolism,ICU;Ventilator;OBGYN_OT,Airway positioning;Oxygen;IV access;CPR readiness;Rapid transfer,12,55
+Maternal,O14.2,HELLP syndrome,ICU;BloodBank;OBGYN_OT;OR,IV access;Crossmatch;Oxygen;Prepare for OR,12,55
+Trauma,S06.5,Traumatic subdural haemorrhage,CT;Neurosurgery;ICU;OR,Airway positioning;Immobilization;Oxygen;Neuro checks;IV access,0,120
+Trauma,S06.4,Traumatic epidural haemorrhage,CT;Neurosurgery;ICU;OR,Airway positioning;Immobilization;Oxygen;Neuro checks;IV access,0,120
+Trauma,S06.6,Traumatic subarachnoid haemorrhage,CT;Neurosurgery;ICU,Airway positioning;Immobilization;Oxygen;Neuro checks;IV access,0,120
+Trauma,S06.0,Concussion,CT,Neuro checks;Observe;Oxygen if needed,0,120
+Trauma,S36.1,Injury of liver,OR;ICU;BloodBank,IV access;IV fluids;Bleeding control;Crossmatch;Oxygen,0,120
+Trauma,S36.0,Injury of spleen,OR;ICU;BloodBank,IV access;IV fluids;Bleeding control;Crossmatch;Oxygen,0,120
+Trauma,S27.3,Other injury of lung,ICU;Ventilator,Airway positioning;Oxygen;IV access;Monitor breathing,0,120
+Trauma,S12.9,Fracture of neck (cervical) unspecified,CT;ICU,Immobilization;Spine precautions;Oxygen;IV access,0,120
+Trauma,S32.1,Fracture of sacrum,OR,Immobilization;Pain control support;IV access;Oxygen if needed,0,120
+Trauma,S02.1,Fracture of base of skull,CT;Neurosurgery;ICU,Immobilization;Neuro checks;Oxygen;IV access,0,120
+Trauma,T07,Unspecified multiple injuries,CT;OR;ICU;BloodBank,Immobilization;Bleeding control;IV access;IV fluids;Oxygen,0,120
+Trauma,T31.2,Burns involving 20-29% TBSA,ICU;OR,Airway positioning;Oxygen;IV fluids;Burn covering;Rapid transfer,0,120
+Trauma,T31.0,Burns involving <10% TBSA,OR,Burn covering;Pain control support;Oxygen if needed,0,120
+Trauma,T17.9,Foreign body in respiratory tract,ICU;Ventilator,Airway positioning;Oxygen;Suction readiness;Rapid transfer,0,120
+Trauma,S72.0,Fracture of neck of femur,OR;ICU,Immobilization;IV access;Pain control support;Oxygen if needed,0,120
+Trauma,S52.5,Fracture of lower end of radius,OR,Immobilization;Pain control support,0,120
+Trauma,S82.2,Fracture of shaft of tibia,OR;ICU,Immobilization;Bleeding control;IV access;Oxygen if needed,0,120
+Trauma,S05.1,Contusion of eye and orbit,CT,Eye shield;Analgesia support;Rapid transfer if severe,0,120
+Trauma,S09.9,Unspecified head injury,CT,Immobilization;Neuro checks;Oxygen;IV access,0,120
+Trauma,S39.9,Unspecified injury of abdomen,CT;OR;ICU,IV access;IV fluids;Bleeding control;Oxygen,0,120
+Trauma,S22.3,Fracture of rib,ICU,Oxygen;Pain control support;Monitor breathing,0,120
+Stroke,I63.9,Cerebral infarction unspecified,CT;Thrombolysis;ICU,Neuro checks;Oxygen;IV access;Glucose check;Rapid transfer,18,120
+Stroke,I63.3,Cerebral infarction due to thrombosis,CT;Thrombolysis;ICU,Neuro checks;Oxygen;IV access;Glucose check;Rapid transfer,18,120
+Stroke,I61.9,Intracerebral haemorrhage,CT;Neurosurgery;ICU,Neuro checks;Airway positioning;Oxygen;IV access;Rapid transfer,18,120
+Stroke,I60.9,Subarachnoid haemorrhage,CT;Neurosurgery;ICU,Neuro checks;Airway positioning;Oxygen;IV access;Rapid transfer,18,120
+Stroke,I62.9,Intracranial haemorrhage unspecified,CT;Neurosurgery;ICU,Neuro checks;Airway positioning;Oxygen;IV access,18,120
+Stroke,G46.3,Brain stem stroke syndrome,CT;ICU,Airway positioning;Oxygen;Neuro checks;Rapid transfer,18,120
+Stroke,G00.9,Bacterial meningitis unspecified,ICU,Antibiotics;IV access;Oxygen;Fever control support;Rapid transfer,0,120
+Stroke,G04.9,Encephalitis unspecified,ICU,Airway positioning;IV access;Seizure precautions;Oxygen;Rapid transfer,0,120
+Stroke,G06.0,Intracranial abscess,CT;Neurosurgery;ICU,IV access;Antibiotics;Oxygen;Rapid transfer,0,120
+Stroke,I64,Stroke NOS,CT;Thrombolysis,Neuro checks;Oxygen;IV access;Glucose check;Rapid transfer,18,120
+Stroke,G45.9,TIA,CT,Neuro checks;Oxygen if needed;Rapid transfer,18,120
+Stroke,I67.4,Hypertensive encephalopathy,ICU;CT,IV access;BP monitoring;Neuro checks;Oxygen,18,120
+Stroke,I65.2,Carotid stenosis,CT,Neuro checks;Rapid transfer,18,120
+Stroke,R56.9,Convulsions unspecified,ICU,Airway positioning;Oxygen;IV access;Seizure precautions,0,120
+Stroke,G40.9,Epilepsy unspecified,ICU,Airway positioning;Oxygen;IV access;Seizure precautions,0,120
+Cardiac,I21.9,Acute myocardial infarction unspecified,CathLab;ICU,ECG;Aspirin;Oxygen;IV access;Rapid transfer,18,120
+Cardiac,I21.0,Acute transmural MI anterior wall,CathLab;ICU,ECG;Aspirin;Oxygen;IV access;Rapid transfer,18,120
+Cardiac,I20.0,Unstable angina,CathLab,ECG;Aspirin;Oxygen if needed;IV access;Rapid transfer,18,120
+Cardiac,I46.9,Cardiac arrest unspecified,ICU;Ventilator,AED/CPR;Defibrillation;Airway positioning;Oxygen;IV access,18,120
+Cardiac,I47.2,Ventricular tachycardia,ICU,ECG;Oxygen;IV access;Prepare for cardioversion,18,120
+Cardiac,I44.2,Complete AV block,ICU;CathLab,ECG;Oxygen;IV access;Rapid transfer,18,120
+Cardiac,I48.0,Paroxysmal atrial fibrillation,ICU,ECG;IV access;Oxygen if needed;Rapid transfer,18,120
+Cardiac,I50.9,Acute decompensated heart failure,ICU;Ventilator,Oxygen;IV access;Position upright;Rapid transfer,18,120
+Cardiac,I26.9,Pulmonary embolism,ICU;Ventilator,Oxygen;IV access;Rapid transfer,18,120
+Cardiac,I33.0,Acute infective endocarditis,ICU,IV access;Antibiotics;Oxygen if needed;Rapid transfer,18,120
+Cardiac,R07.4,Chest pain unspecified,CathLab,ECG;Oxygen if needed;IV access;Rapid transfer,18,120
+Cardiac,I10,Essential hypertension with symptoms,ICU,BP monitoring;IV access;Rapid transfer if neuro symptoms,18,120
+Cardiac,R57.0,Cardiogenic shock,ICU;Ventilator,Airway positioning;Oxygen;IV access;IV fluids cautious;Rapid transfer,18,120
+Cardiac,I49.0,Ventricular fibrillation,ICU;Ventilator,AED/CPR;Defibrillation;Airway positioning;Oxygen,18,120
+Cardiac,I71.0,Aortic dissection,CT;ICU,Oxygen;IV access;Pain control support;Rapid transfer,18,120
+Sepsis,A41.9,Sepsis unspecified organism,ICU,IV access;IV fluids;Antibiotics;Oxygen;Temperature monitoring,0,120
+Sepsis,A41.0,Sepsis due to Staph aureus,ICU,IV access;IV fluids;Antibiotics;Oxygen;Rapid transfer,0,120
+Sepsis,A41.5,Sepsis due to Gram-negative organisms,ICU,IV access;IV fluids;Antibiotics;Oxygen;Rapid transfer,0,120
+Sepsis,A39.2,Acute meningococcaemia,ICU,IV access;IV fluids;Antibiotics;Oxygen;Isolation precautions,0,120
+Sepsis,R57.1,Hypovolemic shock,ICU;BloodBank;Ventilator,Airway positioning;Oxygen;IV access;IV fluids;Crossmatch,0,120
+Sepsis,R57.2,Septic shock,ICU;Ventilator,Airway positioning;Oxygen;IV access;IV fluids;Antibiotics,0,120
+Sepsis,K65.0,Acute peritonitis,CT;OR;ICU,IV access;IV fluids;Antibiotics;Oxygen;Prepare for OR,0,120
+Sepsis,J18.9,Pneumonia unspecified organism,ICU,Oxygen;IV access;Antibiotics;Nebulization if wheeze,0,120
+Sepsis,N39.0,Urinary tract infection (severe),ICU,IV access;IV fluids;Antibiotics;Oxygen if needed,0,120
+Sepsis,E86.0,Dehydration severe,ICU,IV access;IV fluids;Monitor urine output;Rapid transfer,0,120
+Sepsis,B34.9,Viral infection unspecified with danger signs,ICU,Oxygen;IV access;IV fluids;Fever control support,0,120
+Sepsis,R65.2,Severe sepsis,ICU,IV access;IV fluids;Antibiotics;Oxygen;Rapid transfer,0,120
+Sepsis,L03.9,Cellulitis severe,ICU,IV access;Antibiotics;Oxygen if needed,0,120
+Sepsis,G93.4,Encephalopathy,ICU,Airway positioning;Oxygen;IV access;Glucose check,0,120
+Sepsis,R50.9,Fever with danger signs,ICU,Oxygen;IV access;IV fluids;Rapid transfer,0,120
+Other,J96.0,Acute respiratory failure,Ventilator;ICU,Airway positioning;Oxygen;Nebulization;IV access;Rapid transfer,0,120
+Other,J44.1,COPD with acute exacerbation,Ventilator;ICU,Oxygen;Nebulization;Airway positioning;IV access,18,120
+Other,T78.2,Anaphylactic shock,Ventilator;ICU,Airway positioning;Oxygen;IV access;Rapid transfer,0,120
+Other,T63.0,Snake venom,ICU,IV access;Immobilization;Oxygen;Monitor vitals;Rapid transfer,0,120
+Other,T65.9,Toxic effect of unspecified substance,ICU,Airway positioning;Oxygen;IV access;Rapid transfer,0,120
+Other,K92.2,Gastrointestinal haemorrhage,BloodBank;OR;ICU,IV access;IV fluids;Crossmatch;Oxygen;Prepare for OR,0,120
+Other,K56.6,Intestinal obstruction,CT;OR;ICU,IV access;IV fluids;Oxygen;Prepare for OR,0,120
+Other,E10.1,Type 1 diabetes with ketoacidosis,ICU,IV access;IV fluids;Glucose/ketone check;Oxygen if needed,0,120
+Other,E11.1,Type 2 diabetes with ketoacidosis,ICU,IV access;IV fluids;Glucose/ketone check;Oxygen if needed,18,120
+Other,N17.9,Acute kidney failure,Dialysis;ICU,IV access;Monitor urine output;Oxygen if needed;Rapid transfer,0,120
+Other,P07.3,Prematurity (critical),ICU;Ventilator,Oxygen;Thermal protection;Airway readiness;Rapid transfer,0,1
+Other,P22.0,Neonatal respiratory distress syndrome,ICU;Ventilator,Oxygen;Thermal protection;Airway readiness;Rapid transfer,0,1
+Other,P21.9,Birth asphyxia,ICU;Ventilator,Airway positioning;Oxygen;Bag-mask readiness;Rapid transfer,0,1
+Other,P36.9,Neonatal sepsis,ICU,IV access;Antibiotics;Thermal protection;Oxygen;Rapid transfer,0,1
+Other,P52.9,Intraventricular hemorrhage newborn,CT;ICU,Airway positioning;Oxygen;Thermal protection;Rapid transfer,0,1
+Other,A82.9,Rabies,ICU,Airway precautions;Oxygen if needed;Rapid transfer;Infection control,0,120
+Other,I46.0,Cardiac arrest with successful resuscitation,ICU;Ventilator,AED/CPR;Airway positioning;Oxygen;IV access,0,120
+Other,R57.9,Shock unspecified,ICU;Ventilator,Airway positioning;Oxygen;IV access;IV fluids;Rapid transfer,0,120
+Other,G20,Parkinsonism with acute complication,ICU,Oxygen if needed;IV access;Rapid transfer,40,120
+Other,S09.7,Multiple head injuries,CT;ICU,Immobilization;Neuro checks;Oxygen;IV access,0,120
+Other,S25.0,Injury of thoracic aorta,CT;ICU,Oxygen;IV access;Rapid transfer,0,120
+Other,K85.9,Acute pancreatitis severe,ICU,IV access;IV fluids;Oxygen if needed;Rapid transfer,0,120
+Other,K80.0,Cholecystitis with obstruction,OR;ICU,IV access;IV fluids;Antibiotics;Oxygen if needed,0,120
+Other,I46.1,Sudden cardiac death,ICU;Ventilator,AED/CPR;Defibrillation;Airway positioning;Oxygen,0,120
+Other,I95.9,Hypotension unspecified,ICU,IV access;IV fluids;Oxygen;Rapid transfer,0,120
+Other,R41.0,Disorientation (acute),ICU,Glucose check;Oxygen;IV access;Rapid transfer,0,120
+Other,G70.0,Myasthenia gravis crisis,Ventilator;ICU,Airway positioning;Oxygen;IV access;Rapid transfer,10,120
+Other,J45.9,Severe asthma,ICU;Ventilator,Oxygen;Nebulization;IV access;Rapid transfer,0,120
+Other,R04.2,Hemoptysis massive,BloodBank;ICU;Ventilator,Oxygen;IV access;Prepare for airway support;Rapid transfer,0,120
+Other,S72.1,Pertrochanteric fracture,OR;ICU,Immobilization;IV access;Oxygen if needed,0,120
+Other,T14.1,Open wound unspecified with bleeding,BloodBank;OR,Bleeding control;IV access;Oxygen;Rapid transfer,0,120
+Other,S06.2,Diffuse brain injury,CT;Neurosurgery;ICU,Airway positioning;Neuro checks;Oxygen;IV access,0,120
+Other,I63.0,Cerebral infarction due to thrombosis,CT;Thrombolysis;ICU,Neuro checks;Oxygen;IV access;Rapid transfer,18,120
+Other,I60.0,Subarachnoid hemorrhage (carotid siphon),CT;Neurosurgery;ICU,Airway positioning;Neuro checks;Oxygen;IV access,18,120
+Other,I61.0,Intracerebral hemorrhage in hemisphere,CT;Neurosurgery;ICU,Airway positioning;Neuro checks;Oxygen;IV access,18,120
+Other,R57.8,Other shock,ICU;Ventilator,Airway positioning;Oxygen;IV access;IV fluids;Rapid transfer,0,120
+Other,A41.1,Sepsis other staphylococcus,ICU,IV access;IV fluids;Antibiotics;Oxygen,0,120
+Other,A40.0,Streptococcal sepsis group A,ICU,IV access;IV fluids;Antibiotics;Oxygen,0,120
+Other,A02.1,Salmonella septicaemia,ICU,IV access;IV fluids;Antibiotics;Oxygen,0,120
+Other,B37.7,Candidal sepsis,ICU,IV access;IV fluids;Antibiotics/antifungal as guided;Oxygen,0,120
+Other,R06.0,Dyspnea severe,ICU;Ventilator,Oxygen;Airway positioning;IV access;Rapid transfer,0,120
+Other,F05,Delirium (acute) with medical cause,ICU,Glucose check;Oxygen;IV access;Rapid transfer,0,120
+Other,T07.9,Polytrauma critical,CT;OR;ICU;BloodBank,Immobilization;Bleeding control;IV access;IV fluids;Oxygen,0,120
+Other,S27.0,Traumatic pneumothorax,ICU;Ventilator,Oxygen;Airway positioning;IV access;Rapid transfer,0,120
+Other,S27.2,Hemothorax,ICU;Ventilator;BloodBank,Oxygen;IV access;Crossmatch;Rapid transfer,0,120
+Other,S12.0,Fracture of first cervical vertebra,CT;ICU,Spine precautions;Immobilization;Oxygen;IV access,0,120
+Other,S14.1,Spinal cord injury cervical,CT;ICU;Ventilator,Spine precautions;Immobilization;Oxygen;IV access,0,120
+Other,S36.8,Other intra-abdominal organ injury,CT;OR;ICU;BloodBank,IV access;IV fluids;Bleeding control;Crossmatch;Oxygen,0,120
+Other,O88.0,Obstetric air embolism,ICU;Ventilator,Airway positioning;Oxygen;IV access;Rapid transfer,12,55
+Other,O46.9,Antepartum hemorrhage unspecified,ICU;BloodBank;OBGYN_OT;OR,IV access;IV fluids;Crossmatch;Oxygen;Prepare for OR,12,55
+Other,I26.0,Pulmonary embolism with cor pulmonale,ICU;Ventilator,Oxygen;IV access;Rapid transfer,18,120
+Other,I47.0,Re-entry ventricular arrhythmia,ICU,ECG;Oxygen;IV access;Prepare for cardioversion,18,120
+Other,I49.9,Arrhythmia unspecified,ICU,ECG;Oxygen if needed;IV access;Rapid transfer,18,120
+Other,K92.0,Hematemesis, BloodBank;ICU;OR,IV access;IV fluids;Crossmatch;Oxygen;Prepare for OR,0,120
+Other,R58,Hemorrhage NEC,BloodBank;ICU,IV access;IV fluids;Crossmatch;Oxygen,0,120
+Other,G06.2,Subdural empyema,CT;Neurosurgery;ICU,IV access;Antibiotics;Oxygen;Rapid transfer,0,120
+Other,G41.9,Status epilepticus,ICU;Ventilator,Airway positioning;Oxygen;IV access;Seizure management;Rapid transfer,0,120
