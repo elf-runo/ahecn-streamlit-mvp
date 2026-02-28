@@ -299,37 +299,68 @@ def enhanced_facility_card(row, rank, is_primary=False, is_alternate=False):
         
         st.markdown(f'<div class="small">{sub}</div>', unsafe_allow_html=True)
         
-        # Enhanced scoring breakdown
-        with st.expander("Enhanced Score Details"):
+        with st.expander("📊 Why was this facility recommended? (Clinical Logic)"):
             details = row.get("scoring_details", {})
-            st.write(f"**Capability Match:** {details.get('capability_score', 0)}")
-            st.write(f"**Proximity (ETA-based):** {details.get('proximity_score', 0)}")
-            if 'eta_minutes' in details and isinstance(details['eta_minutes'], (int, float)):
-                st.write(f"**Driving Time:** {details['eta_minutes']} min")
-            if 'traffic_factor' in details:
-                st.write(f"**Traffic Impact:** {details['traffic_factor']}x")
-            st.write(f"**ICU Availability:** {details.get('icu_score', 0)}")
-            st.write(f"**Acceptance Rate:** {details.get('acceptance_score', 0)}")
-            st.write(f"**Specialization Bonus:** {details.get('specialization_bonus', 0)}")
+
+            # 1) The Clinical Gates (Pass/Fail)
+            st.markdown("#### 1. Safety Gates (Absolute Mandates)")
+
+            if details.get("gate_capability") == "PASSED":
+                st.markdown("✅ **Infrastructure Gate:** Passed. Facility possesses 100% of the requested life-saving capabilities.")
+            elif details.get("gate_capability") == "FAILED":
+                st.markdown("❌ **Infrastructure Gate:** Failed. Missing at least one required life-saving capability.")
+
+            if details.get("gate_capacity") == "PASSED":
+                st.markdown("✅ **Capacity Gate:** Passed. Minimum required critical-care beds are available.")
+            elif details.get("gate_capacity") == "FAILED":
+                st.markdown("❌ **Capacity Gate:** Failed. No critical-care bed available for a RED/ICU/Ventilator need.")
+
+            # 2) The Weighted Matrix
+            st.markdown("#### 2. Optimization Matrix (Out of 100 pts)")
+
+            eta = details.get("eta_minutes", "N/A")
+            prox_score = details.get("proximity_score", 0)
+            traffic = float(details.get("traffic_factor", 1.0) or 1.0)
+            traffic_text = "Heavy Traffic" if traffic > 1.2 else "Normal Traffic"
+            st.markdown(f"🚑 **Time-to-Definitive-Care:** {eta} mins ({traffic_text}). *(Score: {prox_score}/50)*")
+
+            icu_score = details.get("icu_score", 0)
+            icu_beds = row.get("ICU_open", 0)
+            st.markdown(f"🛏️ **Surge Buffer:** {icu_beds} open beds reduces diversion risk. *(Score: {icu_score}/15)*")
+
+            spec_score = details.get("specialization_bonus", 0)
+            st.markdown(f"⭐ **Specialty Excellence:** Dedicated hub for this pathology. *(Score: {spec_score}/15)*")
+
+            fiscal_score = details.get("fiscal_score", 0)
+            if fiscal_score > 0:
+                st.markdown(f"🏛️ **Fiscal Guardrail:** Govt facility prioritized to reduce patient out-of-pocket / scheme leakage. *(Score: {fiscal_score}/20)*")
+            else:
+                st.markdown(f"🏥 **Fiscal Guardrail:** Private facility selected because govt options were out-of-range or unavailable. *(Score: {fiscal_score}/20)*")
+
+            st.markdown("---")
+            st.markdown(
+                f"<div style='text-align: right; color: #0f172a; font-size: 1.1rem;'><strong>Algorithm Confidence Score: {row.get('score', 0)} / 100</strong></div>",
+                unsafe_allow_html=True
+            )
         
-        st.markdown("**Specialties**")
-        cap_badges(row.get("specialties",""))
+                st.markdown("**Specialties**")
+                cap_badges(row.get("specialties",""))
         
-        st.markdown("**High-end equipment**")
-        cap_badges(row.get("highend",""))
+                st.markdown("**High-end equipment**")
+                cap_badges(row.get("highend",""))
         
-        st.markdown('<hr class="soft" />', unsafe_allow_html=True)
+                st.markdown('<hr class="soft" />', unsafe_allow_html=True)
         
-        # Action buttons
-        cta1, cta2 = st.columns(2)
-        pick_label = "Select as primary" if not is_primary else "✓ Primary selected"
-        alt_label = "Add as alternate" if not is_alternate else "✓ Alternate"
+                # Action buttons
+                cta1, cta2 = st.columns(2)
+                pick_label = "Select as primary" if not is_primary else "✓ Primary selected"
+                alt_label = "Add as alternate" if not is_alternate else "✓ Alternate"
         
-        pick = cta1.button(pick_label, key=f"pick_{row['name']}", disabled=is_primary)
-        alt = cta2.button(alt_label, key=f"alt_{row['name']}", disabled=is_alternate)
+                pick = cta1.button(pick_label, key=f"pick_{row['name']}", disabled=is_primary)
+                alt = cta2.button(alt_label, key=f"alt_{row['name']}", disabled=is_alternate)
         
-        st.markdown('</div>', unsafe_allow_html=True)
-        return pick, alt
+                st.markdown('</div>', unsafe_allow_html=True)
+                return pick, alt
 
 def enhanced_facility_ranking_with_ors(origin_coords, required_caps, case_type, triage_color, top_k=5, api_key=None):
     """
@@ -919,6 +950,135 @@ def tri_color(vit):
     )
     colour, _ = triage_decision(v, context)
     return colour
+
+def validated_triage_decision(vitals, icd_df_row, context):
+    """
+    Dual-Vector Triage Matrix:
+    Pathology (ICD/interventions) gate + Physiology (EWS) safety net.
+    Returns: (color, meta_dict)
+    """
+
+    icd_df_row = icd_df_row or {}
+    scoring_meta = {}
+
+    # -----------------------------
+    # VECTOR 1: Pathological override (Auto-RED gate)
+    # -----------------------------
+    critical_interventions = {
+        "Defibrillation", "Surfactant", "Thrombolysis", "Neuro checks",
+        "Cardioversion", "Chest tube", "Crossmatch"
+    }
+
+    # Your ICD catalog row seems to use: row["icd_code"], row["label"], row.get("default_interventions", [])
+    dx_code = (icd_df_row.get("icd_code") or icd_df_row.get("icd10") or "").strip()
+    dx_label = icd_df_row.get("label", "").strip()
+
+    default_interventions = icd_df_row.get("default_interventions", []) or []
+    if isinstance(default_interventions, str):
+        # tolerate CSV strings
+        default_interventions = [x.strip() for x in default_interventions.split(",") if x.strip()]
+
+    is_time_critical = any(iv in critical_interventions for iv in default_interventions)
+
+    # Expanded "Auto-RED" ICD-10 codes (absolute activation)
+    complete_auto_red_codes = {
+        # MATERNAL
+        "O72.0", "O72.1", "O14.1", "O15.0", "O71.1", "O85", "O44.1", "O00.1", "O88.2",
+
+        # TRAUMA
+        "S06.5", "S06.4", "S36.1", "S36.0", "S27.3", "S12.9", "S32.1", "S02.1",
+        "T07", "T31.2", "T17.9",
+
+        # CARDIAC
+        "I21.9", "I46.9", "I44.2", "I47.2", "I26.9", "I33.0",
+
+        # STROKE / NEURO
+        "I63.9", "I61.9", "I60.9", "G46.3", "I62.9", "G00.9", "G04.9", "G06.0",
+
+        # SEPSIS / SHOCK
+        "A41.9", "R57.1", "A41.0", "A41.5", "A39.2", "R57.2", "K65.0",
+
+        # PEDIATRIC / NEONATAL
+        "P07.3", "P22.0", "P36.9", "P21.9", "P10.2", "P52.9",
+
+        # OTHER CRITICAL
+        "J96.0", "T65.9", "T63.0", "N17.9", "E10.1", "K56.6", "K92.2", "A82.9",
+    }
+
+    # Pathology override (Auto-RED)
+    if is_time_critical or (dx_code in complete_auto_red_codes):
+        return "RED", {
+            "primary_driver": "Pathology",
+            "reason": f"Level 1 Critical Diagnosis: {dx_label or dx_code or 'Unknown'}",
+            "ews_score": "Bypassed - Immediate Transport Required",
+        }
+
+        
+    # -----------------------------
+    # VECTOR 2: Physiological safety net (EWS routing)
+    # -----------------------------
+    age = float(context.get("age", 30) or 30)
+    pregnant = bool(context.get("pregnant", False))
+    complaint = (context.get("complaint") or "").strip()
+
+    # If your ICD rows have a maternal bundle indicator, respect it
+    is_pregnant = pregnant or (icd_df_row.get("case_type") == "Maternal") or (complaint == "Maternal")
+
+    hr = vitals.get("hr")
+    rr = vitals.get("rr")
+    sbp = vitals.get("sbp")
+    temp = vitals.get("temp")
+    spo2 = vitals.get("spo2")
+    avpu = vitals.get("avpu", "A")
+
+    urgent = False
+    score = 0
+    ews_type = ""
+
+    if age < 18:
+        # PEWS: your app’s calc_PEWS signature: (age, rr, hr, behavior, spo2)
+        behavior = context.get("behavior", "Normal")
+        score, meta, high, watch = calc_PEWS(age, rr, hr, behavior, spo2)
+        urgent = bool(high)  # you already label high risk at >=6
+        ews_type = "PEWS"
+
+    elif is_pregnant:
+        meows = calc_MEOWS(hr, rr, sbp, temp, spo2)
+        urgent = bool(meows.get("red"))
+        # create a numeric score for explainability
+        score = len(meows.get("red", [])) + len(meows.get("yellow", []))
+        ews_type = "MEOWS"
+
+    else:
+        # NEWS2: safest call is your wrapper used elsewhere
+        o2_device = context.get("o2_device", "Air")
+        spo2_scale = int(context.get("spo2_scale", 1) or 1)
+        score, hits, review, emerg = safe_calc_NEWS2(rr, spo2, sbp, hr, temp, avpu, o2_device, spo2_scale)
+        urgent = bool(emerg)  # treat emergency trigger as urgent
+        ews_type = "NEWS2"
+
+    # -----------------------------
+    # Final output thresholds
+    # -----------------------------
+    if urgent:
+        return "RED", {
+            "primary_driver": "Physiology",
+            "reason": f"Clinical Instability Detected ({ews_type} triggers met)",
+            "ews_score": score,
+        }
+    elif score >= 5:
+        return "YELLOW", {
+            "primary_driver": "Physiology",
+            "reason": f"Elevated Risk ({ews_type} Score: {score})",
+            "ews_score": score,
+        }
+    else:
+        return "GREEN", {
+            "primary_driver": "Physiology",
+            "reason": f"Hemodynamically Stable ({ews_type} Score: {score})",
+            "ews_score": score,
+        }
+
 # === AI TRIAGE OVERLAY (Random Forest) ===
 label_to_color = {0: "GREEN", 1: "YELLOW", 2: "ORANGE", 3: "RED"}
 
@@ -1034,21 +1194,28 @@ def ai_triage_predict(vitals: dict, context: dict, complaint: str):
         st.warning(f"AI prediction failed: {str(e)}")
         return None, None
         
-def triage_with_ai(vitals: dict, context: dict, complaint: str, mode: str = "rules"):
-    """
-    AI triage disabled - always returns guideline-based triage
-    """
-    # Always use rules-based triage regardless of mode
-    rules_color, rules_details = triage_decision(vitals, context)
-    
-    return rules_color, {
-        "mode": "rules",
-        "rules_color": rules_color,
-        "rules_details": rules_details,
-        "ai_color": None,
-        "probs": None,
-        "note": "AI features temporarily disabled"
-    }
+def triage_with_ai(vitals, context, complaint, triage_mode="rules", icd_df_row=None):
+    # keep your existing AI-disabled logic, but replace the rules decision line:
+
+    # OLD:
+    # rules_color, rules_details = triage_decision(vitals, context)
+
+    # NEW (validated if ICD row present):
+    ctx = dict(context or {})
+    ctx["complaint"] = complaint  # so pregnancy logic can see complaint if needed
+
+    if icd_df_row:
+        rules_color, validated_meta = validated_triage_decision(vitals, icd_df_row, ctx)
+        # keep your downstream schema stable:
+        rules_details = {
+            "validated": validated_meta,
+            # OPTIONAL: also keep old score breakdown for dashboards if you rely on it
+        }
+    else:
+        rules_color, rules_details = triage_decision(vitals, ctx)
+
+    # Then continue returning tri_meta with rules_color etc exactly as before.
+
 # === UI HELPERS ===
 def triage_pill(color:str, overridden=False):
     c = (color or "").upper()
@@ -1846,91 +2013,109 @@ def analyze_ambulance_utilization(referrals):
     return utilization_data
 
 # === ENHANCED FACILITY MATCHING WITH FREE ROUTING ===
-def calculate_enhanced_facility_score_free(facility, required_caps, route_data, case_type, triage_color,
-                                           min_capability=0.3):
+def calculate_enhanced_facility_score_free(
+    facility,
+    required_caps,
+    route_data,
+    case_type,
+    triage_color,
+    min_capability=1.0,  # keep param for signature compatibility
+):
     """
-    Enhanced facility scoring with free routing data
+    Medically Validated Gated Multiplicative Scoring Matrix.
+    Evaluates facilities using absolute clinical safety gates before applying fiscal/logistical weighting.
     """
-    score = 0
     scoring_details = {}
 
-    # 1. Capability Match (40% weight)
+    # Extract base metrics safely
+    eta_minutes = 999
+    traffic_factor = 1.0
+    if isinstance(route_data, dict):
+        eta_minutes = route_data.get("estimated_duration_min", route_data.get("duration_min", 999))
+        traffic_factor = route_data.get("traffic_multiplier", 1.0)
+
+    icu_beds = int(facility.get("ICU_open", 0))
+    is_gov = (facility.get("ownership", "Private") == "Government")
+
+    # ==========================================
+    # GATE 1: Absolute Capability Multiplier (Pass/Fail)
+    # ==========================================
     if required_caps:
-        capability_match = sum(
-            1 for cap in required_caps if facility["caps"].get(cap, 0)
-        ) / len(required_caps)
-    else:
-        capability_match = 1.0
+        # Facility MUST have 100% of requested life-saving capabilities
+        has_all_caps = all(facility.get("caps", {}).get(cap, 0) == 1 for cap in required_caps)
+        if not has_all_caps:
+            scoring_details["gate_capability"] = "FAILED"
+            scoring_details["capability_score"] = 0
+            scoring_details["eta_minutes"] = round(eta_minutes, 1) if eta_minutes != 999 else "N/A"
+            scoring_details["traffic_factor"] = traffic_factor
+            scoring_details["total_score"] = 0
+            return 0, scoring_details
 
-    scoring_details["capability_fraction"] = round(capability_match, 2)
+    scoring_details["gate_capability"] = "PASSED"
+    scoring_details["capability_score"] = "1.0x"
 
-    # Hard filter applied in the calling function if needed
-    score += capability_match * 40
-    scoring_details["capability_score"] = round(capability_match * 40, 1)
-    
-    # 2. Proximity Score (30% weight) - Based on estimated ETA
-    if route_data.get('success'):
-        # Use traffic-adjusted duration if available
-        eta_minutes = route_data.get('estimated_duration_min', route_data.get('duration_min', 0))
-        
-        # Normalize ETA score (0-30 points)
-        # Shorter ETA = higher score, max score for <30min, linear decay to 60min
-        if eta_minutes <= 30:
-            proximity_score = 30
-        elif eta_minutes <= 60:
-            proximity_score = 30 * (1 - (eta_minutes - 30) / 30)
-        else:
-            proximity_score = max(0, 30 * (1 - (eta_minutes - 60) / 60))
-            
-        # Apply traffic factor adjustment
-        traffic_factor = route_data.get('traffic_multiplier', 1.0)
-        proximity_score = proximity_score / traffic_factor
-        
-        score += proximity_score
-        scoring_details["proximity_score"] = round(proximity_score, 1)
-        scoring_details["eta_minutes"] = round(eta_minutes, 1)
-        scoring_details["traffic_factor"] = round(traffic_factor, 2)
-        scoring_details["estimated"] = route_data.get('estimated', False)
-        scoring_details["peak_hour"] = route_data.get('peak_hour', False)
+    # ==========================================
+    # GATE 2: Critical Capacity Multiplier (Pass/Fail)
+    # ==========================================
+    requires_bed = ("ICU" in (required_caps or [])) or ("Ventilator" in (required_caps or [])) or (triage_color == "RED")
+    if requires_bed and icu_beds < 1:
+        scoring_details["gate_capacity"] = "FAILED"
+        scoring_details["icu_score"] = 0
+        scoring_details["eta_minutes"] = round(eta_minutes, 1) if eta_minutes != 999 else "N/A"
+        scoring_details["traffic_factor"] = traffic_factor
+        scoring_details["total_score"] = 0
+        return 0, scoring_details
+
+    scoring_details["gate_capacity"] = "PASSED"
+
+    # ==========================================
+    # SURVIVOR WEIGHTING (Max 100 Points)
+    # ==========================================
+    score = 0
+
+    # 1) Time-to-Definitive-Care (TDC) - 50 pts
+    if eta_minutes <= 30:
+        prox_score = 50
+    elif eta_minutes <= 60:
+        prox_score = 35
+    elif eta_minutes <= 90:
+        prox_score = 15
     else:
-        # Fallback to straight-line distance if routing fails
-        scoring_details["proximity_score"] = 0
-        scoring_details["eta_minutes"] = "N/A"
-        scoring_details["traffic_factor"] = 1.0
-    
-    # 3. ICU Availability (20% weight)
-    icu_beds = facility.get("ICU_open", 0)
-    icu_score = min(1.0, icu_beds / 5.0) * 20  # Max score at 5+ ICU beds
+        prox_score = 0
+
+    score += prox_score
+    scoring_details["proximity_score"] = prox_score
+    scoring_details["eta_minutes"] = round(eta_minutes, 1) if eta_minutes != 999 else "N/A"
+    scoring_details["traffic_factor"] = traffic_factor
+
+    # 2) Surge Buffer - 15 pts
+    if icu_beds >= 3:
+        icu_score = 15
+    elif icu_beds == 2:
+        icu_score = 10
+    elif icu_beds == 1:
+        icu_score = 5
+    else:
+        icu_score = 0
+
     score += icu_score
-    scoring_details["icu_score"] = round(icu_score, 1)
-    
-    # 4. Acceptance Rate (10% weight)
-    acceptance_rate = facility.get("acceptanceRate", 0.75)
-    acceptance_score = acceptance_rate * 10
-    score += acceptance_score
-    scoring_details["acceptance_score"] = round(acceptance_score, 1)
-    
-    # 5. Specialization Bonuses
-    specialization_bonus = 0
-    
-    # Case type specialization matching
-    if case_type in facility.get("specialties", {}):
-        if facility["specialties"][case_type]:
-            specialization_bonus += 5
-    
-    # High-end equipment bonus for critical cases
-    if triage_color == "RED":
-        high_end_count = sum(1 for eq in facility.get("highend", {}).values() if eq)
-        specialization_bonus += min(5, high_end_count)
-    
-    score += specialization_bonus
-    scoring_details["specialization_bonus"] = specialization_bonus
-    
-    # Ensure score is within bounds
-    final_score = min(100, max(0, score))
-    scoring_details["total_score"] = round(final_score, 1)
-    
-    return final_score, scoring_details
+    scoring_details["icu_score"] = icu_score
+
+    # 3) Specialty Excellence - 15 pts
+    spec_score = 0
+    if case_type in facility.get("specialties", {}) and facility["specialties"][case_type] == 1:
+        spec_score = 15
+
+    score += spec_score
+    scoring_details["specialization_bonus"] = spec_score
+
+    # 4) Fiscal Guardrail - 20 pts
+    fiscal_score = 20 if is_gov else 0
+    score += fiscal_score
+    scoring_details["fiscal_score"] = fiscal_score
+
+    scoring_details["total_score"] = score
+    return score, scoring_details
 
 def rank_facilities_with_free_routing(origin_coords, required_caps, case_type, triage_color, top_k=8, provider=None):
     """
@@ -1972,9 +2157,9 @@ def rank_facilities_with_free_routing(origin_coords, required_caps, case_type, t
             )
             
             # Calculate enhanced score with routing data
-            score, scoring_details = calculate_enhanced_facility_score_free(
-                facility, required_caps, route_data, case_type, triage_color
-            )
+            # New gated behavior: disqualified facilities return score 0
+            if score <= 0:
+                continue
             
             if required_caps and scoring_details.get("capability_fraction", 0) < 0.3:
                 # Keep, but mark as low capability so you can visually label them
@@ -3198,7 +3383,7 @@ with tabs[0]:
                 behavior=st.session_state.pews_behavior
             )
             triage_mode = st.session_state.get("triage_mode", "rules")
-            triage_color_ai, meta = triage_with_ai(vitals, context, complaint, triage_mode)
+            triage_color_ai, meta = triage_with_ai(vitals, context, complaint, triage_mode, icd_df_row=row if referrer_role=="Doctor/Physician" else None)
             triage_color = triage_color_ai
 
             # Apply override if active
@@ -3434,7 +3619,7 @@ with tabs[0]:
         ai_error = None
     
         try:
-            final_ai_colour, tri_meta = triage_with_ai(vit, context, complaint, triage_mode)
+            final_ai_colour, tri_meta = triage_with_ai(vit, context, complaint, triage_mode, icd_df_row=row if referrer_role=="Doctor/Physician" else None)
             base_colour = tri_meta["rules_color"]
             score_details = tri_meta["rules_details"]
             ai_color = tri_meta.get("ai_color")
