@@ -343,24 +343,24 @@ def enhanced_facility_card(row, rank, is_primary=False, is_alternate=False):
                 unsafe_allow_html=True
             )
         
-                st.markdown("**Specialties**")
-                cap_badges(row.get("specialties",""))
+            st.markdown("**Specialties**")
+            cap_badges(row.get("specialties",""))
         
-                st.markdown("**High-end equipment**")
-                cap_badges(row.get("highend",""))
+            st.markdown("**High-end equipment**")
+            cap_badges(row.get("highend",""))
         
-                st.markdown('<hr class="soft" />', unsafe_allow_html=True)
+            st.markdown('<hr class="soft" />', unsafe_allow_html=True)
         
-                # Action buttons
-                cta1, cta2 = st.columns(2)
-                pick_label = "Select as primary" if not is_primary else "✓ Primary selected"
-                alt_label = "Add as alternate" if not is_alternate else "✓ Alternate"
+            # Action buttons
+            cta1, cta2 = st.columns(2)
+            pick_label = "Select as primary" if not is_primary else "✓ Primary selected"
+            alt_label = "Add as alternate" if not is_alternate else "✓ Alternate"
         
-                pick = cta1.button(pick_label, key=f"pick_{row['name']}", disabled=is_primary)
-                alt = cta2.button(alt_label, key=f"alt_{row['name']}", disabled=is_alternate)
+            pick = cta1.button(pick_label, key=f"pick_{row['name']}", disabled=is_primary)
+            alt = cta2.button(alt_label, key=f"alt_{row['name']}", disabled=is_alternate)
         
-                st.markdown('</div>', unsafe_allow_html=True)
-                return pick, alt
+            st.markdown('</div>', unsafe_allow_html=True)
+            return pick, alt
 
 def enhanced_facility_ranking_with_ors(origin_coords, required_caps, case_type, triage_color, top_k=5, api_key=None):
     """
