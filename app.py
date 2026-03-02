@@ -1195,26 +1195,77 @@ def ai_triage_predict(vitals: dict, context: dict, complaint: str):
         return None, None
         
 def triage_with_ai(vitals, context, complaint, triage_mode="rules", icd_df_row=None):
-    # keep your existing AI-disabled logic, but replace the rules decision line:
+    """
+    Always returns: (final_colour, meta)
 
-    # OLD:
-    # rules_color, rules_details = triage_decision(vitals, context)
+    meta schema (stable):
+      {
+        "mode": "rules" | "ai" | "hybrid",
+        "rules_color": "...",
+        "rules_details": {...},
+        "ai_color": "..."/None,
+        "probs": [...] / None,
+        "ai_error": "..." / None
+      }
+    """
 
-    # NEW (validated if ICD row present):
     ctx = dict(context or {})
-    ctx["complaint"] = complaint  # so pregnancy logic can see complaint if needed
+    ctx["complaint"] = complaint
 
-    if icd_df_row:
-        rules_color, validated_meta = validated_triage_decision(vitals, icd_df_row, ctx)
-        # keep your downstream schema stable:
-        rules_details = {
-            "validated": validated_meta,
-            # OPTIONAL: also keep old score breakdown for dashboards if you rely on it
-        }
-    else:
-        rules_color, rules_details = triage_decision(vitals, ctx)
+    # ----------------------------
+    # 1) RULES / GUIDELINE TRIAGE
+    # ----------------------------
+    try:
+        if icd_df_row is not None:
+            rules_color, validated_meta = validated_triage_decision(vitals, icd_df_row, ctx)
+            # Keep downstream shape stable for dashboards/UI:
+            rules_details = {
+                "validated": validated_meta
+            }
+        else:
+            rules_color, rules_details = triage_decision(vitals, ctx)
+    except Exception as e:
+        # Last-resort: never crash UI
+        rules_color = "GREEN"
+        rules_details = {"reasons": [f"Rules triage error: {type(e).__name__}"]}
 
-    # Then continue returning tri_meta with rules_color etc exactly as before.
+    # Default outputs
+    ai_color, probs, ai_error = None, None, None
+    final_color = rules_color
+
+    # ----------------------------
+    # 2) OPTIONAL AI TRIAGE
+    # ----------------------------
+    # If AI is disabled / model missing, we simply keep rules output.
+    if triage_mode in ("ai", "hybrid"):
+        try:
+            ai_color, probs = ai_triage_predict(vitals, ctx, complaint)
+        except Exception as e:
+            ai_error = f"{type(e).__name__}: {e}"
+            ai_color, probs = None, None
+
+        # Decide how AI influences final color
+        if triage_mode == "ai" and ai_color:
+            final_color = ai_color
+
+        elif triage_mode == "hybrid" and ai_color:
+            # Safety-first hybrid: only escalate if AI is stricter than rules
+            rank = {"GREEN": 0, "YELLOW": 1, "ORANGE": 2, "RED": 3}
+            if rank.get(ai_color, 0) > rank.get(rules_color, 0):
+                final_color = ai_color
+            else:
+                final_color = rules_color
+
+    meta = {
+        "mode": triage_mode,
+        "rules_color": rules_color,
+        "rules_details": rules_details,
+        "ai_color": ai_color,
+        "probs": probs,
+        "ai_error": ai_error,
+    }
+
+    return final_color, meta
 
 # === UI HELPERS ===
 def triage_pill(color:str, overridden=False):
