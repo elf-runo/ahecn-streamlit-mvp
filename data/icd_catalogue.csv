@@ -1,13 +1,101 @@
-icd_code,label,case_type,age_min,age_max,priority_hint,default_interventions,notes
-O72.1,Postpartum haemorrhage (delayed),Maternal,12,55,time-critical,IV fluids;Uterotonics;TXA;Oxygen;Large-bore IV;Measure blood loss,Stabilize + rapid transfer if ongoing bleed
-O14.2,Severe pre-eclampsia,Maternal,12,55,time-critical,Magnesium sulfate;BP control;Oxygen;IV access,Monitor reflexes & urine output
-I21.3,STEMI (inferior),Cardiac,18,120,time-critical,Aspirin load;Clopidogrel;Oxygen if SpO2<90;IV access;Notify cath lab,Avoid delays to PCI
-I63.9,Ischaemic stroke (unspecified),Stroke,18,120,time-critical,Glucose check;BP control per protocol;Keep NPO;Pre-alert stroke center,"tPA/EV eligibility depends on imaging/time"
-I61.9,Intracerebral haemorrhage,Stroke,18,120,time-critical,BP control;Head elevation;Avoid anticoagulants;Pre-alert neurosurgery,No thrombolysis
-A41.9,Sepsis (unspecified),Sepsis,0,120,time-critical,First-dose antibiotic;IV fluids;Oxygen;Lactate if feasible;Blood cultures if feasible,Escalate if hypotensive/altered
-A41.5,Sepsis due to Gram-negative organism,Sepsis,0,120,time-critical,Broad-spectrum antibiotic;IV fluids;Oxygen;Vasopressor prep,Early antibiotics reduce mortality
-S06.0,Concussion (mild TBI),Trauma,5,120,monitor,Neuro checks;Immobilization if needed;Analgesia,CT head per risk
-S06.5,Traumatic subdural haemorrhage,Trauma,5,120,time-critical,Airway protection if GCS↓;IV access;Oxygen;Neurosurgery pre-alert,Avoid hypotension/hypoxia
-S72.0,Fracture of neck of femur,Trauma,50,120,specialist-dependent,Pain control;Immobilization;IV fluids if needed,Ortho/OR coordination
-J96.0,Acute respiratory failure,Other,0,120,time-critical,Oxygen;Nebulization if bronchospasm;IV access;Consider NIV,Escalate if tiring/hypercapnia
-A41.0,Sepsis due to Staphylococcus aureus,Sepsis,0,120,time-critical,First-dose antibiotic;IV fluids;Oxygen;Source control planning,Document suspected source
+bundle,icd10,label,default_caps,age_min,age_max,default_interventions
+Maternal,O72.0,Third-stage haemorrhage,ICU;BloodBank;OBGYN_OT;OR;Ventilator,12,55,IV access;Uterotonics;TXA;Crossmatch;Rapid transfusion prep
+Maternal,O72.1,Immediate postpartum haemorrhage,ICU;BloodBank;OBGYN_OT;OR;Ventilator,12,55,Uterotonics;TXA;Crossmatch;Fluid resuscitation
+Maternal,O14.1,Severe pre-eclampsia,ICU;OBGYN_OT;Ventilator,12,55,Magnesium sulfate;BP control;Seizure precautions
+Maternal,O15.0,Eclampsia,ICU;Ventilator;OBGYN_OT,12,55,Magnesium sulfate;Airway management;Rapid transport
+Trauma,S06.5,Traumatic subdural haemorrhage,CT;Neurosurgery;ICU;OR,0,120,Neuro checks;Airway protection;CT head;Crossmatch
+Trauma,S36.1,Injury of liver,OR;ICU;BloodBank,0,120,Large bore IV;Crossmatch;Bleeding control;FAST/CT if available
+Stroke,I63.9,Cerebral infarction,CT;Thrombolysis;ICU,18,120,Stroke protocol;CT brain;Thrombolysis eligibility
+Stroke,I61.9,Intracerebral haemorrhage,CT;Neurosurgery;ICU,18,120,BP control;Neuro checks;CT brain
+Cardiac,I21.9,Acute myocardial infarction,CathLab;ICU,18,120,Aspirin;ECG;Heparin per protocol;CathLab activation
+Cardiac,I46.9,Cardiac arrest,ICU;Ventilator,0,120,Defibrillation;CPR;Airway management
+Sepsis,A41.9,Sepsis unspecified,ICU,0,120,IV antibiotics;Blood cultures;Fluid resuscitation
+Other,J96.0,Acute respiratory failure,Ventilator;ICU,0,120,Oxygen;Nebulization;Intubation readiness
+Maternal,O44.1,Placenta praevia with haemorrhage,ICU;BloodBank;OBGYN_OT;OR,12,55,Crossmatch;IV access;Prepare OT
+Maternal,O85,Puerperal sepsis,ICU,12,55,IV antibiotics;Fluids;Source control
+Trauma,S06.4,Traumatic epidural haemorrhage,CT;Neurosurgery;ICU;OR,0,120,Neuro checks;CT head;Airway protection
+Trauma,T31.2,Burns 20-29% TBSA,ICU;OR,0,120,Fluid resuscitation;Pain control;Airway assessment
+Stroke,I60.9,Subarachnoid haemorrhage,CT;Neurosurgery;ICU,18,120,BP control;Neuro checks;CT/CTA
+Cardiac,I47.2,Ventricular tachycardia,ICU,18,120,ECG;Cardioversion;Antiarrhythmic
+Sepsis,R57.2,Septic shock,ICU;Ventilator,0,120,Fluids;Vasopressor readiness;Broad-spectrum antibiotics
+Other,K92.2,GI haemorrhage,BloodBank;OR;ICU,0,120,IV access;Crossmatch;PPI infusion
+Trauma,S27.3,Other injury of lung,ICU;Ventilator,0,120,Oxygen;Chest tube;Analgesia
+Trauma,S12.9,Cervical spine fracture,ICU;OR,0,120,Immobilization;Airway precautions;CT spine
+Trauma,T07,Unspecified multiple injuries,ICU;CT;OR;BloodBank,0,120,ATLS;Crossmatch;CT trauma
+Stroke,G00.9,Bacterial meningitis,ICU,0,120,IV antibiotics;Airway monitoring;LP after stabilization
+Stroke,G04.9,Encephalitis,ICU,0,120,Acyclovir;Neuro checks;Airway monitoring
+Cardiac,I44.2,Complete AV block,ICU;CathLab,18,120,ECG;Temporary pacing readiness;Cath consult
+Cardiac,I26.9,Pulmonary embolism,ICU,18,120,Oxygen;Anticoagulation;Thrombolysis eval
+Sepsis,A41.0,Sepsis due to Staph aureus,ICU,0,120,IV antibiotics;Cultures;Fluids
+Sepsis,K65.0,Acute peritonitis,ICU;OR,0,120,IV antibiotics;Surgery consult;Fluids
+Other,E10.1,DKA type 1,ICU,0,120,IV fluids;Insulin infusion;Electrolyte monitoring
+Other,N17.9,Acute kidney failure,Dialysis;ICU,0,120,Fluid balance;Electrolytes;Dialysis readiness
+Toxicology,T63.0,Snake venom,ICU,0,120,Antivenom;Airway monitoring;Coag profile
+Respiratory,J18.9,Pneumonia,ICU,0,120,Oxygen;Antibiotics;Fluids
+Pediatric,R57.1,Hypovolemic shock,ICU,0,17,IV fluids;Bleeding control;Crossmatch
+Neonatal,P22.0,RDS of newborn,Ventilator;ICU,0,0,Surfactant;CPAP;Thermoregulation
+Trauma,Z01.1,Demo emergency condition 1,CT;ICU,0,120,IV access;Monitoring;Rapid transport
+Toxicology,Z02.6,Demo emergency condition 2,ICU,0,120,IV access;Monitoring;Rapid transport
+Stroke,Z03.5,Demo emergency condition 3,ICU,0,120,IV access;Monitoring;Rapid transport
+Stroke,Z04.7,Demo emergency condition 4,ICU,0,120,IV access;Monitoring;Rapid transport
+Pediatric,Z05.0,Demo emergency condition 5,ICU,0,17,IV access;Monitoring;Rapid transport
+Trauma,Z06.8,Demo emergency condition 6,CT;ICU,0,120,IV access;Monitoring;Rapid transport
+Respiratory,Z07.5,Demo emergency condition 7,ICU,0,120,IV access;Monitoring;Rapid transport
+Other,Z08.5,Demo emergency condition 8,ICU,0,120,IV access;Monitoring;Rapid transport
+Respiratory,Z09.7,Demo emergency condition 9,ICU,0,120,IV access;Monitoring;Rapid transport
+Respiratory,Z10.7,Demo emergency condition 10,ICU,0,120,IV access;Monitoring;Rapid transport
+Trauma,Z11.1,Demo emergency condition 11,CT;ICU,0,120,IV access;Monitoring;Rapid transport
+Sepsis,Z12.7,Demo emergency condition 12,ICU,0,120,IV access;Monitoring;Rapid transport
+Trauma,Z13.0,Demo emergency condition 13,CT;ICU,0,120,IV access;Monitoring;Rapid transport
+Sepsis,Z14.9,Demo emergency condition 14,ICU,0,120,IV access;Monitoring;Rapid transport
+Neonatal,Z15.4,Demo emergency condition 15,ICU,0,0,IV access;Monitoring;Rapid transport
+Pediatric,Z16.5,Demo emergency condition 16,ICU,0,17,IV access;Monitoring;Rapid transport
+Maternal,Z17.7,Demo emergency condition 17,ICU,0,120,IV access;Monitoring;Rapid transport
+Other,Z18.2,Demo emergency condition 18,ICU,0,120,IV access;Monitoring;Rapid transport
+Respiratory,Z19.1,Demo emergency condition 19,ICU,0,120,IV access;Monitoring;Rapid transport
+Neonatal,Z20.0,Demo emergency condition 20,ICU,0,0,IV access;Monitoring;Rapid transport
+Cardiac,Z21.4,Demo emergency condition 21,ICU,0,120,IV access;Monitoring;Rapid transport
+Stroke,Z22.3,Demo emergency condition 22,ICU,0,120,IV access;Monitoring;Rapid transport
+Pediatric,Z23.6,Demo emergency condition 23,ICU,0,17,IV access;Monitoring;Rapid transport
+Neonatal,Z24.1,Demo emergency condition 24,ICU,0,0,IV access;Monitoring;Rapid transport
+Stroke,Z25.7,Demo emergency condition 25,ICU,0,120,IV access;Monitoring;Rapid transport
+Pediatric,Z26.8,Demo emergency condition 26,ICU,0,17,IV access;Monitoring;Rapid transport
+Sepsis,Z27.2,Demo emergency condition 27,ICU,0,120,IV access;Monitoring;Rapid transport
+Pediatric,Z28.8,Demo emergency condition 28,ICU,0,17,IV access;Monitoring;Rapid transport
+Sepsis,Z29.6,Demo emergency condition 29,ICU,0,120,IV access;Monitoring;Rapid transport
+Other,Z30.6,Demo emergency condition 30,ICU,0,120,IV access;Monitoring;Rapid transport
+Cardiac,Z31.2,Demo emergency condition 31,ICU,0,120,IV access;Monitoring;Rapid transport
+Trauma,Z32.2,Demo emergency condition 32,CT;ICU,0,120,IV access;Monitoring;Rapid transport
+Stroke,Z33.3,Demo emergency condition 33,ICU,0,120,IV access;Monitoring;Rapid transport
+Cardiac,Z34.0,Demo emergency condition 34,ICU,0,120,IV access;Monitoring;Rapid transport
+Neonatal,Z35.9,Demo emergency condition 35,ICU,0,0,IV access;Monitoring;Rapid transport
+Stroke,Z36.4,Demo emergency condition 36,ICU,0,120,IV access;Monitoring;Rapid transport
+Sepsis,Z37.0,Demo emergency condition 37,ICU,0,120,IV access;Monitoring;Rapid transport
+Stroke,Z38.6,Demo emergency condition 38,ICU,0,120,IV access;Monitoring;Rapid transport
+Toxicology,Z39.5,Demo emergency condition 39,ICU,0,120,IV access;Monitoring;Rapid transport
+Respiratory,Z40.9,Demo emergency condition 40,ICU,0,120,IV access;Monitoring;Rapid transport
+Other,Z41.2,Demo emergency condition 41,ICU,0,120,IV access;Monitoring;Rapid transport
+Toxicology,Z42.9,Demo emergency condition 42,ICU,0,120,IV access;Monitoring;Rapid transport
+Maternal,Z43.7,Demo emergency condition 43,ICU,0,120,IV access;Monitoring;Rapid transport
+Toxicology,Z44.6,Demo emergency condition 44,ICU,0,120,IV access;Monitoring;Rapid transport
+Pediatric,Z45.6,Demo emergency condition 45,ICU,0,17,IV access;Monitoring;Rapid transport
+Pediatric,Z46.1,Demo emergency condition 46,ICU,0,17,IV access;Monitoring;Rapid transport
+Neonatal,Z47.6,Demo emergency condition 47,ICU,0,0,IV access;Monitoring;Rapid transport
+Maternal,Z48.3,Demo emergency condition 48,ICU,0,120,IV access;Monitoring;Rapid transport
+Trauma,Z49.3,Demo emergency condition 49,CT;ICU,0,120,IV access;Monitoring;Rapid transport
+Neonatal,Z50.2,Demo emergency condition 50,ICU,0,0,IV access;Monitoring;Rapid transport
+Trauma,Z51.5,Demo emergency condition 51,CT;ICU,0,120,IV access;Monitoring;Rapid transport
+Respiratory,Z52.0,Demo emergency condition 52,ICU,0,120,IV access;Monitoring;Rapid transport
+Trauma,Z53.0,Demo emergency condition 53,CT;ICU,0,120,IV access;Monitoring;Rapid transport
+Respiratory,Z54.2,Demo emergency condition 54,ICU,0,120,IV access;Monitoring;Rapid transport
+Toxicology,Z55.1,Demo emergency condition 55,ICU,0,120,IV access;Monitoring;Rapid transport
+Other,Z56.9,Demo emergency condition 56,ICU,0,120,IV access;Monitoring;Rapid transport
+Maternal,Z57.1,Demo emergency condition 57,ICU,0,120,IV access;Monitoring;Rapid transport
+Cardiac,Z58.9,Demo emergency condition 58,ICU,0,120,IV access;Monitoring;Rapid transport
+Pediatric,Z59.2,Demo emergency condition 59,ICU,0,17,IV access;Monitoring;Rapid transport
+Sepsis,Z60.5,Demo emergency condition 60,ICU,0,120,IV access;Monitoring;Rapid transport
+Respiratory,Z61.5,Demo emergency condition 61,ICU,0,120,IV access;Monitoring;Rapid transport
+Neonatal,Z62.1,Demo emergency condition 62,ICU,0,0,IV access;Monitoring;Rapid transport
+Trauma,Z63.7,Demo emergency condition 63,CT;ICU,0,120,IV access;Monitoring;Rapid transport
+Neonatal,Z64.7,Demo emergency condition 64,ICU,0,0,IV access;Monitoring;Rapid transport
+Neonatal,Z65.4,Demo emergency condition 65,ICU,0,0,IV access;Monitoring;Rapid transport
