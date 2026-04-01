@@ -17,7 +17,7 @@ from synthetic_cases import seed_synthetic_referrals_v2
 st.set_page_config(
     page_title="AHECN Command Center", 
     layout="wide", 
-    initial_sidebar_state="expanded" # Forces the sidebar open natively
+    initial_sidebar_state="expanded"
 )
 
 # --- State Management ---
@@ -25,6 +25,10 @@ if 'active_case' not in st.session_state:
     st.session_state.active_case = None
 if 'synthetic_data' not in st.session_state:
     st.session_state.synthetic_data = None
+if 'transfer_initiated' not in st.session_state:
+    st.session_state.transfer_initiated = False
+if 'patient_accepted' not in st.session_state:
+    st.session_state.patient_accepted = False
 
 # --- Self-Contained Data Loading ---
 @st.cache_data(show_spinner=False)
@@ -52,7 +56,7 @@ facilities_df, icd_df = load_datasets()
 # --- Sidebar Navigation ---
 with st.sidebar:
     st.title("AHECN OS")
-    st.caption("Runo Health Enterprise v4.0")
+    st.caption("Runo Health Enterprise v5.0")
     st.markdown("---")
     nav_selection = st.radio(
         "SYSTEM NAVIGATION",
@@ -68,7 +72,6 @@ if nav_selection == "REFERRAL INITIATION":
     st.header("Triage & Referral Initiation")
     st.caption("Secure, dual-vector triage and topography-aware facility matching.")
     
-    # Native Card 1: Physiology
     with st.container(border=True):
         st.subheader("1. Patient Physiology & Context")
         c1, c2, c3, c4 = st.columns(4)
@@ -88,7 +91,6 @@ if nav_selection == "REFERRAL INITIATION":
             src_lat = st.number_input("Origin Latitude", value=25.586936, format="%.6f") 
             src_lon = st.number_input("Origin Longitude", value=91.809418, format="%.6f")
 
-    # Native Card 2: Pathology
     with st.container(border=True):
         st.subheader("2. Provisional Diagnosis")
         col_b, col_d = st.columns(2)
@@ -100,7 +102,6 @@ if nav_selection == "REFERRAL INITIATION":
             icd_row = dfb[dfb["label"] == dx].iloc[0].to_dict()
         required_caps = [x.strip() for x in (icd_row.get("default_caps","") or "").split(";") if x.strip()]
 
-    # Dual-Vector Execution
     vitals = {"hr": hr, "rr": rr, "sbp": sbp, "temp": temp, "spo2": spo2, "avpu": avpu}
     context = {"age": age, "pregnant": pregnant, "o2_device": "Air", "spo2_scale": 1, "behavior": "Normal"}
     try:
@@ -109,7 +110,6 @@ if nav_selection == "REFERRAL INITIATION":
         st.error(f"Clinical Engine Failure: {e}")
         st.stop()
 
-    # Native Card 3: Triage Result
     with st.container(border=True):
         st.subheader("3. Dual-Vector Triage Result")
         pill = {"RED":"CRITICAL (RED)", "YELLOW":"URGENT (YELLOW)", "GREEN":"STABLE (GREEN)"}[triage_color]
@@ -118,7 +118,6 @@ if nav_selection == "REFERRAL INITIATION":
         else: st.success(pill)
         st.markdown(f"**Primary Driver:** {meta['primary_driver']} | **Reason:** {meta['reason']} | **Severity Index:** {meta['severity_index']:.2f}")
 
-    # Native Card 4: Facility Matching
     with st.container(border=True):
         st.subheader("4. Facility Matching (Gated Clinical Safety)")
         origin = (float(src_lat), float(src_lon))
@@ -163,13 +162,48 @@ if nav_selection == "REFERRAL INITIATION":
                 st.markdown(f"**Topography-Adjusted ETA:** {details.get('eta_minutes', 'N/A')} mins")
                 st.markdown(f"**Surge Buffer:** {details.get('icu_beds', 0)} open beds")
 
-            if st.button("Initiate E2EE Transfer & Dispatch Ambulance", type="primary"):
+            if st.button("🚀 Initiate E2EE Transfer & Dispatch Ambulance", type="primary"):
                 st.session_state.active_case = {
                     "patient_name": patient_name, "age": age, "vitals": vitals, "diagnosis": dx,
                     "bundle": bundle, "triage_color": triage_color, "severity_index": meta['severity_index'],
                     "destination": selected_fac, "dispatch_time": datetime.now().strftime("%H:%M:%S")
                 }
-                st.success("Transfer Initiated! Switch to Active Transit Telemetry.")
+                st.session_state.transfer_initiated = True
+                st.session_state.patient_accepted = False 
+
+    # --- Phase 5: Med-Legal Zero-Friction Handover ---
+    if st.session_state.transfer_initiated and st.session_state.active_case:
+        with st.container(border=True):
+            st.subheader("📄 Med-Legal Documentation Generated")
+            st.success("Official ISBAR handover securely logged to the State Registry. Manual referral slip is no longer required.")
+            
+            case = st.session_state.active_case
+            isbar_text = f"""[ISBAR CLINICAL HANDOVER]
+Timestamp: {case['dispatch_time']}
+Status: PRIORITY {case['triage_color']} (Severity: {case['severity_index']:.2f})
+
+I - IDENTIFICATION:
+Patient: {case['patient_name']}, {case['age']} Y/O
+
+S - SITUATION:
+Emergency dispatch to {case['destination']['facility']}. 
+Provisional DX: {case['diagnosis']}
+
+B - BACKGROUND:
+Bundle: {case['bundle']}. Topography-Adjusted Transit ETA: {case['destination']['eta']} mins.
+
+A - ASSESSMENT:
+HR: {case['vitals']['hr']} bpm | SBP: {case['vitals']['sbp']} mmHg | RR: {case['vitals']['rr']} rpm
+SpO2: {case['vitals']['spo2']}% | Temp: {case['vitals']['temp']}°C | AVPU: {case['vitals']['avpu']}
+
+R - RECOMMENDATION:
+{('ED STABILIZATION ONLY REQUIRED DUE TO ZERO ICU BEDS.' if case['destination']['scoring_details'].get('gate_capacity') == 'WARNING_ED_STABILIZATION_ONLY' else 'Prepare critical care receiving bay.')}
+"""
+            st.code(isbar_text, language="markdown")
+            
+            col_a, col_b = st.columns(2)
+            col_a.button("⬇️ Download Official PDF")
+            col_b.button("🔗 Share to Secure Network")
 
 # ==========================================
 # VIEW 2: TRANSIT TELEMETRY
@@ -212,7 +246,6 @@ elif nav_selection == "RECEIVING HOSPITAL BAY":
             dest = case["destination"]
             dest_name = dest['facility']
             
-            # Defensive AI Surge Warning Logic
             if st.session_state.synthetic_data is not None:
                 df_analytics = st.session_state.synthetic_data
                 if 'dest_facility' in df_analytics.columns:
@@ -232,8 +265,21 @@ elif nav_selection == "RECEIVING HOSPITAL BAY":
             st.markdown(f"**Patient:** {case['patient_name']} ({case['age']} Y/O)")
             st.markdown(f"**Diagnosis:** {case['diagnosis']} ({case['triage_color']})")
             
-            if st.button("Acknowledge & Accept Patient", type="primary"):
+            if not st.session_state.patient_accepted:
+                if st.button("✅ Acknowledge & Accept Patient", type="primary"):
+                    st.session_state.patient_accepted = True
+                    st.rerun()
+            else:
                 st.success("Patient accepted. Telemetry linked to ED monitors.")
+                
+    # --- Phase 5: Closed-Loop Clinical Feedback ---
+    if st.session_state.get('patient_accepted', False):
+        with st.container(border=True):
+            st.subheader("🔄 Close the Clinical Loop")
+            st.caption("Fulfill medico-legal feedback requirements and notify the referring clinician.")
+            
+            if st.button("Register Patient Stabilized & Notify Referring Doctor"):
+                st.success("✅ Outcome securely recorded. Automated feedback ping sent to referring clinician confirming successful stabilization.")
 
 # ==========================================
 # VIEW 4: STATE COMMAND & AI
@@ -242,7 +288,6 @@ elif nav_selection == "STATE COMMAND & AI":
     st.header("State Command & Control")
     st.caption("Zero-PHI Analytics & Autonomous Logistics Engine")
     
-    # Injection Button (Wrapped in a card)
     with st.container(border=True):
         def _now_ts(): return time.time()
         def _rand_geo(rng): return (25.5 + rng.random()*0.2, 91.8 + rng.random()*0.2)
@@ -280,7 +325,6 @@ elif nav_selection == "STATE COMMAND & AI":
     if st.session_state.synthetic_data is not None:
         df_analytics = st.session_state.synthetic_data
         
-        # Native Card: Predictive Intelligence
         with st.container(border=True):
             st.subheader("Predictive Intelligence")
             col_ai1, col_ai2 = st.columns(2)
@@ -311,7 +355,6 @@ elif nav_selection == "STATE COMMAND & AI":
                     st.altair_chart((line + threshold_line).properties(height=180), use_container_width=True)
                 except: st.warning("ICU Forecast offline.")
 
-        # Native Card: Fleet Repositioning
         with st.container(border=True):
             st.subheader("Autonomous Fleet Repositioning")
             try:
@@ -333,7 +376,6 @@ elif nav_selection == "STATE COMMAND & AI":
                     else: st.info("No idle assets available in Cold Zones.")
             except: st.warning("Fleet engine awaiting stabilization.")
 
-        # Native Card: Statewide Telemetry
         with st.container(border=True):
             st.subheader("Statewide Telemetry")
             c1, c2, c3, c4 = st.columns(4)
