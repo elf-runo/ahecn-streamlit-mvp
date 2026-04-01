@@ -234,6 +234,10 @@ def seed_synthetic_referrals_v2(
             if not rows.empty:
                 row = rows.iloc[0].to_dict()
         except Exception:
+            pass
+            
+        # BULLETPROOF FALLBACK: If the CSV lookup failed for any reason, force a default dictionary
+        if row is None:
             row = {"icd10": icd10, "label": f"{bundle} condition", "bundle": bundle, "default_interventions": ""}
 
         # Location
