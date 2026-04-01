@@ -56,7 +56,7 @@ facilities_df, icd_df = load_datasets()
 # --- Sidebar Navigation ---
 with st.sidebar:
     st.title("AHECN OS")
-    st.caption("Runo Health Enterprise v5.0")
+    st.caption("Runo Health Enterprise v6.0")
     st.markdown("---")
     nav_selection = st.radio(
         "SYSTEM NAVIGATION",
@@ -102,12 +102,26 @@ if nav_selection == "REFERRAL INITIATION":
             icd_row = dfb[dfb["label"] == dx].iloc[0].to_dict()
         required_caps = [x.strip() for x in (icd_row.get("default_caps","") or "").split(";") if x.strip()]
 
+    # --- THE CLINICAL FIREWALL ---
     vitals = {"hr": hr, "rr": rr, "sbp": sbp, "temp": temp, "spo2": spo2, "avpu": avpu}
     context = {"age": age, "pregnant": pregnant, "o2_device": "Air", "spo2_scale": 1, "behavior": "Normal"}
-    try:
-        triage_color, meta = validated_triage_decision(vitals=vitals, icd_row=icd_row, context=context)
-    except Exception as e:
-        st.error(f"Clinical Engine Failure: {e}")
+    
+    guardrail_passed = True
+    
+    if "Pediatric" in bundle and age >= 18:
+        st.error("🛑 **CLINICAL INTERLOCK TRIGGERED:** You have selected a Pediatric pathology for an adult patient. Please correct the patient's age (< 18) or update the provisional diagnosis.")
+        guardrail_passed = False
+    elif "Maternal" in bundle and not pregnant:
+        st.warning("⚠️ **CLINICAL AUTOCORRECTION:** Maternal bundle detected. Auto-verifying pregnancy status to engage correct obstetric triage protocols.")
+        context["pregnant"] = True 
+        
+    if guardrail_passed:
+        try:
+            triage_color, meta = validated_triage_decision(vitals=vitals, icd_row=icd_row, context=context)
+        except Exception as e:
+            st.error(f"🚨 Clinical Engine Failure: {e}")
+            st.stop()
+    else:
         st.stop()
 
     with st.container(border=True):
@@ -152,15 +166,30 @@ if nav_selection == "REFERRAL INITIATION":
         if not results:
             st.error("CRITICAL ALERT: ZERO STATEWIDE CAPACITY. Initiate on-site ED stabilization.")
         else:
-            selected_fac_name = st.radio("Select Destination Facility:", [r["facility"] for r in results[:5]])
+            # --- THE RESTORED SCORING ENGINE VISIBILITY ---
+            radio_options = [f"{r['facility']} (Score: {r['score']})" for r in results[:5]]
+            selected_option = st.radio("Select Destination Facility:", radio_options)
+            
+            selected_fac_name = selected_option.split(" (Score:")[0]
             selected_fac = next(r for r in results if r["facility"] == selected_fac_name)
             
-            with st.expander(f"Explainable AI Logic for {selected_fac['facility']}"):
+            with st.expander(f"📊 Explainable AI Logic for {selected_fac['facility']}"):
                 details = selected_fac["scoring_details"]
-                if details.get('gate_capacity') == "WARNING_ED_STABILIZATION_ONLY":
-                    st.warning("Capacity Gate Override: ICU Full. Facility selected for immediate ED Resuscitation ONLY.")
-                st.markdown(f"**Topography-Adjusted ETA:** {details.get('eta_minutes', 'N/A')} mins")
-                st.markdown(f"**Surge Buffer:** {details.get('icu_beds', 0)} open beds")
+                
+                st.markdown("**1. Safety Gates (Absolute Mandates)**")
+                if details.get('gate_capability') == "PASSED":
+                    st.markdown("✅ **Infrastructure Gate:** Passed. 100% of requested life-saving capabilities present.")
+                
+                if details.get('gate_capacity') == "PASSED":
+                    st.markdown("✅ **Capacity Gate:** Passed. Minimum required critical care beds available.")
+                elif details.get('gate_capacity') == "WARNING_ED_STABILIZATION_ONLY":
+                    st.markdown("⚠️ **Capacity Gate Override:** ICU Full. Facility selected for immediate ED Resuscitation ONLY.")
+
+                st.markdown(f"**2. Optimization Matrix (Total Score: {details.get('total_score', 0)}/100)**")
+                st.markdown(f"🚑 **Topography-Adjusted ETA:** {details.get('eta_minutes', 'N/A')} mins *(Score: {details.get('proximity_score', 0)}/50)*")
+                st.markdown(f"🛏️ **Surge Buffer:** {details.get('icu_beds', 0)} open beds *(Score: {details.get('icu_score', 0)}/15)*")
+                st.markdown(f"🏛️ **Fiscal Guardrail:** {details.get('ownership')} facility *(Score: {details.get('fiscal_score', 0)}/20)*")
+                st.markdown(f"⚖️ **Acuity Bonus:** Criticality weight *(Score: {details.get('severity_bonus', 0)}/5)*")
 
             if st.button("🚀 Initiate E2EE Transfer & Dispatch Ambulance", type="primary"):
                 st.session_state.active_case = {
@@ -169,7 +198,8 @@ if nav_selection == "REFERRAL INITIATION":
                     "destination": selected_fac, "dispatch_time": datetime.now().strftime("%H:%M:%S")
                 }
                 st.session_state.transfer_initiated = True
-                st.session_state.patient_accepted = False 
+                st.session_state.patient_accepted = False
+                st.rerun()
 
     # --- Phase 5: Med-Legal Zero-Friction Handover ---
     if st.session_state.transfer_initiated and st.session_state.active_case:
@@ -200,7 +230,6 @@ R - RECOMMENDATION:
 {('ED STABILIZATION ONLY REQUIRED DUE TO ZERO ICU BEDS.' if case['destination']['scoring_details'].get('gate_capacity') == 'WARNING_ED_STABILIZATION_ONLY' else 'Prepare critical care receiving bay.')}
 """
             st.code(isbar_text, language="markdown")
-            
             col_a, col_b = st.columns(2)
             col_a.button("⬇️ Download Official PDF")
             col_b.button("🔗 Share to Secure Network")
@@ -398,4 +427,5 @@ elif nav_selection == "STATE COMMAND & AI":
                     y=alt.Y("average(mortality_risk):Q", title="Avg Modeled Mortality Risk (%)"),
                     color="bundle:N"
                 )
+                st.altair_chart(risk_chart.properties(height=300), use_container_width=True)
                 st.altair_chart(risk_chart.properties(height=300), use_container_width=True)
