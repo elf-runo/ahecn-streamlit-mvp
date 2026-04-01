@@ -16,10 +16,43 @@ from synthetic_cases import seed_synthetic_referrals_v2
 
 # --- Page Configuration ---
 st.set_page_config(
-    page_title="AHECN – Enterprise Command Center", 
+    page_title="Runo Health | AHECN Command Center", 
     layout="wide", 
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
+
+# --- UX MANDATE 2: STABLE CARD CSS INJECTION ---
+def inject_premium_css():
+    st.markdown("""
+    <style>
+        /* Premium SaaS Background */
+        .stApp {
+            background-color: #F8FAFC;
+        }
+        
+        /* Hide Streamlit Branding */
+        #MainMenu {visibility: hidden;}
+        header {visibility: hidden;}
+        footer {visibility: hidden;}
+
+        /* Premium Card Styling for Metrics */
+        [data-testid="metric-container"] {
+            background-color: white;
+            padding: 1.2rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            border: 1px solid #E2E8F0;
+        }
+        
+        /* Clean up sidebar styling */
+        [data-testid="stSidebar"] {
+            background-color: #FFFFFF;
+            border-right: 1px solid #E2E8F0;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+inject_premium_css()
 
 # --- State Management ---
 if 'active_case' not in st.session_state:
@@ -27,7 +60,7 @@ if 'active_case' not in st.session_state:
 if 'synthetic_data' not in st.session_state:
     st.session_state.synthetic_data = None
 
-# --- MANDATE 1: THE UTILS BAN (Self-Contained Loading) ---
+# --- ABSOLUTE CONSTRAINT: THE UTILS BAN (Self-Contained Loading) ---
 @st.cache_data(show_spinner=False)
 def load_datasets():
     fac_file, icd_file = 'meghalaya_facilities.csv', 'icd_catalogue.csv'
@@ -58,24 +91,32 @@ def load_datasets():
 
 facilities_df, icd_df = load_datasets()
 
-# --- Header ---
-st.title("AHECN – Acute Healthcare Emergency Coordination Network")
-st.caption("Enterprise Build v8.0 | Clinical Command Center | Autonomous Fleet Repositioning | Zero-PHI Analytics")
-st.markdown("---")
+# --- UX MANDATE 1: SIDEBAR NAVIGATION ---
+st.sidebar.markdown("## Runo Health")
+st.sidebar.markdown("**AHECN Command Center**")
+st.sidebar.markdown("---")
 
-# --- 4-Tier Architecture Tabs (Corporate Headers) ---
-tab_referrer, tab_emt, tab_hospital, tab_state = st.tabs([
-    "REFERRAL INITIATION", 
-    "ACTIVE TRANSIT TELEMETRY", 
-    "RECEIVING HOSPITAL BAY", 
-    "STATE COMMAND & AI"
-])
+nav_selection = st.sidebar.radio(
+    "Navigation",
+    [
+        "Referral Initiation", 
+        "Transit Telemetry", 
+        "Hospital Receiving", 
+        "State Command & AI"
+    ]
+)
+
+st.sidebar.markdown("---")
+st.sidebar.caption("Enterprise Build v9.0")
+st.sidebar.caption("Zero-PHI Compliant")
 
 # ==========================================
-# TAB 1: REFERRAL INITIATION
+# MODULE 1: REFERRAL INITIATION
 # ==========================================
-with tab_referrer:
+if nav_selection == "Referral Initiation":
     st.header("Triage & Referral Initiation")
+    st.caption("Initiate secure, dual-vector triage and topography-aware facility matching.")
+    st.markdown("---")
     
     st.subheader("1. Patient Physiology & Context")
     c1, c2, c3, c4 = st.columns(4)
@@ -205,16 +246,18 @@ with tab_referrer:
                 "destination": selected_fac,
                 "dispatch_time": datetime.now().strftime("%H:%M:%S")
             }
-            st.success("Transfer Initiated! Switch to ACTIVE TRANSIT TELEMETRY or RECEIVING HOSPITAL BAY tabs.")
+            st.success("Transfer Initiated! Switch to Transit Telemetry or Hospital Receiving via the sidebar.")
 
 # ==========================================
-# TAB 2: ACTIVE TRANSIT TELEMETRY
+# MODULE 2: TRANSIT TELEMETRY
 # ==========================================
-with tab_emt:
+elif nav_selection == "Transit Telemetry":
     st.header("Active Transit & Paramedic Dashboard")
+    st.caption("Live telemetry and clinical handover for en-route units.")
+    st.markdown("---")
     
     if not st.session_state.active_case:
-        st.info("No active dispatch. Initiate a transfer from the Referral Initiation tab.")
+        st.info("No active dispatch. Initiate a transfer from the Referral Initiation module.")
     else:
         case = st.session_state.active_case
         dest = case["destination"]
@@ -239,10 +282,12 @@ with tab_emt:
             st.warning("PARAMEDIC ALERT: Destination ICU is at capacity. You are routing for ED STABILIZATION ONLY. Prepare for potential secondary transfer post-resuscitation.")
 
 # ==========================================
-# TAB 3: RECEIVING HOSPITAL BAY
+# MODULE 3: HOSPITAL RECEIVING
 # ==========================================
-with tab_hospital:
+elif nav_selection == "Hospital Receiving":
     st.header("Emergency Department Receiving Board")
+    st.caption("Inbound telemetry and predictive surge warnings.")
+    st.markdown("---")
     
     if not st.session_state.active_case:
         st.info("ED Bay Clear. No incoming transfers.")
@@ -251,7 +296,7 @@ with tab_hospital:
         dest = case["destination"]
         dest_name = dest['facility']
         
-        # --- MANDATE 2: DEFENSIVE PANDAS (AI SURGE WARNING) ---
+        # --- ABSOLUTE CONSTRAINT: DEFENSIVE PANDAS (AI SURGE WARNING) ---
         if st.session_state.synthetic_data is not None:
             df_analytics = st.session_state.synthetic_data
             if not df_analytics.empty and 'dest_facility' in df_analytics.columns:
@@ -292,11 +337,12 @@ with tab_hospital:
             st.success("Patient accepted. Telemetry linked to ED monitors.")
 
 # ==========================================
-# TAB 4: STATE COMMAND & AI
+# MODULE 4: STATE COMMAND & AI
 # ==========================================
-with tab_state:
+elif nav_selection == "State Command & AI":
     st.header("State Command & Control (Zero-PHI Analytics)")
     st.caption("Aggregated, anonymized telemetry for government fiscal, capacity oversight, and predictive intelligence.")
+    st.markdown("---")
     
     def _now_ts(): return time.time()
     def _rand_geo(rng): return (25.5 + rng.random()*0.2, 91.8 + rng.random()*0.2)
@@ -353,7 +399,7 @@ with tab_state:
         top_facility = None 
         
         with col_ai1:
-            # --- MANDATE 2: DEFENSIVE PANDAS (HOTSPOTTING) ---
+            # --- ABSOLUTE CONSTRAINT: DEFENSIVE PANDAS (HOTSPOTTING) ---
             if not df_analytics.empty and 'bundle' in df_analytics.columns and 'dest_facility' in df_analytics.columns:
                 try:
                     top_bundle = df_analytics['bundle'].mode()[0]
