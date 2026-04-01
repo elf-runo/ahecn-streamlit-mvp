@@ -36,11 +36,17 @@ def load_datasets():
     fac_file, icd_file = 'meghalaya_facilities.csv', 'icd_catalogue.csv'
     f_path, i_path = None, None
     for root, _, files in os.walk("."):
-        if fac_file in files: f_path = os.path.join(root, fac_file)
-        if icd_file in files: i_path = os.path.join(root, icd_file)
+        if fac_file in files and not f_path: f_path = os.path.join(root, fac_file)
+        if icd_file in files and not i_path: i_path = os.path.join(root, icd_file)
+    
     if not f_path or not i_path:
         st.error(f"CRITICAL: Missing '{fac_file}' or '{icd_file}' in repository.")
         st.stop()
+        
+    # --- DIAGNOSTIC INJECTION: FORCE APP TO CONFESS FILE PATHS ---
+    st.sidebar.success(f"📂 ICD Data loaded from: `{i_path}`")
+    # -------------------------------------------------------------
+
     fac_df, icd_df = pd.read_csv(f_path), pd.read_csv(i_path)
     icd_df.columns = [c.strip().lower() for c in icd_df.columns]
     rename_map = {'icd-10': 'icd10', 'icd_10': 'icd10', 'icd code': 'icd10', 'code': 'icd10'}
@@ -50,9 +56,7 @@ def load_datasets():
         if c in fac_df.columns: fac_df[c] = pd.to_numeric(fac_df[c], errors='coerce')
     fac_df["ownership"] = fac_df.get("ownership", "Private").fillna("Private")
     return fac_df, icd_df
-
-facilities_df, icd_df = load_datasets()
-
+    
 # --- Sidebar Navigation ---
 with st.sidebar:
     st.title("AHECN OS")
