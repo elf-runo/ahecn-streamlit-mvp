@@ -7,7 +7,6 @@ import random
 from datetime import datetime
 
 # --- Architecture Imports ---
-from utils import load_icd_catalogue, load_facilities
 from clinical_engine import validated_triage_decision
 from scoring_engine import calculate_facility_score
 from routing_engine import get_eta, haversine_km
@@ -27,17 +26,40 @@ if 'active_case' not in st.session_state:
 if 'synthetic_data' not in st.session_state:
     st.session_state.synthetic_data = None
 
-# --- Data Loading ---
-@st.cache_data(show_spinner=False)
-def _icd_df():
-    return load_icd_catalogue()
+import os
 
+# --- Self-Contained Data Loading ---
 @st.cache_data(show_spinner=False)
-def _fac_df():
-    return load_facilities()
+def load_datasets():
+    fac_file, icd_file = 'meghalaya_facilities.csv', 'icd_catalogue.csv'
+    f_path, i_path = None, None
+    
+    # Hunts for the CSVs anywhere in the repository
+    for root, _, files in os.walk("."):
+        if fac_file in files: f_path = os.path.join(root, fac_file)
+        if icd_file in files: i_path = os.path.join(root, icd_file)
 
-icd_df = _icd_df()
-facilities_df = _fac_df()
+    if not f_path or not i_path:
+        st.error(f"🚨 CRITICAL: Missing '{fac_file}' or '{icd_file}' in repository.")
+        st.stop()
+
+    fac_df, icd_df = pd.read_csv(f_path), pd.read_csv(i_path)
+    
+    # Standardize ICD columns
+    icd_df.columns = [c.strip().lower() for c in icd_df.columns]
+    rename_map = {'icd-10': 'icd10', 'icd_10': 'icd10', 'icd code': 'icd10', 'code': 'icd10'}
+    icd_df = icd_df.rename(columns=rename_map)
+    if 'icd10' not in icd_df.columns: icd_df = icd_df.rename(columns={icd_df.columns[0]: 'icd10'})
+    
+    # Standardize Facility columns
+    for c in ["lat","lon"]:
+        if c in fac_df.columns:
+            fac_df[c] = pd.to_numeric(fac_df[c], errors='coerce')
+    fac_df["ownership"] = fac_df.get("ownership", "Private").fillna("Private")
+    
+    return fac_df, icd_df
+
+facilities_df, icd_df = load_datasets()
 
 # --- Header ---
 st.title("AHECN – Acute Healthcare Emergency Coordination Network")
