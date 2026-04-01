@@ -21,70 +21,6 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- ENTERPRISE CSS INJECTION ---
-def inject_enterprise_css():
-    st.markdown("""
-    <style>
-        /* Hide Streamlit Branding */
-        #MainMenu {visibility: hidden;}
-        header {visibility: hidden;}
-        footer {visibility: hidden;}
-        
-        /* App Background Adjustment */
-        .stApp {
-            background-color: #F4F7F9;
-        }
-
-        /* Professional Tab Navigation Styling */
-        div[data-baseweb="tab-list"] {
-            gap: 32px;
-            border-bottom: 2px solid #E2E8F0;
-            padding-bottom: 0px;
-        }
-        div[data-baseweb="tab"] {
-            padding-top: 16px;
-            padding-bottom: 16px;
-            background-color: transparent !important;
-            border: none !important;
-            color: #64748B !important;
-            font-weight: 600 !important;
-            font-size: 1.05rem !important;
-            letter-spacing: 0.5px;
-        }
-        div[aria-selected="true"] {
-            color: #0052CC !important;
-            border-bottom: 3px solid #0052CC !important;
-        }
-
-        /* Floating Data Cards for st.metric */
-        div[data-testid="stMetric"] {
-            background-color: #FFFFFF;
-            border-left: 5px solid #0052CC;
-            padding: 15px 24px;
-            border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-            transition: transform 0.2s ease-in-out;
-        }
-        div[data-testid="stMetric"]:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.08);
-        }
-        div[data-testid="stMetricValue"] {
-            color: #1E293B;
-            font-weight: 700;
-        }
-        div[data-testid="stMetricLabel"] {
-            color: #64748B;
-            font-weight: 600;
-            text-transform: uppercase;
-            font-size: 0.8rem;
-            letter-spacing: 0.5px;
-        }
-    </style>
-    """, unsafe_allow_html=True)
-
-inject_enterprise_css()
-
 # --- State Management ---
 if 'active_case' not in st.session_state:
     st.session_state.active_case = None
@@ -100,7 +36,7 @@ def load_datasets():
         if fac_file in files: f_path = os.path.join(root, fac_file)
         if icd_file in files: i_path = os.path.join(root, icd_file)
     if not f_path or not i_path:
-        st.error(f"🚨 CRITICAL: Missing CSVs. Ensure {fac_file} and {icd_file} are in the directory tree.")
+        st.error(f"CRITICAL: Missing CSVs. Ensure {fac_file} and {icd_file} are in the directory tree.")
         st.stop()
     
     fac_df, icd_df = pd.read_csv(f_path), pd.read_csv(i_path)
@@ -124,7 +60,7 @@ facilities_df, icd_df = load_datasets()
 
 # --- Header ---
 st.title("AHECN – Acute Healthcare Emergency Coordination Network")
-st.caption("Enterprise Build v6.0 | Clinical Command Center | Autonomous Fleet Repositioning | Zero-PHI Analytics")
+st.caption("Enterprise Build v8.0 | Clinical Command Center | Autonomous Fleet Repositioning | Zero-PHI Analytics")
 st.markdown("---")
 
 # --- 4-Tier Architecture Tabs (Corporate Headers) ---
@@ -176,11 +112,11 @@ with tab_referrer:
     try:
         triage_color, meta = validated_triage_decision(vitals=vitals, icd_row=icd_row, context=context)
     except Exception as e:
-        st.error(f"🚨 Clinical Engine Failure: {e}")
+        st.error(f"CRITICAL: Clinical Engine Failure: {e}")
         st.stop()
 
-    st.markdown("### 🧠 Dual-Vector Triage Result")
-    pill = {"RED":"🟥 CRITICAL (RED)", "YELLOW":"🟨 URGENT (YELLOW)", "GREEN":"🟩 STABLE (GREEN)"}[triage_color]
+    st.markdown("### Dual-Vector Triage Result")
+    pill = {"RED":"CRITICAL (RED)", "YELLOW":"URGENT (YELLOW)", "GREEN":"STABLE (GREEN)"}[triage_color]
     st.subheader(pill)
     st.caption(f"**Primary Driver:** {meta['primary_driver']} | **Reason:** {meta['reason']} | **Severity Index:** {meta['severity_index']:.2f}")
 
@@ -234,30 +170,30 @@ with tab_referrer:
     results = sorted(results, key=lambda x: (-x["score"], x["eta"]))
 
     if not results:
-        st.error("🚨 **CRITICAL ALERT: ZERO STATEWIDE CAPACITY.**")
+        st.error("CRITICAL ALERT: ZERO STATEWIDE CAPACITY.")
         st.warning("No facilities meet the absolute minimum clinical safety gates within transit range. Initiate immediate on-site ED stabilization and escalate to State Command for out-of-network airlift.")
     else:
         selected_fac_name = st.radio("Select Destination Facility:", [r["facility"] for r in results[:5]])
         selected_fac = next(r for r in results if r["facility"] == selected_fac_name)
         
-        with st.expander(f"📊 Explainable AI Logic for {selected_fac['facility']}"):
+        with st.expander(f"Explainable AI Logic for {selected_fac['facility']}"):
             details = selected_fac["scoring_details"]
             
             st.markdown("**1. Safety Gates (Absolute Mandates)**")
             if details.get('gate_capability') == "PASSED":
-                st.markdown("✅ **Infrastructure Gate:** Passed. 100% of requested life-saving capabilities present.")
+                st.markdown("**Infrastructure Gate:** Passed. 100% of requested life-saving capabilities present.")
             
             if details.get('gate_capacity') == "PASSED":
-                st.markdown("✅ **Capacity Gate:** Passed. Minimum required critical care beds available.")
+                st.markdown("**Capacity Gate:** Passed. Minimum required critical care beds available.")
             elif details.get('gate_capacity') == "WARNING_ED_STABILIZATION_ONLY":
-                st.markdown("⚠️ **Capacity Gate Override:** ICU Full. Facility selected for immediate ED Resuscitation ONLY.")
+                st.markdown("**Capacity Gate Override:** ICU Full. Facility selected for immediate ED Resuscitation ONLY.")
 
             st.markdown("**2. Optimization Matrix**")
-            st.markdown(f"🚑 **Topography-Adjusted ETA:** {details.get('eta_minutes', 'N/A')} mins *(Score: {details.get('proximity_score', 0)}/50)*")
-            st.markdown(f"🛏️ **Surge Buffer:** {details.get('icu_beds', 0)} open beds *(Score: {details.get('icu_score', 0)}/15)*")
-            st.markdown(f"🏛️ **Fiscal Guardrail:** {details.get('ownership')} facility *(Score: {details.get('fiscal_score', 0)}/20)*")
+            st.markdown(f"**Topography-Adjusted ETA:** {details.get('eta_minutes', 'N/A')} mins *(Score: {details.get('proximity_score', 0)}/50)*")
+            st.markdown(f"**Surge Buffer:** {details.get('icu_beds', 0)} open beds *(Score: {details.get('icu_score', 0)}/15)*")
+            st.markdown(f"**Fiscal Guardrail:** {details.get('ownership')} facility *(Score: {details.get('fiscal_score', 0)}/20)*")
 
-        if st.button("🚀 Initiate E2EE Transfer & Dispatch Ambulance", type="primary"):
+        if st.button("Initiate E2EE Transfer & Dispatch Ambulance", type="primary"):
             st.session_state.active_case = {
                 "patient_name": patient_name,
                 "age": age,
@@ -283,14 +219,14 @@ with tab_emt:
         case = st.session_state.active_case
         dest = case["destination"]
         
-        st.error(f"🚨 **PRIORITY {case['triage_color']} EN ROUTE TO {dest['facility'].upper()}**")
+        st.error(f"PRIORITY {case['triage_color']} EN ROUTE TO {dest['facility'].upper()}")
         
         c1, c2, c3 = st.columns(3)
         c1.metric("Topography-Adjusted ETA", f"{dest['eta']} min")
         c2.metric("Modeled Mortality Risk", f"{dest['mortality_risk']}%")
         c3.metric("Dispatch Time", case["dispatch_time"])
 
-        st.markdown("### 📋 ISBAR Clinical Handover (E2EE Unredacted)")
+        st.markdown("### ISBAR Clinical Handover (E2EE Unredacted)")
         st.markdown(f"""
         * **Identification:** {case['patient_name']}, {case['age']} Y/O.
         * **Situation:** Priority {case['triage_color']} transfer for {case['diagnosis']}.
@@ -300,7 +236,7 @@ with tab_emt:
         """)
         
         if dest["scoring_details"].get("gate_capacity") == "WARNING_ED_STABILIZATION_ONLY":
-            st.warning("⚠️ **PARAMEDIC ALERT:** Destination ICU is at capacity. You are routing for ED STABILIZATION ONLY. Prepare for potential secondary transfer post-resuscitation.")
+            st.warning("PARAMEDIC ALERT: Destination ICU is at capacity. You are routing for ED STABILIZATION ONLY. Prepare for potential secondary transfer post-resuscitation.")
 
 # ==========================================
 # TAB 3: RECEIVING HOSPITAL BAY
@@ -325,34 +261,34 @@ with tab_hospital:
                     current_live_inbound = int(historical_daily_avg * 1.8) + 1 
                     
                     if current_live_inbound > (historical_daily_avg * 1.5):
-                        st.error(f"🚨 **CODE SURGE DETECTED: {dest_name.upper()}** 🚨")
+                        st.error(f"CODE SURGE DETECTED: {dest_name.upper()}")
                         st.markdown(f"""
                         **Predictive AI Alert:** Current inbound ambulance load ({current_live_inbound} cases) exceeds your 90-day historical average ({historical_daily_avg:.1f} cases/day) by **>50%**. 
                         
                         **Recommended Administrator Actions:**
-                        * ⚠️ Mobilize off-duty trauma surgeons and ED physicians immediately.
-                        * ⚠️ Initiate rapid discharge protocols for stable ward patients to free up ICU step-down beds.
-                        * ⚠️ Alert State Command if diversion status is required.
+                        * Mobilize off-duty trauma surgeons and ED physicians immediately.
+                        * Initiate rapid discharge protocols for stable ward patients to free up ICU step-down beds.
+                        * Alert State Command if diversion status is required.
                         """)
                         st.markdown("---")
                 except Exception as e:
                     st.warning("Surge AI encountered an error calculating historical baselines.")
             else:
-                st.warning("⚠️ Predictive Surge AI offline. (Telemetry data malformed).")
+                st.warning("Predictive Surge AI offline. (Telemetry data malformed).")
         else:
-            st.warning("⚠️ Predictive Surge AI offline. (Requires synthetic data injection in State Command tab).")
+            st.warning("Predictive Surge AI offline. (Requires synthetic data injection in State Command tab).")
 
         # --- STANDARD RECEIVING UI ---
-        st.warning(f"🔔 **INCOMING ALERT:** ETA {dest['eta']} mins")
+        st.warning(f"INCOMING ALERT: ETA {dest['eta']} mins")
         
         if dest["scoring_details"].get("gate_capacity") == "WARNING_ED_STABILIZATION_ONLY":
-            st.error("🛑 **CRITICAL CAPACITY OVERRIDE:** Patient routed to your facility for ED STABILIZATION ONLY due to zero regional ICU beds. Mobilize ED Resuscitation team immediately.")
+            st.error("CRITICAL CAPACITY OVERRIDE: Patient routed to your facility for ED STABILIZATION ONLY due to zero regional ICU beds. Mobilize ED Resuscitation team immediately.")
             
         st.markdown(f"**Patient:** {case['patient_name']} ({case['age']} Y/O)")
         st.markdown(f"**Diagnosis:** {case['diagnosis']} ({case['triage_color']})")
         st.markdown(f"**Vitals at Dispatch:** HR {case['vitals']['hr']} | BP {case['vitals']['sbp']} | SpO2 {case['vitals']['spo2']}%")
         
-        if st.button("✅ Acknowledge & Accept Patient"):
+        if st.button("Acknowledge & Accept Patient"):
             st.success("Patient accepted. Telemetry linked to ED monitors.")
 
 # ==========================================
@@ -368,7 +304,7 @@ with tab_state:
     def _interp_route(lat1, lon1, lat2, lon2, n): return []
     def _traffic(hr): return 1.2 if 8 <= hr <= 20 else 1.0
 
-    if st.button("💉 Inject 1,000 Synthetic Cases (Stress Test)"):
+    if st.button("Inject 1,000 Synthetic Cases (Stress Test)"):
         with st.spinner("Generating 1,000 clinically validated synthetic cases..."):
             try:
                 raw_data = seed_synthetic_referrals_v2(
@@ -411,7 +347,7 @@ with tab_state:
         df_analytics = st.session_state.synthetic_data
         
         st.markdown("---")
-        st.subheader("🧠 Predictive AI & Epidemiological Intelligence")
+        st.subheader("Predictive AI & Epidemiological Intelligence")
         
         col_ai1, col_ai2 = st.columns(2)
         top_facility = None 
@@ -423,7 +359,7 @@ with tab_state:
                     top_bundle = df_analytics['bundle'].mode()[0]
                     top_facility = df_analytics[df_analytics['bundle'] == top_bundle]['dest_facility'].mode()[0]
                     
-                    st.error("⚠️ **EPIDEMIOLOGICAL HOTSPOT PREDICTION**")
+                    st.error("EPIDEMIOLOGICAL HOTSPOT PREDICTION")
                     st.markdown(f"""
                     **Vector Analysis:** The AI has detected a statistically significant anomaly in **{top_bundle}** cases.
                     **Forecast:** A cluster event is highly probable within the catchment area of **{top_facility}** over the next 48 hours.
@@ -435,7 +371,7 @@ with tab_state:
                 st.warning("Awaiting valid telemetry data for hotspot prediction.")
 
         with col_ai2:
-            st.warning("📉 **12-HOUR ICU EXHAUSTION FORECAST**")
+            st.warning("12-HOUR ICU EXHAUSTION FORECAST")
             if not df_analytics.empty and 'triage_color' in df_analytics.columns:
                 try:
                     total_icu_beds = facilities_df['ICU_open'].astype(int).sum()
@@ -475,7 +411,7 @@ with tab_state:
                 st.warning("Awaiting valid telemetry data for ICU Forecast.")
 
         st.markdown("---")
-        st.subheader("📊 Statewide Telemetry (30-Day Aggregate)")
+        st.subheader("Statewide Telemetry (30-Day Aggregate)")
         
         if not df_analytics.empty and all(c in df_analytics.columns for c in ['severity_index', 'mortality_risk', 'facility_ownership', 'triage_color', 'eta_min', 'bundle']):
             try:
@@ -509,7 +445,7 @@ with tab_state:
                     ).properties(title="ETA vs Severity (Fiscal Sector Segmented)")
                     st.altair_chart(scatter_chart, use_container_width=True)
                     
-                st.markdown("### 📉 Golden Hour Mortality Curve Analysis")
+                st.markdown("### Golden Hour Mortality Curve Analysis")
                 risk_chart = alt.Chart(df_analytics).mark_area(opacity=0.4).encode(
                     x=alt.X("eta_min:Q", bin=alt.Bin(maxbins=30), title="Transit ETA (mins)"),
                     y=alt.Y("average(mortality_risk):Q", title="Avg Modeled Mortality Risk (%)"),
@@ -523,7 +459,7 @@ with tab_state:
 
         # --- AUTONOMOUS FLEET REPOSITIONING ---
         st.markdown("---")
-        st.subheader("🚑 Autonomous Fleet Repositioning")
+        st.subheader("Autonomous Fleet Repositioning")
         st.caption("Pre-emptive logistics engine: Rebalancing idle assets from Cold Zones to predicted Hotspots.")
 
         if top_facility and not df_analytics.empty and 'triage_color' in df_analytics.columns and 'dest_facility' in df_analytics.columns:
@@ -564,7 +500,7 @@ with tab_state:
                         })
 
                     if dispatch_commands:
-                        st.success(f"✅ **Optimization Complete:** {len(dispatch_commands)} idle units identified for immediate relocation to {top_facility}.")
+                        st.success(f"Optimization Complete: {len(dispatch_commands)} idle units identified for immediate relocation to {top_facility}.")
                         st.dataframe(pd.DataFrame(dispatch_commands), use_container_width=True)
                     else:
                         st.info("No idle assets available in Cold Zones for repositioning at this time.")
@@ -572,7 +508,7 @@ with tab_state:
                     st.info("No idle assets available in Cold Zones for repositioning at this time.")
                     
             except Exception as e:
-                st.error(f"🚨 Fleet Optimization Engine Error: {e}")
+                st.error(f"Fleet Optimization Engine Error: {e}")
                 st.warning("Failsafe activated: Maintaining current fleet distribution.")
         else:
             st.info("Hotspot prediction unavailable or telemetry missing. Cannot execute fleet optimization.")
