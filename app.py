@@ -16,10 +16,74 @@ from synthetic_cases import seed_synthetic_referrals_v2
 
 # --- Page Configuration ---
 st.set_page_config(
-    page_title="AHECN – Enterprise Predictive Build", 
+    page_title="AHECN – Enterprise Command Center", 
     layout="wide", 
     initial_sidebar_state="collapsed"
 )
+
+# --- ENTERPRISE CSS INJECTION ---
+def inject_enterprise_css():
+    st.markdown("""
+    <style>
+        /* Hide Streamlit Branding */
+        #MainMenu {visibility: hidden;}
+        header {visibility: hidden;}
+        footer {visibility: hidden;}
+        
+        /* App Background Adjustment */
+        .stApp {
+            background-color: #F4F7F9;
+        }
+
+        /* Professional Tab Navigation Styling */
+        div[data-baseweb="tab-list"] {
+            gap: 32px;
+            border-bottom: 2px solid #E2E8F0;
+            padding-bottom: 0px;
+        }
+        div[data-baseweb="tab"] {
+            padding-top: 16px;
+            padding-bottom: 16px;
+            background-color: transparent !important;
+            border: none !important;
+            color: #64748B !important;
+            font-weight: 600 !important;
+            font-size: 1.05rem !important;
+            letter-spacing: 0.5px;
+        }
+        div[aria-selected="true"] {
+            color: #0052CC !important;
+            border-bottom: 3px solid #0052CC !important;
+        }
+
+        /* Floating Data Cards for st.metric */
+        div[data-testid="stMetric"] {
+            background-color: #FFFFFF;
+            border-left: 5px solid #0052CC;
+            padding: 15px 24px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            transition: transform 0.2s ease-in-out;
+        }
+        div[data-testid="stMetric"]:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.08);
+        }
+        div[data-testid="stMetricValue"] {
+            color: #1E293B;
+            font-weight: 700;
+        }
+        div[data-testid="stMetricLabel"] {
+            color: #64748B;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.8rem;
+            letter-spacing: 0.5px;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+inject_enterprise_css()
 
 # --- State Management ---
 if 'active_case' not in st.session_state:
@@ -60,19 +124,19 @@ facilities_df, icd_df = load_datasets()
 
 # --- Header ---
 st.title("AHECN – Acute Healthcare Emergency Coordination Network")
-st.caption("Enterprise Build v5.0 | Autonomous Fleet Repositioning | Defensive Pandas | Zero-PHI Analytics")
+st.caption("Enterprise Build v6.0 | Clinical Command Center | Autonomous Fleet Repositioning | Zero-PHI Analytics")
 st.markdown("---")
 
-# --- 4-Tier Architecture Tabs ---
+# --- 4-Tier Architecture Tabs (Corporate Headers) ---
 tab_referrer, tab_emt, tab_hospital, tab_state = st.tabs([
-    "🏥 1. Referrer (PHC/CHC)", 
-    "🚑 2. EMT / Transit", 
-    "🏥 3. Receiving Hospital", 
-    "🏛️ 4. State Command (Analytics & AI)"
+    "REFERRAL INITIATION", 
+    "ACTIVE TRANSIT TELEMETRY", 
+    "RECEIVING HOSPITAL BAY", 
+    "STATE COMMAND & AI"
 ])
 
 # ==========================================
-# TAB 1: REFERRER (PHC/CHC)
+# TAB 1: REFERRAL INITIATION
 # ==========================================
 with tab_referrer:
     st.header("Triage & Referral Initiation")
@@ -205,16 +269,16 @@ with tab_referrer:
                 "destination": selected_fac,
                 "dispatch_time": datetime.now().strftime("%H:%M:%S")
             }
-            st.success("Transfer Initiated! Switch to EMT / Hospital tabs.")
+            st.success("Transfer Initiated! Switch to ACTIVE TRANSIT TELEMETRY or RECEIVING HOSPITAL BAY tabs.")
 
 # ==========================================
-# TAB 2: EMT / TRANSIT
+# TAB 2: ACTIVE TRANSIT TELEMETRY
 # ==========================================
 with tab_emt:
-    st.header("🚑 Active Transit & Paramedic Dashboard")
+    st.header("Active Transit & Paramedic Dashboard")
     
     if not st.session_state.active_case:
-        st.info("No active dispatch. Initiate a transfer from the Referrer tab.")
+        st.info("No active dispatch. Initiate a transfer from the Referral Initiation tab.")
     else:
         case = st.session_state.active_case
         dest = case["destination"]
@@ -239,10 +303,10 @@ with tab_emt:
             st.warning("⚠️ **PARAMEDIC ALERT:** Destination ICU is at capacity. You are routing for ED STABILIZATION ONLY. Prepare for potential secondary transfer post-resuscitation.")
 
 # ==========================================
-# TAB 3: RECEIVING HOSPITAL
+# TAB 3: RECEIVING HOSPITAL BAY
 # ==========================================
 with tab_hospital:
-    st.header("🏥 Emergency Department Receiving Board")
+    st.header("Emergency Department Receiving Board")
     
     if not st.session_state.active_case:
         st.info("ED Bay Clear. No incoming transfers.")
@@ -292,10 +356,10 @@ with tab_hospital:
             st.success("Patient accepted. Telemetry linked to ED monitors.")
 
 # ==========================================
-# TAB 4: STATE COMMAND (ANALYTICS & AI)
+# TAB 4: STATE COMMAND & AI
 # ==========================================
 with tab_state:
-    st.header("🏛️ State Command & Control (Zero-PHI Analytics)")
+    st.header("State Command & Control (Zero-PHI Analytics)")
     st.caption("Aggregated, anonymized telemetry for government fiscal, capacity oversight, and predictive intelligence.")
     
     def _now_ts(): return time.time()
