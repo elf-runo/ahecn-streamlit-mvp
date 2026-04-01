@@ -262,9 +262,13 @@ with tab_hospital:
         # --- AI SURGE WARNING LOGIC ---
         if st.session_state.synthetic_data is not None:
             df_analytics = st.session_state.synthetic_data
-            # Calculate 30-day historical average for this specific facility
-            fac_cases = df_analytics[df_analytics['dest_facility'] == dest_name]
-            historical_daily_avg = max(1, len(fac_cases) / 30.0)
+            
+            # DEFENSIVE PATCH: Ensure column exists before filtering to prevent KeyErrors
+            if 'dest_facility' in df_analytics.columns:
+                fac_cases = df_analytics[df_analytics['dest_facility'] == dest_name]
+                historical_daily_avg = max(1, len(fac_cases) / 30.0)
+            else:
+                historical_daily_avg = 1.0 # Safe fallback if using legacy data cache
             
             # Simulate current live inbound load (Forcing a surge scenario for demonstration)
             # In production, this queries the live active transit database.
@@ -361,10 +365,23 @@ with tab_state:
         
         with col_ai1:
             # 1. Predictive Hotspotting
-            top_bundle = df_analytics['bundle'].mode()[0]
-            top_facility = df_analytics[df_analytics['bundle'] == top_bundle]['dest_facility'].mode()[0]
-            
             st.error("⚠️ **EPIDEMIOLOGICAL HOTSPOT PREDICTION**")
+            
+            # DEFENSIVE PATCH: Prevent IndexError and KeyError if dataframe is empty or misaligned
+            if not df_analytics.empty and 'bundle' in df_analytics.columns and 'dest_facility' in df_analytics.columns:
+                try:
+                    top_bundle = df_analytics['bundle'].mode()[0]
+                    top_facility = df_analytics[df_analytics['bundle'] == top_bundle]['dest_facility'].mode()[0]
+                    
+                    st.markdown(f"""
+                    **Vector Analysis:** The AI has detected a statistically significant anomaly in **{top_bundle}** cases.
+                    **Forecast:** A cluster event is highly probable within the catchment area of **{top_facility}** over the next 48 hours.
+                    **Action Required:** Pre-position specialized {top_bundle.lower()} medical supplies and alert regional ASHA workers.
+                    """)
+                except IndexError:
+                    st.warning("Insufficient variance in data to calculate hotspot prediction. Await further telemetry.")
+            else:
+                st.warning("Analytics matrix booting... Please inject fresh synthetic data.")
             st.markdown(f"""
             **Vector Analysis:** The AI has detected a statistically significant anomaly in **{top_bundle}** cases.
             **Forecast:** A cluster event is highly probable within the catchment area of **{top_facility}** over the next 48 hours.
