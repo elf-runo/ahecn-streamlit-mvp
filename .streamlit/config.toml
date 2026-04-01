@@ -1,7 +1,10 @@
 [theme]
-base="dark"                         # force dark mode
-primaryColor="#10b981"              # emerald accents
-backgroundColor="#0b1220"           # deep navy background
-secondaryBackgroundColor="#111827"  # cards/side panels
-textColor="#e5e7eb"                 # light text
-font="sans serif"
+base = "light"
+primaryColor = "#0052CC"
+backgroundColor = "#F4F7F9"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#1E293B"
+font = "sans serif"
+
+[client]
+toolbarMode = "minimal"
