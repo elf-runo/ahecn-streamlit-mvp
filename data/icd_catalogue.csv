@@ -1,101 +1,111 @@
 bundle,icd10,label,default_caps,age_min,age_max,default_interventions
-Maternal,O72.0,Third-stage haemorrhage,ICU;BloodBank;OBGYN_OT;OR;Ventilator,12,55,IV access;Uterotonics;TXA;Crossmatch;Rapid transfusion prep
-Maternal,O72.1,Immediate postpartum haemorrhage,ICU;BloodBank;OBGYN_OT;OR;Ventilator,12,55,Uterotonics;TXA;Crossmatch;Fluid resuscitation
-Maternal,O14.1,Severe pre-eclampsia,ICU;OBGYN_OT;Ventilator,12,55,Magnesium sulfate;BP control;Seizure precautions
-Maternal,O15.0,Eclampsia,ICU;Ventilator;OBGYN_OT,12,55,Magnesium sulfate;Airway management;Rapid transport
-Trauma,S06.5,Traumatic subdural haemorrhage,CT;Neurosurgery;ICU;OR,0,120,Neuro checks;Airway protection;CT head;Crossmatch
-Trauma,S36.1,Injury of liver,OR;ICU;BloodBank,0,120,Large bore IV;Crossmatch;Bleeding control;FAST/CT if available
-Stroke,I63.9,Cerebral infarction,CT;Thrombolysis;ICU,18,120,Stroke protocol;CT brain;Thrombolysis eligibility
-Stroke,I61.9,Intracerebral haemorrhage,CT;Neurosurgery;ICU,18,120,BP control;Neuro checks;CT brain
-Cardiac,I21.9,Acute myocardial infarction,CathLab;ICU,18,120,Aspirin;ECG;Heparin per protocol;CathLab activation
-Cardiac,I46.9,Cardiac arrest,ICU;Ventilator,0,120,Defibrillation;CPR;Airway management
-Sepsis,A41.9,Sepsis unspecified,ICU,0,120,IV antibiotics;Blood cultures;Fluid resuscitation
-Other,J96.0,Acute respiratory failure,Ventilator;ICU,0,120,Oxygen;Nebulization;Intubation readiness
-Maternal,O44.1,Placenta praevia with haemorrhage,ICU;BloodBank;OBGYN_OT;OR,12,55,Crossmatch;IV access;Prepare OT
-Maternal,O85,Puerperal sepsis,ICU,12,55,IV antibiotics;Fluids;Source control
-Trauma,S06.4,Traumatic epidural haemorrhage,CT;Neurosurgery;ICU;OR,0,120,Neuro checks;CT head;Airway protection
-Trauma,T31.2,Burns 20-29% TBSA,ICU;OR,0,120,Fluid resuscitation;Pain control;Airway assessment
-Stroke,I60.9,Subarachnoid haemorrhage,CT;Neurosurgery;ICU,18,120,BP control;Neuro checks;CT/CTA
-Cardiac,I47.2,Ventricular tachycardia,ICU,18,120,ECG;Cardioversion;Antiarrhythmic
-Sepsis,R57.2,Septic shock,ICU;Ventilator,0,120,Fluids;Vasopressor readiness;Broad-spectrum antibiotics
-Other,K92.2,GI haemorrhage,BloodBank;OR;ICU,0,120,IV access;Crossmatch;PPI infusion
-Trauma,S27.3,Other injury of lung,ICU;Ventilator,0,120,Oxygen;Chest tube;Analgesia
-Trauma,S12.9,Cervical spine fracture,ICU;OR,0,120,Immobilization;Airway precautions;CT spine
-Trauma,T07,Unspecified multiple injuries,ICU;CT;OR;BloodBank,0,120,ATLS;Crossmatch;CT trauma
-Stroke,G00.9,Bacterial meningitis,ICU,0,120,IV antibiotics;Airway monitoring;LP after stabilization
-Stroke,G04.9,Encephalitis,ICU,0,120,Acyclovir;Neuro checks;Airway monitoring
-Cardiac,I44.2,Complete AV block,ICU;CathLab,18,120,ECG;Temporary pacing readiness;Cath consult
-Cardiac,I26.9,Pulmonary embolism,ICU,18,120,Oxygen;Anticoagulation;Thrombolysis eval
-Sepsis,A41.0,Sepsis due to Staph aureus,ICU,0,120,IV antibiotics;Cultures;Fluids
-Sepsis,K65.0,Acute peritonitis,ICU;OR,0,120,IV antibiotics;Surgery consult;Fluids
-Other,E10.1,DKA type 1,ICU,0,120,IV fluids;Insulin infusion;Electrolyte monitoring
-Other,N17.9,Acute kidney failure,Dialysis;ICU,0,120,Fluid balance;Electrolytes;Dialysis readiness
-Toxicology,T63.0,Snake venom,ICU,0,120,Antivenom;Airway monitoring;Coag profile
-Respiratory,J18.9,Pneumonia,ICU,0,120,Oxygen;Antibiotics;Fluids
-Pediatric,R57.1,Hypovolemic shock,ICU,0,17,IV fluids;Bleeding control;Crossmatch
-Neonatal,P22.0,RDS of newborn,Ventilator;ICU,0,0,Surfactant;CPAP;Thermoregulation
-Trauma,Z01.1,Demo emergency condition 1,CT;ICU,0,120,IV access;Monitoring;Rapid transport
-Toxicology,Z02.6,Demo emergency condition 2,ICU,0,120,IV access;Monitoring;Rapid transport
-Stroke,Z03.5,Demo emergency condition 3,ICU,0,120,IV access;Monitoring;Rapid transport
-Stroke,Z04.7,Demo emergency condition 4,ICU,0,120,IV access;Monitoring;Rapid transport
-Pediatric,Z05.0,Demo emergency condition 5,ICU,0,17,IV access;Monitoring;Rapid transport
-Trauma,Z06.8,Demo emergency condition 6,CT;ICU,0,120,IV access;Monitoring;Rapid transport
-Respiratory,Z07.5,Demo emergency condition 7,ICU,0,120,IV access;Monitoring;Rapid transport
-Other,Z08.5,Demo emergency condition 8,ICU,0,120,IV access;Monitoring;Rapid transport
-Respiratory,Z09.7,Demo emergency condition 9,ICU,0,120,IV access;Monitoring;Rapid transport
-Respiratory,Z10.7,Demo emergency condition 10,ICU,0,120,IV access;Monitoring;Rapid transport
-Trauma,Z11.1,Demo emergency condition 11,CT;ICU,0,120,IV access;Monitoring;Rapid transport
-Sepsis,Z12.7,Demo emergency condition 12,ICU,0,120,IV access;Monitoring;Rapid transport
-Trauma,Z13.0,Demo emergency condition 13,CT;ICU,0,120,IV access;Monitoring;Rapid transport
-Sepsis,Z14.9,Demo emergency condition 14,ICU,0,120,IV access;Monitoring;Rapid transport
-Neonatal,Z15.4,Demo emergency condition 15,ICU,0,0,IV access;Monitoring;Rapid transport
-Pediatric,Z16.5,Demo emergency condition 16,ICU,0,17,IV access;Monitoring;Rapid transport
-Maternal,Z17.7,Demo emergency condition 17,ICU,0,120,IV access;Monitoring;Rapid transport
-Other,Z18.2,Demo emergency condition 18,ICU,0,120,IV access;Monitoring;Rapid transport
-Respiratory,Z19.1,Demo emergency condition 19,ICU,0,120,IV access;Monitoring;Rapid transport
-Neonatal,Z20.0,Demo emergency condition 20,ICU,0,0,IV access;Monitoring;Rapid transport
-Cardiac,Z21.4,Demo emergency condition 21,ICU,0,120,IV access;Monitoring;Rapid transport
-Stroke,Z22.3,Demo emergency condition 22,ICU,0,120,IV access;Monitoring;Rapid transport
-Pediatric,Z23.6,Demo emergency condition 23,ICU,0,17,IV access;Monitoring;Rapid transport
-Neonatal,Z24.1,Demo emergency condition 24,ICU,0,0,IV access;Monitoring;Rapid transport
-Stroke,Z25.7,Demo emergency condition 25,ICU,0,120,IV access;Monitoring;Rapid transport
-Pediatric,Z26.8,Demo emergency condition 26,ICU,0,17,IV access;Monitoring;Rapid transport
-Sepsis,Z27.2,Demo emergency condition 27,ICU,0,120,IV access;Monitoring;Rapid transport
-Pediatric,Z28.8,Demo emergency condition 28,ICU,0,17,IV access;Monitoring;Rapid transport
-Sepsis,Z29.6,Demo emergency condition 29,ICU,0,120,IV access;Monitoring;Rapid transport
-Other,Z30.6,Demo emergency condition 30,ICU,0,120,IV access;Monitoring;Rapid transport
-Cardiac,Z31.2,Demo emergency condition 31,ICU,0,120,IV access;Monitoring;Rapid transport
-Trauma,Z32.2,Demo emergency condition 32,CT;ICU,0,120,IV access;Monitoring;Rapid transport
-Stroke,Z33.3,Demo emergency condition 33,ICU,0,120,IV access;Monitoring;Rapid transport
-Cardiac,Z34.0,Demo emergency condition 34,ICU,0,120,IV access;Monitoring;Rapid transport
-Neonatal,Z35.9,Demo emergency condition 35,ICU,0,0,IV access;Monitoring;Rapid transport
-Stroke,Z36.4,Demo emergency condition 36,ICU,0,120,IV access;Monitoring;Rapid transport
-Sepsis,Z37.0,Demo emergency condition 37,ICU,0,120,IV access;Monitoring;Rapid transport
-Stroke,Z38.6,Demo emergency condition 38,ICU,0,120,IV access;Monitoring;Rapid transport
-Toxicology,Z39.5,Demo emergency condition 39,ICU,0,120,IV access;Monitoring;Rapid transport
-Respiratory,Z40.9,Demo emergency condition 40,ICU,0,120,IV access;Monitoring;Rapid transport
-Other,Z41.2,Demo emergency condition 41,ICU,0,120,IV access;Monitoring;Rapid transport
-Toxicology,Z42.9,Demo emergency condition 42,ICU,0,120,IV access;Monitoring;Rapid transport
-Maternal,Z43.7,Demo emergency condition 43,ICU,0,120,IV access;Monitoring;Rapid transport
-Toxicology,Z44.6,Demo emergency condition 44,ICU,0,120,IV access;Monitoring;Rapid transport
-Pediatric,Z45.6,Demo emergency condition 45,ICU,0,17,IV access;Monitoring;Rapid transport
-Pediatric,Z46.1,Demo emergency condition 46,ICU,0,17,IV access;Monitoring;Rapid transport
-Neonatal,Z47.6,Demo emergency condition 47,ICU,0,0,IV access;Monitoring;Rapid transport
-Maternal,Z48.3,Demo emergency condition 48,ICU,0,120,IV access;Monitoring;Rapid transport
-Trauma,Z49.3,Demo emergency condition 49,CT;ICU,0,120,IV access;Monitoring;Rapid transport
-Neonatal,Z50.2,Demo emergency condition 50,ICU,0,0,IV access;Monitoring;Rapid transport
-Trauma,Z51.5,Demo emergency condition 51,CT;ICU,0,120,IV access;Monitoring;Rapid transport
-Respiratory,Z52.0,Demo emergency condition 52,ICU,0,120,IV access;Monitoring;Rapid transport
-Trauma,Z53.0,Demo emergency condition 53,CT;ICU,0,120,IV access;Monitoring;Rapid transport
-Respiratory,Z54.2,Demo emergency condition 54,ICU,0,120,IV access;Monitoring;Rapid transport
-Toxicology,Z55.1,Demo emergency condition 55,ICU,0,120,IV access;Monitoring;Rapid transport
-Other,Z56.9,Demo emergency condition 56,ICU,0,120,IV access;Monitoring;Rapid transport
-Maternal,Z57.1,Demo emergency condition 57,ICU,0,120,IV access;Monitoring;Rapid transport
-Cardiac,Z58.9,Demo emergency condition 58,ICU,0,120,IV access;Monitoring;Rapid transport
-Pediatric,Z59.2,Demo emergency condition 59,ICU,0,17,IV access;Monitoring;Rapid transport
-Sepsis,Z60.5,Demo emergency condition 60,ICU,0,120,IV access;Monitoring;Rapid transport
-Respiratory,Z61.5,Demo emergency condition 61,ICU,0,120,IV access;Monitoring;Rapid transport
-Neonatal,Z62.1,Demo emergency condition 62,ICU,0,0,IV access;Monitoring;Rapid transport
-Trauma,Z63.7,Demo emergency condition 63,CT;ICU,0,120,IV access;Monitoring;Rapid transport
-Neonatal,Z64.7,Demo emergency condition 64,ICU,0,0,IV access;Monitoring;Rapid transport
-Neonatal,Z65.4,Demo emergency condition 65,ICU,0,0,IV access;Monitoring;Rapid transport
+Cardiac,I21.9,Acute myocardial infarction STEMI,ICU;CathLab;Cardiologist,18,120,Aspirin;ECG;Heparin;Cath Lab Activation
+Cardiac,I21.4,Non-ST elevation myocardial infarction NSTEMI,ICU;Cardiologist,18,120,Aspirin;ECG;Heparin;Serial Troponins
+Cardiac,I50.9,Acute severe heart failure,ICU;Cardiologist;Ventilator,18,120,Diuretics;BiPAP;Nitrates
+Cardiac,I46.9,Cardiac arrest,ICU;Ventilator;CathLab,0,120,CPR;Defibrillation;Epinephrine;Airway
+Cardiac,I49.9,Unstable cardiac arrhythmia,ICU;Cardiologist,18,120,ECG;Antiarrhythmics;Cardioversion prep
+Cardiac,I71.0,Aortic dissection,CT;CVTS_OT;ICU;BloodBank,18,120,BP Control;HR Control;Rapid Surgery
+Cardiac,I26.9,Massive pulmonary embolism,CT;ICU;Thrombolysis,18,120,Anticoagulation;O2;Thrombolysis protocol
+Cardiac,I01.9,Acute rheumatic myocarditis,ICU;Cardiologist;ECHO,5,40,High dose aspirin;Steroids;HF management
+Cardiac,I30.9,Acute pericarditis with tamponade,ICU;Cardiologist;ECHO,18,120,Pericardiocentesis prep;Fluid resuscitation
+Cardiac,R07.4,Undifferentiated chest pain,ECG;Physician,18,120,Serial ECGs;Troponin testing
+Cardiac,I40.9,Acute myocarditis fulminant,ICU;Cardiologist;ECMO,0,120,Inotropes;ECMO standby
+Stroke,I63.9,Acute ischemic stroke,CT;Thrombolysis;ICU;Neurologist,18,120,Stroke protocol;CT brain;Thrombolysis
+Stroke,I61.9,Intracerebral haemorrhage,CT;Neurosurgery;ICU,18,120,CT Head;BP reduction;Neuro checks
+Stroke,I60.9,Subarachnoid haemorrhage,CT;Neurosurgery;ICU,18,120,Strict BP control;Seizure prophylaxis
+Stroke,G41.9,Status epilepticus,ICU;Ventilator;Neurologist,18,120,Benzodiazepines;Antiepileptics;Airway
+Stroke,G00.9,Acute bacterial meningitis,ICU;Isolation;Neurologist,18,120,Blood cultures;Antibiotics;LP prep
+Stroke,G82.2,Acute paraplegia spinal cord compression,MRI;Neurosurgery;ICU,0,120,Spinal precautions;High dose steroids
+Stroke,G61.0,Guillain-Barre syndrome with respiratory failure,ICU;Ventilator;Neurologist,0,120,NIF monitoring;Intubation prep;IVIG
+Stroke,G04.9,Acute encephalitis,ICU;Neurologist;Isolation,0,120,Antivirals;Seizure precautions;Airway
+Stroke,I62.9,Nontraumatic subdural haemorrhage,CT;Neurosurgery;ICU,18,120,CT Head;Coagulation reversal;Neuro checks
+Stroke,G93.6,Cerebral edema with herniation risk,CT;Neurosurgery;ICU;Ventilator,0,120,Hypertonic saline;Mannitol;Hyperventilation
+Respiratory,J44.1,COPD with acute severe exacerbation,Ventilator;ICU;Pulmonologist,40,120,BiPAP;Bronchodilators;Steroids
+Respiratory,J45.9,Severe acute asthma [Status asthmaticus],Ventilator;ICU;Physician,18,120,Continuous Nebulization;IV MgSO4;Steroids
+Respiratory,J81.0,Acute pulmonary oedema,Ventilator;ICU;Physician,18,120,BiPAP;Diuretics;Nitrates
+Respiratory,J93.9,Tension pneumothorax,Surgery;ICU,12,120,Needle decompression;Chest tube insertion
+Respiratory,J96.0,Acute respiratory failure Type 1,Ventilator;ICU,0,120,Intubation;Mechanical ventilation
+Respiratory,J18.9,Severe pneumonia with ARDS,Ventilator;ICU;Broad_Abx,18,120,Proning prep;High PEEP ventilation;Cultures
+Respiratory,J80,Acute respiratory distress syndrome,Ventilator;ICU,18,120,Low tidal volume ventilation;Neuromuscular blockade
+Respiratory,R04.2,Massive haemoptysis,ICU;Pulmonologist;Bronchoscopy,18,120,Airway protection;Bronchoscopy prep;Transfusion
+Respiratory,J69.0,Severe aspiration pneumonia,ICU;Ventilator;Broad_Abx,18,120,Airway clearance;Antibiotics;Bronchoscopy
+Respiratory,J90,Massive pleural effusion with compromise,Ultrasound;Pulmonologist;ICU,18,120,Therapeutic thoracentesis;O2
+Trauma,S06.5,Traumatic subdural haemorrhage,CT;Neurosurgery;ICU;OR,0,120,CT Head;Airway protection;Neuro surgery
+Trauma,S36.1,Grade IV liver laceration,OR;ICU;BloodBank;Surgeon,0,120,FAST scan;Massive transfusion;Laparotomy
+Trauma,S27.0,Traumatic haemopneumothorax,OR;ICU;Surgeon,0,120,Large bore chest tube;O2;Analgesia
+Trauma,T07,Polytrauma unspecified,TraumaSurgeon;CT;BloodBank;ICU;OR,0,120,ABCDE survey;Pan-scan;Massive transfusion
+Trauma,S72.0,Fracture of neck of femur,Orthopedics;OR,18,120,Splinting;Analgesia;Surgery prep
+Trauma,T31.5,Burns involving 50 percent of body surface,BurnUnit;ICU;Surgeon,0,120,Parkland formula fluids;Airway assessment;Analgesia
+Trauma,S14.1,Cervical spinal cord injury,CT;Neurosurgery;ICU,0,120,Rigid cervical collar;Neurogenic shock management
+Trauma,T79.4,Traumatic shock hemorrhagic,BloodBank;ICU;OR,0,120,Damage control resuscitation;O-Negative blood
+Trauma,S26.9,Traumatic cardiac tamponade,Surgeon;OR;ICU,0,120,Emergency thoracotomy prep;Pericardiocentesis
+Trauma,T71,Asphyxiation hanging,ICU;Ventilator;CT,0,120,C-spine control;Targeted temperature management
+Trauma,S02.1,Fracture of base of skull,CT;Neurosurgery;ICU,0,120,Neuro checks;Avoid NG tubes;Antibiotics
+Trauma,S36.0,Rupture of spleen,OR;Surgeon;BloodBank;ICU,0,120,FAST exam;Permissive hypotension;Splenectomy prep
+Trauma,S22.3,Flail chest with pulmonary contusion,ICU;Ventilator;Surgeon,0,120,Epidural analgesia;Positive pressure ventilation
+Trauma,T79.0,Crush syndrome,ICU;Dialysis;Surgeon,0,120,Aggressive hydration;Alkalinization;Monitor Potassium
+Maternal,O72.0,Third-stage haemorrhage,ICU;BloodBank;OBGYN_OT;OR;Ventilator,12,55,IV access;Uterotonics;TXA;Rapid transfusion
+Maternal,O15.0,Eclampsia in pregnancy,ICU;Ventilator;OBGYN_OT,12,55,Magnesium sulfate;Airway management;BP control
+Maternal,O85,Puerperal sepsis,ICU;OBGYN;Broad_Abx,12,55,Blood cultures;Antibiotics;Fluid resuscitation
+Maternal,O44.1,Placenta praevia with severe haemorrhage,OBGYN_OT;BloodBank;ICU,12,55,Fetal monitoring;Transfusion prep;Emergency C-Section
+Maternal,O71.1,Rupture of uterus,OBGYN_OT;BloodBank;ICU,12,55,Massive transfusion protocol;Immediate Laparotomy
+Maternal,O00.9,Ruptured ectopic pregnancy,OBGYN_OT;BloodBank;Surgeon,12,55,Resuscitation;Immediate laparoscopy
+Maternal,O68,Fetal distress complicating labor,OBGYN_OT;NICU,12,55,Left lateral decubitus;O2;Emergency delivery
+Maternal,O88.1,Amniotic fluid embolism,ICU;Ventilator;BloodBank,12,55,High quality CPR;Massive transfusion;Ventilation
+Maternal,O45.9,Abruptio placentae,OBGYN_OT;BloodBank;NICU,12,55,Maternal resuscitation;Fetal monitoring;Delivery prep
+Maternal,O08.0,Post-abortion sepsis,ICU;OBGYN_OT;Broad_Abx,12,55,Evacuation of uterus;Broad spectrum antibiotics
+Maternal,O81.9,Obstructed labor,OBGYN_OT;NICU,12,55,Fetal monitoring;Emergency C-Section prep
+Pediatric,A09,Infectious gastroenteritis with severe dehydration,PICU;Pediatrician,0,17,IV Fluid bolus;Electrolyte correction
+Pediatric,J45.9,Pediatric status asthmaticus,PICU;Ventilator,0,17,Continuous Albuterol;IV Steroids;Magnesium
+Pediatric,G41.9,Pediatric status epilepticus,PICU;Ventilator,0,17,IV Lorazepam;Keppra load;Airway protection
+Pediatric,A41.9,Pediatric septic shock,PICU;Broad_Abx,0,17,20ml/kg Fluid push;Ceftriaxone;Inotropes
+Pediatric,E10.1,Pediatric Diabetic Ketoacidosis DKA,PICU;Endocrinologist,0,17,Fluid deficit replacement;Insulin infusion;Neuro checks
+Pediatric,T50.9,Accidental pediatric poisoning,PICU;Dialysis,0,17,Poison control consult;Charcoal;Specific antidote
+Pediatric,T75.1,Pediatric near-drowning,PICU;Ventilator,0,17,Rewarming;PEEP ventilation;Neuro protection
+Pediatric,R56.0,Complex febrile seizure,Pediatrician;EEG,0,6,Antipyretics;Observation;Reassurance
+Pediatric,T17.9,Foreign body in pediatric airway,Surgeon;OR;PICU,0,17,Rigid bronchoscopy prep;Heimlich if total block
+Pediatric,A39.0,Meningococcal meningitis,PICU;Isolation,0,17,Droplet precautions;Stat Ceftriaxone;Fluid resuscitation
+Pediatric,J05.0,Acute obstructive laryngitis croup,PICU;Ventilator,0,12,Nebulized epinephrine;Steroids;Airway prep
+Pediatric,J21.9,Acute severe bronchiolitis,PICU;Oxygen,0,2,High flow nasal cannula;Hydration
+Pediatric,K56.1,Pediatric intussusception,PediatricSurgeon;Ultrasound,0,5,Air enema prep;IV Fluids;Surgical consult
+Pediatric,B05.2,Measles complicated by pneumonia,PICU;Isolation;Ventilator,0,17,Airborne precautions;Vitamin A;Oxygen
+Neonatal,P22.0,Respiratory distress syndrome of newborn,NICU;Neonatologist;Ventilator,0,1,Surfactant administration;CPAP;Incubator
+Neonatal,P29.0,Neonatal cardiac failure,NICU;PediatricCardiologist,0,1,Prostaglandin infusion;Inotropes;O2
+Neonatal,P36.9,Neonatal sepsis,NICU;Broad_Abx,0,1,Ampicillin and Gentamicin;Lumbar puncture;Fluids
+Neonatal,P21.9,Severe birth asphyxia HIE,NICU;Ventilator;Cooling,0,1,Therapeutic hypothermia;Seizure monitoring
+Neonatal,P59.9,Severe neonatal jaundice kernicterus risk,NICU;ExchangeTransfusion,0,1,Intensive phototherapy;Exchange transfusion prep
+Neonatal,P77,Necrotizing enterocolitis NEC,NICU;PediatricSurgeon,0,1,Bowel rest;NPO;Antibiotics;Surgical consult
+Neonatal,Q20.3,Transposition of great vessels cyanotic,NICU;PediatricCardiologist,0,1,Prostaglandin E1;Balloon atrial septostomy prep
+Neonatal,P07.3,Extreme prematurity micro-preemie,NICU;Neonatologist;Ventilator,0,1,Umbilical lines;Surfactant;Strict thermoregulation
+Neonatal,P80.0,Severe neonatal hypothermia syndrome,NICU;Neonatologist,0,1,Radiant warmer;Warm IV fluids;Glucose monitoring
+Neonatal,P24.0,Meconium aspiration syndrome,NICU;Ventilator,0,1,Suctioning;Surfactant;HFOV ventilation prep
+Sepsis,A41.9,Sepsis unspecified organism,ICU;Broad_Abx;Ventilator,18,120,Lactate;Blood cultures;Broad-spectrum Abx;Fluids
+Sepsis,R57.2,Septic shock with MODS,ICU;Broad_Abx;Vasopressors,18,120,30ml/kg Fluid bolus;Norepinephrine;Source control
+Sepsis,A91,Dengue haemorrhagic fever,ICU;BloodBank;Physician,0,120,Platelets prep;Strict fluid management;HCT monitoring
+Sepsis,A01.0,Typhoid fever with bowel perforation,ICU;Surgeon;OR,0,120,Antibiotics;Emergency laparotomy
+Sepsis,A20.0,Pneumonic plague,ICU;Isolation;Broad_Abx,0,120,Strict respiratory isolation;Streptomycin/Gentamicin
+Sepsis,A82.9,Rabies encephalitis,ICU;Isolation;Neurologist,0,120,Palliative care protocols;Milwaukee protocol consideration
+Sepsis,B50.0,Severe falciparum malaria with cerebral involvement,ICU;BloodBank,0,120,IV Artesunate;Seizure control;Transfusion
+Sepsis,A19.9,Acute miliary tuberculosis,ICU;Isolation;Pulmonologist,0,120,Airborne isolation;Empiric ATT;Steroids
+Sepsis,A27.9,Severe leptospirosis Weil disease,ICU;Dialysis;Physician,0,120,IV Penicillin;Hemodialysis prep;Transfusion
+Sepsis,A32.1,Listeria meningitis,ICU;Neurologist;Broad_Abx,0,120,IV Ampicillin;Seizure control;Airway protection
+Toxicology,T65.9,Toxic effect of unspecified substance,ICU;Dialysis;Physician,0,120,Gastric lavage;Antidotes;Supportive care
+Toxicology,T39.1,Acetaminophen Paracetamol poisoning,ICU;Gastroenterologist,0,120,N-acetylcysteine NAC protocol;LFT monitoring
+Toxicology,T60.0,Organophosphate insecticide poisoning,ICU;Ventilator,0,120,Atropine boluses;Pralidoxime;Airway management
+Toxicology,T63.0,Snake venom poisoning venomous,ICU;Ventilator;BloodBank,0,120,ASV administration;Coagulation profile;Ventilator prep
+Toxicology,T62.0,Mushroom poisoning hepatotoxic,ICU;Dialysis;Gastroenterologist,0,120,Activated charcoal;Liver transplant standby
+Toxicology,T51.0,Methanol poisoning,ICU;Dialysis,0,120,Fomepizole or Ethanol infusion;Hemodialysis
+Toxicology,T58,Carbon monoxide poisoning,ICU;Hyperbaric;Ventilator,0,120,100% High flow oxygen;Hyperbaric chamber routing
+Toxicology,X42,Opioid overdose with respiratory arrest,ICU;Ventilator,0,120,Naloxone continuous infusion;Intubation
+Toxicology,T63.4,Scorpion sting with autonomic storm,ICU;Physician,0,120,Prazosin;Pain management;Dobutamine standby
+Toxicology,T56.0,Acute lead poisoning with encephalopathy,ICU;Neurologist;Dialysis,0,120,Chelation therapy BAL/EDTA;Seizure control
+GI,K25.4,Bleeding peptic ulcer hemorrhagic shock,ICU;BloodBank;Gastroenterologist,18,120,Massive transfusion;Stat Endoscopy;IV PPI
+GI,K80.0,Acute calculous cholecystitis,Surgeon;OR,18,120,NPO;IV Antibiotics;Laparoscopic cholecystectomy
+GI,K85.9,Acute severe necrotizing pancreatitis,ICU;Surgeon;Dialysis,18,120,Aggressive IV hydration;Pain control;Enteral feeding
+GI,K35.8,Acute ruptured appendicitis with peritonitis,Surgeon;OR;Broad_Abx,0,120,IV Fluids;Broad spectrum Abx;Appendectomy
+GI,K56.6,Acute mechanical bowel obstruction,Surgeon;OR;CT,0,120,NG Tube decompression;Fluid resuscitation;Laparotomy
+GI,K40.3,Strangulated inguinal hernia,Surgeon;OR,0,120,NPO;Analgesia;Immediate surgical repair
+GI,K65.0,Generalized acute peritonitis,ICU;Surgeon;OR,0,120,Broad spectrum antibiotics;Sepsis protocol;Surgery
+GI,K92.2,Massive obscure gastrointestinal haemorrhage,BloodBank;ICU;Gastroenterologist,18,120,Massive transfusion protocol;CT Angiography
+GI,K83.0,Acute ascending cholangitis,ICU;Gastroenterologist;Surgeon,18,120,IV Antibiotics;ERCP prep;Fluid resuscitation
+GI,K55.0,Acute mesenteric ischemia,ICU;Surgeon;OR,18,120,Sepsis protocol;Laparotomy;Bowel resection
