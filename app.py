@@ -367,26 +367,19 @@ with tab_state:
             # 1. Predictive Hotspotting
             st.error("⚠️ **EPIDEMIOLOGICAL HOTSPOT PREDICTION**")
             
-            # DEFENSIVE PATCH: Prevent IndexError and KeyError if dataframe is empty or misaligned
             if not df_analytics.empty and 'bundle' in df_analytics.columns and 'dest_facility' in df_analytics.columns:
                 try:
                     top_bundle = df_analytics['bundle'].mode()[0]
                     top_facility = df_analytics[df_analytics['bundle'] == top_bundle]['dest_facility'].mode()[0]
                     
-                    st.markdown(f"""
-                    **Vector Analysis:** The AI has detected a statistically significant anomaly in **{top_bundle}** cases.
-                    **Forecast:** A cluster event is highly probable within the catchment area of **{top_facility}** over the next 48 hours.
-                    **Action Required:** Pre-position specialized {top_bundle.lower()} medical supplies and alert regional ASHA workers.
-                    """)
+                    st.markdown(f"**Vector Analysis:** The AI has detected a statistically significant anomaly in **{top_bundle}** cases.")
+                    st.markdown(f"**Forecast:** A cluster event is highly probable within the catchment area of **{top_facility}** over the next 48 hours.")
+                    st.markdown(f"**Action Required:** Pre-position specialized {top_bundle.lower()} medical supplies and alert regional ASHA workers.")
+                    
                 except IndexError:
                     st.warning("Insufficient variance in data to calculate hotspot prediction. Await further telemetry.")
             else:
                 st.warning("Analytics matrix booting... Please inject fresh synthetic data.")
-            st.markdown(f"""
-            **Vector Analysis:** The AI has detected a statistically significant anomaly in **{top_bundle}** cases.
-            **Forecast:** A cluster event is highly probable within the catchment area of **{top_facility}** over the next 48 hours.
-            **Action Required:** Pre-position specialized {top_bundle.lower()} medical supplies and alert regional ASHA workers.
-            """)
 
         with col_ai2:
             # 2. 12-Hour ICU Exhaustion Forecast
