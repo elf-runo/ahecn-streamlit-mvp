@@ -358,12 +358,27 @@ elif nav_selection == "ACTIVE TRANSIT TELEMETRY":
             if "transit_log" not in case:
                 case["transit_log"] = []
 
-            # --- HEADER ROW ---
+            # --- HEADER ROW & PROACTIVE NOTIFICATION HUB ---
             st.error(f"🚑 PRIORITY {case['triage_color']} EN ROUTE TO {dest['facility'].upper()}")
-            c1, c2, c3 = st.columns(3)
+            
+            c1, c2, c3, c4 = st.columns(4)
             c1.metric("Topography-Adjusted ETA", f"{dest['eta']} min")
             c2.metric("Modeled Mortality Risk", f"{dest['mortality_risk']}%")
-            c3.metric("Dispatch Time", case["dispatch_time"])
+            c3.metric("Severity Index", f"{case.get('severity_index', 0.0):.2f}")
+            c4.metric("Dispatch Time", case["dispatch_time"])
+
+            # --- THE NEW PROACTIVE CORRIDOR ALERT SYSTEM ---
+            if case['triage_color'] == 'RED' or case.get('severity_index', 0.0) >= 0.6:
+                with st.expander("🚨 PROACTIVE CORRIDOR NOTIFICATIONS ACTIVE", expanded=True):
+                    st.markdown("**System has engaged pre-arrival protocols based on critical Severity Index.**")
+                    col_p1, col_p2 = st.columns(2)
+                    with col_p1:
+                        st.success("✅ **Receiving ED:** Code Team activated. Trauma/Resus Bay reserved.")
+                        if dest["scoring_details"].get("gate_capacity") == "WARNING_ED_STABILIZATION_ONLY":
+                            st.warning("⚠️ **Capacity Failsafe:** Receiving facility warned of ZERO ICU beds. Prepping for ED Stabilization.")
+                    with col_p2:
+                        st.info("📡 **Regional ALS:** Local rapid response units placed on standby for potential mid-flight intercept.")
+                        st.info("🚓 **Traffic Command:** Pre-notified of high-acuity transit.")
 
             if dest["scoring_details"].get("gate_capacity") == "WARNING_ED_STABILIZATION_ONLY":
                 st.warning("⚠️ PARAMEDIC ALERT: Destination ICU is at capacity. You are routing for ED STABILIZATION ONLY.")
