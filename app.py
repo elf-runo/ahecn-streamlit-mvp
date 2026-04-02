@@ -200,7 +200,7 @@ if nav_selection == "REFERRAL INITIATION":
                 st.session_state.match_results = sorted(results, key=lambda x: (-x["score"], x["eta"]))
 
         # --- RENDER RESULTS IF THEY EXIST IN MEMORY ---
-        if st.session_state.match_results is not None:
+        if st.session_state.get('match_results') is not None:
             results = st.session_state.match_results
             
             if not results:
