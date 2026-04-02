@@ -268,15 +268,20 @@ if nav_selection == "REFERRAL INITIATION":
 
                 # The final dispatch button
                 if st.button("🚀 Initiate E2EE Transfer & Dispatch Ambulance", type="primary"):
+                    # Find exactly where the selected facility ranks in the total list
+                    selected_idx = next(i for i, r in enumerate(results) if r["facility"] == selected_fac["facility"])
+                    
                     st.session_state.active_case = {
                         "patient_name": patient_name, "age": age, "vitals": vitals, "diagnosis": dx,
                         "bundle": bundle, "triage_color": triage_color, "severity_index": meta['severity_index'],
                         "destination": selected_fac, "dispatch_time": datetime.now().strftime("%H:%M:%S"),
-                        "rationale": reason_for_referral 
+                        "rationale": reason_for_referral,
+                        "viable_destinations": results,          # Stores the full ranked list for rerouting
+                        "current_dest_index": selected_idx,      # Tracks where we are in the list
+                        "rejection_log": []                      # Tracks medico-legal reasons for rejection
                     }
                     st.session_state.transfer_initiated = True
                     st.session_state.patient_accepted = False
-                    # Clear the match results for the next patient
                     st.session_state.match_results = None 
                     st.rerun()
 
@@ -346,7 +351,7 @@ elif nav_selection == "ACTIVE TRANSIT TELEMETRY":
 # ==========================================
 elif nav_selection == "RECEIVING HOSPITAL BAY":
     st.header("Emergency Department Receiving Board")
-    
+
     with st.container(border=True):
         if not st.session_state.active_case:
             st.info("ED Bay Clear. No incoming transfers.")
@@ -354,41 +359,87 @@ elif nav_selection == "RECEIVING HOSPITAL BAY":
             case = st.session_state.active_case
             dest = case["destination"]
             dest_name = dest['facility']
-            
+
             if st.session_state.synthetic_data is not None:
                 df_analytics = st.session_state.synthetic_data
                 if 'dest_facility' in df_analytics.columns:
                     fac_cases = df_analytics[df_analytics['dest_facility'] == dest_name]
                     historical_daily_avg = max(1, len(fac_cases) / 30.0)
-                    current_live_inbound = int(historical_daily_avg * 1.8) + 1 
-                    
+                    current_live_inbound = int(historical_daily_avg * 1.8) + 1
+
                     if current_live_inbound > (historical_daily_avg * 1.5):
                         st.error(f"CODE SURGE DETECTED: {dest_name.upper()}")
                         st.markdown(f"**Predictive AI Alert:** Current inbound ambulance load exceeds historical average by >50%. Mobilize ED Resuscitation team immediately.")
                         st.markdown("---")
 
             st.warning(f"INCOMING ALERT: ETA {dest['eta']} mins")
-            if dest["scoring_details"].get("gate_capacity") == "WARNING_ED_STABILIZATION_ONLY":
-                st.error("CRITICAL CAPACITY OVERRIDE: Patient routed for ED STABILIZATION ONLY due to zero regional ICU beds.")
-                
-            st.markdown(f"**Patient:** {case['patient_name']} ({case['age']} Y/O)")
-            st.markdown(f"**Diagnosis:** {case['diagnosis']} ({case['triage_color']})")
             
+            # --- REROUTE TELEMETRY (If previously rejected) ---
+            if case.get("rejection_log"):
+                st.error(f"⚠️ SECONDARY REROUTE: Patient was diverted from primary destination(s).")
+                for rej in case["rejection_log"]:
+                    st.caption(f"↳ *Rejected by {rej['facility']} at {rej['time']} | Reason: {rej['reason']}*")
+
+            # --- DISPLAY FULL ISBAR BEFORE DECISION ---
+            st.markdown("### Secure Med-Legal Handover Document")
+            isbar_text = f"""[ISBAR CLINICAL HANDOVER]
+Status: PRIORITY {case['triage_color']} (Severity: {case['severity_index']:.2f})
+
+I - IDENTIFICATION: Patient: {case['patient_name']}, {case['age']} Y/O
+S - SITUATION: Emergency dispatch to {dest['facility']}. Provisional DX: {case['diagnosis']}
+B - BACKGROUND: Bundle: {case['bundle']}. Rationale: {case.get('rationale', 'N/A')}
+A - ASSESSMENT: HR: {case['vitals']['hr']} | SBP: {case['vitals']['sbp']} | RR: {case['vitals']['rr']} | SpO2: {case['vitals']['spo2']}% | Temp: {case['vitals']['temp']}°C | AVPU: {case['vitals']['avpu']}
+R - RECOMMENDATION: {('ED STABILIZATION ONLY DUE TO ZERO ICU BEDS.' if dest['scoring_details'].get('gate_capacity') == 'WARNING_ED_STABILIZATION_ONLY' else 'Prepare critical care receiving bay.')}
+"""
+            st.code(isbar_text, language="markdown")
+
+            # --- ACCEPTANCE & AUTONOMOUS REJECTION LOGIC ---
             if not st.session_state.patient_accepted:
-                if st.button("✅ Acknowledge & Accept Patient", type="primary"):
-                    st.session_state.patient_accepted = True
-                    st.rerun()
-            else:
-                st.success("Patient accepted. Telemetry linked to ED monitors.")
+                st.markdown("### Decision Matrix")
+                col_acc, col_rej = st.columns(2)
                 
-    # --- Phase 5: Closed-Loop Clinical Feedback ---
-    if st.session_state.get('patient_accepted', False):
-        with st.container(border=True):
-            st.subheader("🔄 Close the Clinical Loop")
-            st.caption("Fulfill medico-legal feedback requirements and notify the referring clinician.")
-            
-            if st.button("Register Patient Stabilized & Notify Referring Doctor"):
-                st.success("✅ Outcome securely recorded. Automated feedback ping sent to referring clinician confirming successful stabilization.")
+                with col_acc:
+                    if st.button("✅ Acknowledge & Accept Patient", type="primary", use_container_width=True):
+                        st.session_state.patient_accepted = True
+                        st.rerun()
+                        
+                with col_rej:
+                    with st.expander("❌ Reject & Trigger AI Reroute"):
+                        reject_reason = st.selectbox(
+                            "Standardized Reason for Diversion",
+                            ["Select Reason...",
+                             "Critical Care Beds Suddenly Full (Surge)",
+                             "Required Specialist Scrubbed In / Unavailable",
+                             "Hardware/Equipment Failure (e.g., CT Down)",
+                             "Facility Currently on State Diversion Status"]
+                        )
+                        if st.button("Confirm Diversion", type="primary", disabled=reject_reason == "Select Reason..."):
+                            # Log the rejection for medico-legal tracking
+                            case["rejection_log"].append({
+                                "facility": dest_name, 
+                                "reason": reject_reason, 
+                                "time": datetime.now().strftime("%H:%M:%S")
+                            })
+                            
+                            # Shift to the next best facility in the array
+                            current_idx = case["current_dest_index"]
+                            viable_list = case["viable_destinations"]
+                            
+                            if current_idx + 1 < len(viable_list):
+                                next_dest = viable_list[current_idx + 1]
+                                case["destination"] = next_dest
+                                case["current_dest_index"] = current_idx + 1
+                                st.success(f"Diverting. AI locking onto {next_dest['facility']}...")
+                                time.sleep(1)
+                                st.rerun()
+                            else:
+                                st.error("CRITICAL: Zero viable fallback facilities remaining. Reverting to On-Site ED Stabilization Command.")
+            else:
+                st.success("✅ Patient accepted. Telemetry linked to ED monitors.")
+                st.markdown("---")
+                st.subheader("🔄 Close the Clinical Loop")
+                if st.button("Register Patient Stabilized & Notify Referring Doctor"):
+                    st.success("✅ Outcome securely recorded. Automated feedback ping sent to referring clinician confirming successful stabilization.")
 
 # ==========================================
 # VIEW 4: STATE COMMAND & AI
