@@ -386,7 +386,21 @@ elif nav_selection == "ACTIVE TRANSIT TELEMETRY":
                 if a3.button("🩸 Tourniquet", use_container_width=True):
                     case["transit_log"].append({"time": datetime.now().strftime("%H:%M:%S"), "action": "Hemorrhage Control Applied"})
                     st.rerun()
-                    
+                
+                # --- NEW: DYNAMIC PRIORITY ESCALATION ---
+                if case['triage_color'] != 'RED':
+                    st.markdown("---")
+                    if st.button("⬆️ ESCALATE TO PRIORITY RED", type="primary", use_container_width=True):
+                        case['triage_color'] = 'RED'
+                        # Mathematically bump the severity to trigger all proactive alerts
+                        case['severity_index'] = max(case.get('severity_index', 0.0), 0.75) 
+                        case["transit_log"].append({
+                            "time": datetime.now().strftime("%H:%M:%S"), 
+                            "action": "Mid-Transit Deterioration. Escalated to PRIORITY RED. Corridor Notified."
+                        })
+                        st.rerun()
+                    st.markdown("---")
+
                 st.markdown("**Transit Audit Trail:**")
                 if not case["transit_log"]:
                     st.info("No mid-transit interventions logged.")
@@ -420,7 +434,7 @@ elif nav_selection == "ACTIVE TRANSIT TELEMETRY":
                         case["transit_log"].append({"time": datetime.now().strftime("%H:%M:%S"), "action": f"Traffic Drift (+{traffic_delay}m). ED Notified."})
                         case["delay_notified"] = True
                         
-                elif traffic_delay > 15 and case['triage_color'] == "RED":
+                elif traffic_delay > 15 and case['triage_color'] == 'RED':
                     st.error("🚨 **CRITICAL BLOCKADE**")
                     
                     if st.button("🌐 INITIATE CIVIC OVERRIDE & ALS INTERCEPT", type="primary", use_container_width=True):
