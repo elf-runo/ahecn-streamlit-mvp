@@ -306,6 +306,7 @@ Provisional DX: {case['diagnosis']}
 B - BACKGROUND:
 Bundle: {case['bundle']}. Topography-Adjusted Transit ETA: {case['destination']['eta']} mins.
 Transfer Rationale: {case.get('rationale', 'N/A')}
+{chr(10) + '[DIVERSION AUDIT]: ' + ' -> '.join([f"Bypassed {r['facility']} ({r['reason']})" for r in case.get("rejection_log", [])]) if case.get("rejection_log") else ""}
 
 A - ASSESSMENT:
 HR: {case['vitals']['hr']} bpm | SBP: {case['vitals']['sbp']} mmHg | RR: {case['vitals']['rr']} rpm
@@ -374,11 +375,19 @@ elif nav_selection == "RECEIVING HOSPITAL BAY":
 
             st.warning(f"INCOMING ALERT: ETA {dest['eta']} mins")
             
-            # --- REROUTE TELEMETRY (If previously rejected) ---
+            # --- THE TRANSPARENT DIVERSION UI ---
+            diversion_text = ""
             if case.get("rejection_log"):
-                st.error(f"⚠️ SECONDARY REROUTE: Patient was diverted from primary destination(s).")
-                for rej in case["rejection_log"]:
-                    st.caption(f"↳ *Rejected by {rej['facility']} at {rej['time']} | Reason: {rej['reason']}*")
+                st.error("⚠️ SECONDARY REROUTE PROTOCOL ENGAGED")
+                with st.container(border=True):
+                    st.markdown("**Chain of Custody / Diversion Audit:**")
+                    for rej in case["rejection_log"]:
+                        st.markdown(f"🚨 **Rejected By:** {rej['facility']} at {rej['time']}")
+                        st.markdown(f"↳ **Rationale:** *{rej['reason']}*")
+                    st.caption("AI autonomously rerouted to your facility as the next mathematically optimal destination.")
+                
+                # Format for the ISBAR document
+                diversion_text = "\n[DIVERSION AUDIT]: " + " -> ".join([f"Bypassed {r['facility']} ({r['reason']})" for r in case["rejection_log"]])
 
             # --- DISPLAY FULL ISBAR BEFORE DECISION ---
             st.markdown("### Secure Med-Legal Handover Document")
@@ -387,7 +396,7 @@ Status: PRIORITY {case['triage_color']} (Severity: {case['severity_index']:.2f})
 
 I - IDENTIFICATION: Patient: {case['patient_name']}, {case['age']} Y/O
 S - SITUATION: Emergency dispatch to {dest['facility']}. Provisional DX: {case['diagnosis']}
-B - BACKGROUND: Bundle: {case['bundle']}. Rationale: {case.get('rationale', 'N/A')}
+B - BACKGROUND: Bundle: {case['bundle']}. Rationale: {case.get('rationale', 'N/A')}{diversion_text}
 A - ASSESSMENT: HR: {case['vitals']['hr']} | SBP: {case['vitals']['sbp']} | RR: {case['vitals']['rr']} | SpO2: {case['vitals']['spo2']}% | Temp: {case['vitals']['temp']}°C | AVPU: {case['vitals']['avpu']}
 R - RECOMMENDATION: {('ED STABILIZATION ONLY DUE TO ZERO ICU BEDS.' if dest['scoring_details'].get('gate_capacity') == 'WARNING_ED_STABILIZATION_ONLY' else 'Prepare critical care receiving bay.')}
 """
