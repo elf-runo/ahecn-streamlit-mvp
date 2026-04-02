@@ -30,7 +30,6 @@ if 'transfer_initiated' not in st.session_state:
 if 'patient_accepted' not in st.session_state:
     st.session_state.patient_accepted = False
 
-# --- Self-Contained Data Loading ---
 @st.cache_data(show_spinner=False)
 def load_datasets():
     fac_file, icd_file = 'meghalaya_facilities.csv', 'icd_catalogue.csv'
@@ -38,23 +37,39 @@ def load_datasets():
     for root, _, files in os.walk("."):
         if fac_file in files and not f_path: f_path = os.path.join(root, fac_file)
         if icd_file in files and not i_path: i_path = os.path.join(root, icd_file)
-    
+
     if not f_path or not i_path:
         st.error(f"CRITICAL: Missing '{fac_file}' or '{icd_file}' in repository.")
         st.stop()
-        
-    # --- DIAGNOSTIC INJECTION: FORCE APP TO CONFESS FILE PATHS ---
-    st.sidebar.success(f"📂 ICD Data loaded from: `{i_path}`")
-    # -------------------------------------------------------------
 
-    fac_df, icd_df = pd.read_csv(f_path), pd.read_csv(i_path)
-    icd_df.columns = [c.strip().lower() for c in icd_df.columns]
+    # --- BULLETPROOF DATA LOADING (Fixes hidden BOM characters) ---
+    try:
+        fac_df = pd.read_csv(f_path, encoding='utf-8-sig')
+        icd_df = pd.read_csv(i_path, encoding='utf-8-sig')
+    except Exception as e:
+        st.error(f"CRITICAL: Failed to read CSV files. File may be corrupted. Error: {e}")
+        st.stop()
+
+    # Aggressive column cleanup
+    icd_df.columns = icd_df.columns.str.replace(r'^ï»¿', '', regex=True).str.replace(r'^\ufeff', '', regex=True)
+    icd_df.columns = [str(c).strip().lower() for c in icd_df.columns]
+    
+    # --- DIAGNOSTIC FIREWALL ---
+    # If the column still isn't found, this forces the app to tell us exactly what it sees
+    if 'bundle' not in icd_df.columns:
+        st.error("🚨 DATA FORMAT ERROR: The column 'bundle' is missing from icd_catalogue.csv.")
+        st.warning(f"Columns actually found by the system: {icd_df.columns.tolist()}")
+        st.info("Fix: Ensure your CSV is comma-separated, not separated by tabs or semicolons.")
+        st.stop()
+
     rename_map = {'icd-10': 'icd10', 'icd_10': 'icd10', 'icd code': 'icd10', 'code': 'icd10'}
     icd_df = icd_df.rename(columns=rename_map)
     if 'icd10' not in icd_df.columns: icd_df = icd_df.rename(columns={icd_df.columns[0]: 'icd10'})
+    
     for c in ["lat","lon"]:
         if c in fac_df.columns: fac_df[c] = pd.to_numeric(fac_df[c], errors='coerce')
     fac_df["ownership"] = fac_df.get("ownership", "Private").fillna("Private")
+    
     return fac_df, icd_df
     
 # --- Sidebar Navigation ---
