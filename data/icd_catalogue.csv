@@ -10,6 +10,10 @@ Cardiac,I01.9,Acute rheumatic myocarditis,ICU;Cardiologist;ECHO,5,40,High dose a
 Cardiac,I30.9,Acute pericarditis with tamponade,ICU;Cardiologist;ECHO,18,120,Pericardiocentesis prep;Fluid resuscitation
 Cardiac,R07.4,Undifferentiated chest pain,ECG;Physician,18,120,Serial ECGs;Troponin testing
 Cardiac,I40.9,Acute myocarditis fulminant,ICU;Cardiologist;ECMO,0,120,Inotropes;ECMO standby
+Cardiac,R57.0,Cardiogenic shock,ICU;CathLab;Ventilator,18,120,Inotropes;Mechanical support prep;Cath Lab
+Cardiac,I33.0,Acute infective endocarditis,ICU;Cardiologist;Broad_Abx,18,120,Blood cultures;ECHO;Targeted antibiotics
+Cardiac,I16.9,Hypertensive emergency,ICU;Physician,18,120,Labetalol infusion;Nicardipine;BP monitoring
+Cardiac,I71.3,Ruptured abdominal aortic aneurysm AAA,OR;Surgeon;BloodBank;ICU,18,120,Massive transfusion;Permissive hypotension;Stat surgery
 Stroke,I63.9,Acute ischemic stroke,CT;Thrombolysis;ICU;Neurologist,18,120,Stroke protocol;CT brain;Thrombolysis
 Stroke,I61.9,Intracerebral haemorrhage,CT;Neurosurgery;ICU,18,120,CT Head;BP reduction;Neuro checks
 Stroke,I60.9,Subarachnoid haemorrhage,CT;Neurosurgery;ICU,18,120,Strict BP control;Seizure prophylaxis
@@ -20,8 +24,13 @@ Stroke,G61.0,Guillain-Barre syndrome with respiratory failure,ICU;Ventilator;Neu
 Stroke,G04.9,Acute encephalitis,ICU;Neurologist;Isolation,0,120,Antivirals;Seizure precautions;Airway
 Stroke,I62.9,Nontraumatic subdural haemorrhage,CT;Neurosurgery;ICU,18,120,CT Head;Coagulation reversal;Neuro checks
 Stroke,G93.6,Cerebral edema with herniation risk,CT;Neurosurgery;ICU;Ventilator,0,120,Hypertonic saline;Mannitol;Hyperventilation
+Stroke,G45.9,Transient ischemic attack TIA,CT;Neurologist,18,120,Aspirin;Neurology consult;Stroke observation
+Stroke,G70.0,Myasthenia gravis crisis,ICU;Ventilator;Neurologist,18,120,NIF monitoring;Plasmapheresis prep;Airway
+Stroke,E51.2,Wernicke encephalopathy,ICU;Physician,18,120,High dose IV Thiamine before glucose;Neuro checks
+Stroke,I67.6,Cerebral venous thrombosis,CT;Neurologist;ICU,18,120,Anticoagulation protocol;Neuro imaging
+Stroke,G06.0,Intracranial abscess,CT;Neurosurgery;Broad_Abx,0,120,Broad antibiotics;Neurosurgical drain prep
 Respiratory,J44.1,COPD with acute severe exacerbation,Ventilator;ICU;Pulmonologist,40,120,BiPAP;Bronchodilators;Steroids
-Respiratory,J45.9,Severe acute asthma [Status asthmaticus],Ventilator;ICU;Physician,18,120,Continuous Nebulization;IV MgSO4;Steroids
+Respiratory,J45.9,Severe acute asthma Status asthmaticus,Ventilator;ICU;Physician,18,120,Continuous Nebulization;IV MgSO4;Steroids
 Respiratory,J81.0,Acute pulmonary oedema,Ventilator;ICU;Physician,18,120,BiPAP;Diuretics;Nitrates
 Respiratory,J93.9,Tension pneumothorax,Surgery;ICU,12,120,Needle decompression;Chest tube insertion
 Respiratory,J96.0,Acute respiratory failure Type 1,Ventilator;ICU,0,120,Intubation;Mechanical ventilation
@@ -30,6 +39,11 @@ Respiratory,J80,Acute respiratory distress syndrome,Ventilator;ICU,18,120,Low ti
 Respiratory,R04.2,Massive haemoptysis,ICU;Pulmonologist;Bronchoscopy,18,120,Airway protection;Bronchoscopy prep;Transfusion
 Respiratory,J69.0,Severe aspiration pneumonia,ICU;Ventilator;Broad_Abx,18,120,Airway clearance;Antibiotics;Bronchoscopy
 Respiratory,J90,Massive pleural effusion with compromise,Ultrasound;Pulmonologist;ICU,18,120,Therapeutic thoracentesis;O2
+Respiratory,J85.2,Abscess of lung without pneumonia,CT;Pulmonologist;Surgeon,18,120,Postural drainage;Targeted antibiotics;Surgery consult
+Respiratory,T78.2,Anaphylactic shock airway compromise,ICU;Ventilator,0,120,IM Epinephrine;Steroids;Early intubation
+Respiratory,J05.0,Acute severe adult croup,ICU;Ventilator;ENT,18,120,Nebulized epinephrine;Steroids;Airway standby
+Respiratory,J05.1,Acute epiglottitis,ICU;Ventilator;ENT,0,120,Awake intubation in OR;IV Antibiotics;Humidified O2
+Respiratory,J84.1,Acute exacerbation of pulmonary fibrosis,Ventilator;ICU;Pulmonologist,18,120,High flow oxygen;Steroids;Palliation discussion
 Trauma,S06.5,Traumatic subdural haemorrhage,CT;Neurosurgery;ICU;OR,0,120,CT Head;Airway protection;Neuro surgery
 Trauma,S36.1,Grade IV liver laceration,OR;ICU;BloodBank;Surgeon,0,120,FAST scan;Massive transfusion;Laparotomy
 Trauma,S27.0,Traumatic haemopneumothorax,OR;ICU;Surgeon,0,120,Large bore chest tube;O2;Analgesia
@@ -44,6 +58,7 @@ Trauma,S02.1,Fracture of base of skull,CT;Neurosurgery;ICU,0,120,Neuro checks;Av
 Trauma,S36.0,Rupture of spleen,OR;Surgeon;BloodBank;ICU,0,120,FAST exam;Permissive hypotension;Splenectomy prep
 Trauma,S22.3,Flail chest with pulmonary contusion,ICU;Ventilator;Surgeon,0,120,Epidural analgesia;Positive pressure ventilation
 Trauma,T79.0,Crush syndrome,ICU;Dialysis;Surgeon,0,120,Aggressive hydration;Alkalinization;Monitor Potassium
+Trauma,S32.8,Open book pelvic fracture,OR;Orthopedics;BloodBank,0,120,Pelvic binder;Massive transfusion;Angioembolization
 Maternal,O72.0,Third-stage haemorrhage,ICU;BloodBank;OBGYN_OT;OR;Ventilator,12,55,IV access;Uterotonics;TXA;Rapid transfusion
 Maternal,O15.0,Eclampsia in pregnancy,ICU;Ventilator;OBGYN_OT,12,55,Magnesium sulfate;Airway management;BP control
 Maternal,O85,Puerperal sepsis,ICU;OBGYN;Broad_Abx,12,55,Blood cultures;Antibiotics;Fluid resuscitation
@@ -55,6 +70,10 @@ Maternal,O88.1,Amniotic fluid embolism,ICU;Ventilator;BloodBank,12,55,High quali
 Maternal,O45.9,Abruptio placentae,OBGYN_OT;BloodBank;NICU,12,55,Maternal resuscitation;Fetal monitoring;Delivery prep
 Maternal,O08.0,Post-abortion sepsis,ICU;OBGYN_OT;Broad_Abx,12,55,Evacuation of uterus;Broad spectrum antibiotics
 Maternal,O81.9,Obstructed labor,OBGYN_OT;NICU,12,55,Fetal monitoring;Emergency C-Section prep
+Maternal,O14.2,HELLP syndrome,ICU;BloodBank;OBGYN_OT,12,55,Magnesium sulfate;Platelet transfusion;Delivery prep
+Maternal,O21.1,Hyperemesis gravidarum with metabolic disturbance,OBGYN;Physician,12,55,IV Hydration;Antiemetics;Thiamine
+Maternal,O90.3,Peripartum cardiomyopathy,ICU;Cardiologist;Ventilator,12,55,Diuretics;Vasodilators;Heart failure protocol
+Maternal,O73.0,Retained placenta with hemorrhage,OBGYN_OT;BloodBank;OR,12,55,Manual removal in OR;Uterotonics;Transfusion
 Pediatric,A09,Infectious gastroenteritis with severe dehydration,PICU;Pediatrician,0,17,IV Fluid bolus;Electrolyte correction
 Pediatric,J45.9,Pediatric status asthmaticus,PICU;Ventilator,0,17,Continuous Albuterol;IV Steroids;Magnesium
 Pediatric,G41.9,Pediatric status epilepticus,PICU;Ventilator,0,17,IV Lorazepam;Keppra load;Airway protection
@@ -69,6 +88,8 @@ Pediatric,J05.0,Acute obstructive laryngitis croup,PICU;Ventilator,0,12,Nebulize
 Pediatric,J21.9,Acute severe bronchiolitis,PICU;Oxygen,0,2,High flow nasal cannula;Hydration
 Pediatric,K56.1,Pediatric intussusception,PediatricSurgeon;Ultrasound,0,5,Air enema prep;IV Fluids;Surgical consult
 Pediatric,B05.2,Measles complicated by pneumonia,PICU;Isolation;Ventilator,0,17,Airborne precautions;Vitamin A;Oxygen
+Pediatric,K35.8,Acute ruptured appendicitis pediatric,PediatricSurgeon;OR,0,17,IV Fluids;Broad spectrum Abx;Appendectomy
+Pediatric,D66,Severe hemophilia A with acute bleeding,PICU;BloodBank,0,17,Factor VIII infusion;TXA;Immobilization
 Neonatal,P22.0,Respiratory distress syndrome of newborn,NICU;Neonatologist;Ventilator,0,1,Surfactant administration;CPAP;Incubator
 Neonatal,P29.0,Neonatal cardiac failure,NICU;PediatricCardiologist,0,1,Prostaglandin infusion;Inotropes;O2
 Neonatal,P36.9,Neonatal sepsis,NICU;Broad_Abx,0,1,Ampicillin and Gentamicin;Lumbar puncture;Fluids
@@ -89,6 +110,8 @@ Sepsis,B50.0,Severe falciparum malaria with cerebral involvement,ICU;BloodBank,0
 Sepsis,A19.9,Acute miliary tuberculosis,ICU;Isolation;Pulmonologist,0,120,Airborne isolation;Empiric ATT;Steroids
 Sepsis,A27.9,Severe leptospirosis Weil disease,ICU;Dialysis;Physician,0,120,IV Penicillin;Hemodialysis prep;Transfusion
 Sepsis,A32.1,Listeria meningitis,ICU;Neurologist;Broad_Abx,0,120,IV Ampicillin;Seizure control;Airway protection
+Sepsis,M72.6,Necrotizing fasciitis,OR;Surgeon;ICU;Broad_Abx,0,120,Stat surgical debridement;Clindamycin;Hemodynamic support
+Sepsis,A35,Tetanus generalized,ICU;Ventilator;Isolation,0,120,Dark quiet room;Benzodiazepines;Metronidazole;Airway
 Toxicology,T65.9,Toxic effect of unspecified substance,ICU;Dialysis;Physician,0,120,Gastric lavage;Antidotes;Supportive care
 Toxicology,T39.1,Acetaminophen Paracetamol poisoning,ICU;Gastroenterologist,0,120,N-acetylcysteine NAC protocol;LFT monitoring
 Toxicology,T60.0,Organophosphate insecticide poisoning,ICU;Ventilator,0,120,Atropine boluses;Pralidoxime;Airway management
@@ -99,13 +122,27 @@ Toxicology,T58,Carbon monoxide poisoning,ICU;Hyperbaric;Ventilator,0,120,100% Hi
 Toxicology,X42,Opioid overdose with respiratory arrest,ICU;Ventilator,0,120,Naloxone continuous infusion;Intubation
 Toxicology,T63.4,Scorpion sting with autonomic storm,ICU;Physician,0,120,Prazosin;Pain management;Dobutamine standby
 Toxicology,T56.0,Acute lead poisoning with encephalopathy,ICU;Neurologist;Dialysis,0,120,Chelation therapy BAL/EDTA;Seizure control
+Toxicology,F10.4,Alcohol withdrawal delirium DTs,ICU;Psychiatrist;Physician,18,120,Symptom-triggered Benzodiazepines;IV Fluids;Thiamine
+Toxicology,F14.0,Cocaine-induced myocardial infarction,ICU;Cardiologist;CathLab,18,120,Benzodiazepines;Nitrates;Avoid Beta Blockers
 GI,K25.4,Bleeding peptic ulcer hemorrhagic shock,ICU;BloodBank;Gastroenterologist,18,120,Massive transfusion;Stat Endoscopy;IV PPI
 GI,K80.0,Acute calculous cholecystitis,Surgeon;OR,18,120,NPO;IV Antibiotics;Laparoscopic cholecystectomy
 GI,K85.9,Acute severe necrotizing pancreatitis,ICU;Surgeon;Dialysis,18,120,Aggressive IV hydration;Pain control;Enteral feeding
-GI,K35.8,Acute ruptured appendicitis with peritonitis,Surgeon;OR;Broad_Abx,0,120,IV Fluids;Broad spectrum Abx;Appendectomy
-GI,K56.6,Acute mechanical bowel obstruction,Surgeon;OR;CT,0,120,NG Tube decompression;Fluid resuscitation;Laparotomy
+GI,K35.8,Acute ruptured appendicitis with peritonitis,Surgeon;OR;Broad_Abx,18,120,IV Fluids;Broad spectrum Abx;Appendectomy
+GI,K56.6,Acute mechanical bowel obstruction,Surgeon;OR;CT,18,120,NG Tube decompression;Fluid resuscitation;Laparotomy
 GI,K40.3,Strangulated inguinal hernia,Surgeon;OR,0,120,NPO;Analgesia;Immediate surgical repair
-GI,K65.0,Generalized acute peritonitis,ICU;Surgeon;OR,0,120,Broad spectrum antibiotics;Sepsis protocol;Surgery
+GI,K65.0,Generalized acute peritonitis,ICU;Surgeon;OR,18,120,Broad spectrum antibiotics;Sepsis protocol;Surgery
 GI,K92.2,Massive obscure gastrointestinal haemorrhage,BloodBank;ICU;Gastroenterologist,18,120,Massive transfusion protocol;CT Angiography
 GI,K83.0,Acute ascending cholangitis,ICU;Gastroenterologist;Surgeon,18,120,IV Antibiotics;ERCP prep;Fluid resuscitation
 GI,K55.0,Acute mesenteric ischemia,ICU;Surgeon;OR,18,120,Sepsis protocol;Laparotomy;Bowel resection
+GI,I85.0,Bleeding esophageal varices,ICU;BloodBank;Gastroenterologist,18,120,Octreotide infusion;Endoscopic banding;Transfusion
+GI,K56.2,Sigmoid volvulus,Surgeon;OR;Gastroenterologist,18,120,Endoscopic detorsion;Surgical resection prep
+GI,K57.2,Perforated diverticulitis with peritonitis,OR;Surgeon;ICU,18,120,Broad antibiotics;Emergency Hartmann procedure
+GI,K59.3,Toxic megacolon,ICU;Surgeon;Gastroenterologist,18,120,NPO;IV Steroids;Surgery consult for colectomy
+GI,K72.0,Acute and subacute hepatic failure,ICU;Gastroenterologist;Dialysis,18,120,Lactulose;Manage coagulopathy;Transplant center referral
+Renal,N17.9,Acute kidney injury anuric,ICU;Dialysis;Nephrologist,18,120,Fluid restriction;Hyperkalemia management;Hemodialysis
+Renal,N39.0,Severe urosepsis,ICU;Broad_Abx;Urologist,18,120,Urine cultures;IV Ceftriaxone;Fluid resuscitation
+Renal,N44.0,Testicular torsion,OR;Urologist;Surgeon,0,120,Stat surgical exploration;Analgesia;NPO
+Renal,N49.8,Fournier gangrene,OR;Surgeon;ICU;Broad_Abx,18,120,Stat radical surgical debridement;Carbapenems
+Renal,N13.2,Obstructive uropathy with pyonephrosis,OR;Urologist;ICU,18,120,Percutaneous nephrostomy;IV Antibiotics
+Endocrine,E10.1,Adult Diabetic Ketoacidosis DKA,ICU;Endocrinologist;Physician,18,120,Aggressive fluid resuscitation;Insulin infusion;Potassium protocol
+Endocrine,E11.0,Hyperosmolar hyperglycemic state HHS,ICU;Endocrinologist;Physician,18,120,Massive fluid resuscitation
