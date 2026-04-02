@@ -50,9 +50,11 @@ def load_datasets_v3():
         st.error(f"CRITICAL: Failed to read CSV. Error: {e}")
         st.stop()
 
-    # Extreme column sanitization (strips invisible characters and accidental quotes)
-    icd_df.columns = icd_df.columns.str.replace(r'^ï»¿', '', regex=True).str.replace(r'^\ufeff', '', regex=True)
-    icd_df.columns = [str(c).strip().lower().replace('"', '').replace("'", "") for c in icd_df.columns]
+    # --- NATIVE PYTHON COLUMN SANITIZATION (Bypasses PyArrow completely) ---
+    icd_df.columns = [
+        str(c).replace('ï»¿', '').replace('\ufeff', '').strip().lower().replace('"', '').replace("'", "") 
+        for c in icd_df.columns
+    ]
     
     # The Firewall
     if 'bundle' not in icd_df.columns:
