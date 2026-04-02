@@ -1,26 +1,19 @@
 facility_id,name,lat,lon,ownership,level,ICU_open,caps
-ML-001,"NEIGRIHMS, Shillong",25.530958,91.822627,Government,Tertiary,8,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=0;MRI=0;Thrombolysis=0;OBGYN_OT=0;CathLab=0;Dialysis=0;Neurosurgery=0
-ML-002,Civil Hospital Shillong,25.612734,91.810865,Government,Tertiary,8,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=0;MRI=0;Thrombolysis=0;OBGYN_OT=0;CathLab=0;Dialysis=0;Neurosurgery=0
-ML-003,Ganesh Das Hospital,25.583971,91.854853,Government,Secondary,3,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=0;MRI=0;Thrombolysis=0;OBGYN_OT=0;CathLab=0;Dialysis=0;Neurosurgery=0
-ML-004,Nongpoh Civil Hospital,25.4645,91.876115,Government,Secondary,3,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=0;MRI=0;Thrombolysis=0;OBGYN_OT=0;CathLab=0;Dialysis=0;Neurosurgery=0
-ML-005,Mawkyrwat CHC,25.459374,91.865047,Government,Secondary,3,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=0;MRI=0;Thrombolysis=0;OBGYN_OT=0;CathLab=0;Dialysis=0;Neurosurgery=0
-ML-006,Pynursla CHC,25.467464,91.813607,Government,Secondary,3,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=0;MRI=0;Thrombolysis=0;OBGYN_OT=0;CathLab=0;Dialysis=0;Neurosurgery=0
-ML-007,Sohra CHC,25.55613,91.924028,Government,Secondary,3,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=0;MRI=0;Thrombolysis=0;OBGYN_OT=0;CathLab=0;Dialysis=0;Neurosurgery=0
-ML-008,Mairang CHC,25.48095,91.833486,Government,Secondary,3,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=0;MRI=0;Thrombolysis=0;OBGYN_OT=0;CathLab=0;Dialysis=0;Neurosurgery=0
-ML-009,Jowai Civil Hospital,25.606858,91.942156,Government,Secondary,3,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=0;MRI=0;Thrombolysis=0;OBGYN_OT=0;CathLab=0;Dialysis=0;Neurosurgery=0
-ML-010,Tura Civil Hospital,25.594276,91.859502,Government,Tertiary,8,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=0;MRI=0;Thrombolysis=0;OBGYN_OT=0;CathLab=0;Dialysis=0;Neurosurgery=0
-ML-011,Resubelpara CHC,25.694064,91.806987,Government,Secondary,3,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=0;MRI=0;Thrombolysis=0;OBGYN_OT=0;CathLab=0;Dialysis=0;Neurosurgery=0
-ML-012,Williamnagar CHC,25.664617,91.843441,Government,Secondary,3,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=0;MRI=0;Thrombolysis=0;OBGYN_OT=0;CathLab=0;Dialysis=0;Neurosurgery=0
-ML-013,Baghmara CHC,25.486064,91.817669,Government,CHC,0,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=0;MRI=0;Thrombolysis=0;OBGYN_OT=0;CathLab=0;Dialysis=0;Neurosurgery=0
-ML-014,Khliehriat CHC,25.52712,91.922419,Government,CHC,0,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=0;MRI=0;Thrombolysis=0;OBGYN_OT=0;CathLab=0;Dialysis=0;Neurosurgery=0
-ML-015,Mawphlang PHC,25.495182,91.88724,Government,CHC,0,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=0;MRI=0;Thrombolysis=0;OBGYN_OT=0;CathLab=0;Dialysis=0;Neurosurgery=0
-ML-016,Umsning CHC,25.609728,91.85586,Government,CHC,0,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=0;MRI=0;Thrombolysis=0;OBGYN_OT=0;CathLab=0;Dialysis=0;Neurosurgery=0
-ML-017,Mawlai PHC,25.586936,91.809418,Government,CHC,0,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=0;MRI=0;Thrombolysis=0;OBGYN_OT=0;CathLab=0;Dialysis=0;Neurosurgery=0
-ML-018,Smit CHC,25.4649,91.830894,Government,CHC,0,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=0;MRI=0;Thrombolysis=0;OBGYN_OT=0;CathLab=0;Dialysis=0;Neurosurgery=0
-ML-019,Umroi CHC,25.6201,91.864139,Private,CHC,1,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=0;MRI=0;Thrombolysis=0;OBGYN_OT=0;CathLab=0;Dialysis=0;Neurosurgery=0
-ML-020,Laitumkhrah PHC,25.528537,91.887834,Private,CHC,1,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=0;MRI=0;Thrombolysis=0;OBGYN_OT=0;CathLab=0;Dialysis=0;Neurosurgery=0
-ML-021,Bethany Hospital,25.563296,91.844965,Private,CHC,1,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=0;MRI=0;Thrombolysis=0;OBGYN_OT=0;CathLab=0;Dialysis=0;Neurosurgery=0
-ML-022,Nazareth Hospital,25.648595,91.904849,Private,CHC,1,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=0;MRI=0;Thrombolysis=0;OBGYN_OT=0;CathLab=0;Dialysis=0;Neurosurgery=0
-ML-023,Woodland Hospital,25.511024,91.886164,Private,CHC,1,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=0;MRI=0;Thrombolysis=0;OBGYN_OT=0;CathLab=0;Dialysis=0;Neurosurgery=0
-ML-024,Dr. H. Gordon Roberts Hospital,25.581299,91.931271,Private,CHC,1,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=0;MRI=0;Thrombolysis=0;OBGYN_OT=0;CathLab=0;Dialysis=0;Neurosurgery=0
-ML-025,Community Health Hub – East Khasi,25.632361,91.843191,Private,CHC,1,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=0;MRI=0;Thrombolysis=0;OBGYN_OT=0;CathLab=0;Dialysis=0;Neurosurgery=0
+ML-001,NEIGRIHMS - Shillong,25.590000,91.940000,Government,Tertiary,2,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=1;MRI=1;CathLab=1;Dialysis=1;Neurosurgery=1;Thrombolysis=1;OBGYN_OT=1;ED=1
+ML-002,Civil Hospital Shillong,25.570000,91.880000,Government,Tertiary,0,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=1;MRI=0;CathLab=0;Dialysis=1;Neurosurgery=0;Thrombolysis=1;OBGYN_OT=1;ED=1
+ML-003,Tura Civil Hospital,25.510000,90.200000,Government,Secondary,4,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=1;MRI=0;CathLab=0;Dialysis=1;Neurosurgery=0;Thrombolysis=1;OBGYN_OT=1;ED=1
+ML-004,Jowai Civil Hospital - Ialong,25.470000,92.260000,Government,Secondary,1,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=1;MRI=0;CathLab=0;Dialysis=1;Neurosurgery=0;Thrombolysis=0;OBGYN_OT=1;ED=1
+ML-005,Woodland Hospital - Shillong,25.568000,91.890000,Private,Tertiary,3,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=1;MRI=1;CathLab=0;Dialysis=1;Neurosurgery=1;Thrombolysis=1;OBGYN_OT=1;ED=1
+ML-006,Bethany Hospital - Shillong,25.560000,91.895000,Private,Tertiary,5,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=1;MRI=0;CathLab=0;Dialysis=1;Neurosurgery=0;Thrombolysis=1;OBGYN_OT=1;ED=1
+ML-007,Nazareth Hospital - Shillong,25.575000,91.893000,Private,Tertiary,2,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=1;MRI=0;CathLab=0;Dialysis=1;Neurosurgery=0;Thrombolysis=1;OBGYN_OT=1;ED=1
+ML-008,Supercare Hospital - Shillong,25.580000,91.900000,Private,Tertiary,6,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=1;MRI=1;CathLab=0;Dialysis=1;Neurosurgery=1;Thrombolysis=1;OBGYN_OT=1;ED=1
+ML-009,Nongpoh Civil Hospital,25.900000,91.880000,Government,Secondary,0,ICU=0;Ventilator=0;BloodBank=1;OR=1;CT=0;MRI=0;CathLab=0;Dialysis=0;Neurosurgery=0;Thrombolysis=0;OBGYN_OT=1;ED=1
+ML-010,Mairang Civil Hospital,25.560000,91.630000,Government,Secondary,0,ICU=0;Ventilator=0;BloodBank=0;OR=1;CT=0;MRI=0;CathLab=0;Dialysis=0;Neurosurgery=0;Thrombolysis=0;OBGYN_OT=1;ED=1
+ML-011,Williamnagar Civil Hospital,25.600000,90.610000,Government,Secondary,1,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=0;MRI=0;CathLab=0;Dialysis=0;Neurosurgery=0;Thrombolysis=0;OBGYN_OT=1;ED=1
+ML-012,Dr. H. Gordon Roberts Hospital,25.565000,91.875000,Private,Secondary,2,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=1;MRI=0;CathLab=0;Dialysis=1;Neurosurgery=0;Thrombolysis=1;OBGYN_OT=1;ED=1
+ML-013,Apollo Clinic - Shillong,25.578000,91.885000,Private,Clinic,0,ICU=0;Ventilator=0;BloodBank=0;OR=0;CT=0;MRI=0;CathLab=0;Dialysis=1;Neurosurgery=0;Thrombolysis=0;OBGYN_OT=0;ED=1
+ML-014,Children's Hospital - Shillong,25.572000,91.882000,Private,Secondary,4,ICU=1;Ventilator=1;BloodBank=0;OR=1;CT=0;MRI=0;CathLab=0;Dialysis=0;Neurosurgery=0;Thrombolysis=0;OBGYN_OT=0;ED=1
+ML-015,Holy Cross Hospital - Tura,25.515000,90.210000,Private,Secondary,2,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=0;MRI=0;CathLab=0;Dialysis=0;Neurosurgery=0;Thrombolysis=0;OBGYN_OT=1;ED=1
+ML-016,Norman Tunnel Hospital - Jowai,25.460000,92.270000,Private,Secondary,2,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=0;MRI=0;CathLab=0;Dialysis=0;Neurosurgery=0;Thrombolysis=0;OBGYN_OT=1;ED=1
+ML-017,Woodland Hospital - Jowai,25.455000,92.275000,Private,Secondary,1,ICU=1;Ventilator=1;BloodBank=1;OR=1;CT=1;MRI=0;CathLab=0;Dialysis=1;Neurosurgery=0;Thrombolysis=0;OBGYN_OT=1;ED=1
+ML-018,Hope Clinic - Shillong,25.582000,91.889000,Private,Clinic,0,ICU=0;Ventilator=0;BloodBank=0;OR=0;CT=0;MRI=0;CathLab=0;Dialysis=0;Neurosurgery=0;Thrombolysis=0;OBGYN_OT=0;ED=1
