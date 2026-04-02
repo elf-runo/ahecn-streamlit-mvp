@@ -215,12 +215,18 @@ if nav_selection == "REFERRAL INITIATION":
                 
                 with st.expander(f"📊 Explainable AI Logic for {selected_fac['facility']}"):
                     details = selected_fac["scoring_details"]
+                    tier = details.get('clinical_tier', 'Tier 1: Definitive Care')
                     
-                    st.markdown("**1. Safety & Infrastructure Gates**")
-                    if details.get('gate_capability') == "PASSED":
-                        st.success("✅ **Capability Gate:** 100% of requested life-saving capabilities present.")
-                    elif details.get('gate_capability') == "PARTIAL_MATCH":
-                        st.warning(f"⚠️ **Graceful Degradation:** Facility missing requested optimal capabilities: **{', '.join(details.get('missing_capabilities', [])).upper()}**.")
+                    st.markdown(f"**1. Clinical Capability Escalon ({tier})**")
+                    if tier == "Tier 1: Definitive Care":
+                        st.success("✅ **Tier 1 Match:** 100% of requested Specialists and Hardware present.")
+                    elif tier == "Tier 2: Advanced Medical Bridging":
+                        st.warning(f"⚠️ **Tier 2 Match:** Primary specialist unavailable. AI engaged medical fallback protocol.")
+                        for b in details.get('bridged_capabilities', []):
+                            st.caption(f"↳ *Missing:* {b['missing'].upper()} | *Bridged via:* {', '.join(b['bridged_with']).upper()}")
+                    else:
+                        st.error(f"🚨 **Tier 3 Match:** Definitive care missing. Route optimized for nearest airway/ED resuscitation.")
+                        st.caption(f"↳ *Critical Missing:* {', '.join(details.get('failed_capabilities', [])).upper()}")
                     
                     if details.get('gate_capacity') == "PASSED":
                         st.success(f"✅ **Capacity Gate:** Passed. {details.get('icu_beds')} ICU beds available.")
