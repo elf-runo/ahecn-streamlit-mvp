@@ -158,7 +158,24 @@ if nav_selection == "REFERRAL INITIATION":
         else:
             custom_notes = st.text_input("Additional Clinical Notes (Optional)", placeholder="E.g., deteriorating on current O2 support...")
             reason_for_referral = f"{selected_rationale} {custom_notes}".strip()
-
+        # --- NEW: DYNAMIC RESUSCITATION BUNDLE ---
+        st.markdown("---")
+        st.markdown("⚕️ **Pre-Transfer Resuscitation & Interventions**")
+        
+        # Read the default interventions from the ICD catalogue
+        interventions_str = icd_row.get("default_interventions", "")
+        available_interventions = [x.strip() for x in str(interventions_str).split(";") if x.strip()]
+        
+        completed_interventions = []
+        if available_interventions:
+            completed_interventions = st.multiselect(
+                "Select life-saving interventions already administered:",
+                available_interventions + ["Other (Specified in notes)"]
+            )
+            if not completed_interventions:
+                st.caption("⚠️ *No pre-transfer interventions logged. Ensure patient is stabilized for transit.*")
+        else:
+            st.info("No standardized resuscitation bundle found for this pathology. Use notes if needed.")
     # --- THE CLINICAL FIREWALL ---
     vitals = {"hr": hr, "rr": rr, "sbp": sbp, "temp": temp, "spo2": spo2, "avpu": avpu}
     context = {"age": age, "pregnant": pregnant, "o2_device": "Air", "spo2_scale": 1, "behavior": "Normal"}
@@ -276,6 +293,7 @@ if nav_selection == "REFERRAL INITIATION":
                         "bundle": bundle, "triage_color": triage_color, "severity_index": meta['severity_index'],
                         "destination": selected_fac, "dispatch_time": datetime.now().strftime("%H:%M:%S"),
                         "rationale": reason_for_referral,
+                        "interventions": completed_interventions, 
                         "viable_destinations": results,          # Stores the full ranked list for rerouting
                         "current_dest_index": selected_idx,      # Tracks where we are in the list
                         "rejection_log": []                      # Tracks medico-legal reasons for rejection
@@ -303,9 +321,8 @@ S - SITUATION:
 Emergency dispatch to {case['destination']['facility']}. 
 Provisional DX: {case['diagnosis']}
 
-B - BACKGROUND:
-Bundle: {case['bundle']}. Topography-Adjusted Transit ETA: {case['destination']['eta']} mins.
-Transfer Rationale: {case.get('rationale', 'N/A')}
+B - BACKGROUND: Bundle: {case['bundle']}. Rationale: {case.get('rationale', 'N/A')}
+Pre-Transfer Interventions: {', '.join(case.get('interventions', [])) if case.get('interventions') else 'None / Not Logged'}
 {chr(10) + '[DIVERSION AUDIT]: ' + ' -> '.join([f"Bypassed {r['facility']} ({r['reason']})" for r in case.get("rejection_log", [])]) if case.get("rejection_log") else ""}
 
 A - ASSESSMENT:
@@ -399,7 +416,9 @@ Status: PRIORITY {case['triage_color']} (Severity: {case['severity_index']:.2f})
 
 I - IDENTIFICATION: Patient: {case['patient_name']}, {case['age']} Y/O
 S - SITUATION: Emergency dispatch to {dest['facility']}. Provisional DX: {case['diagnosis']}
-B - BACKGROUND: Bundle: {case['bundle']}. Rationale: {case.get('rationale', 'N/A')}{diversion_text}
+B - BACKGROUND: Bundle: {case['bundle']}. Rationale: {case.get('rationale', 'N/A')}
+Pre-Transfer Interventions: {', '.join(case.get('interventions', [])) if case.get('interventions') else 'None / Not Logged'}
+{chr(10) + '[DIVERSION AUDIT]: ' + ' -> '.join([f"Bypassed {r['facility']} ({r['reason']})" for r in case.get("rejection_log", [])]) if case.get("rejection_log") else ""}
 A - ASSESSMENT: HR: {case['vitals']['hr']} | SBP: {case['vitals']['sbp']} | RR: {case['vitals']['rr']} | SpO2: {case['vitals']['spo2']}% | Temp: {case['vitals']['temp']}°C | AVPU: {case['vitals']['avpu']}
 R - RECOMMENDATION: {('ED STABILIZATION ONLY DUE TO ZERO ICU BEDS.' if dest['scoring_details'].get('gate_capacity') == 'WARNING_ED_STABILIZATION_ONLY' else 'Prepare critical care receiving bay.')}
 """
