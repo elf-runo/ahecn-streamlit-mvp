@@ -361,6 +361,10 @@ elif nav_selection == "RECEIVING HOSPITAL BAY":
             dest = case["destination"]
             dest_name = dest['facility']
 
+            # --- 1. TERMINAL IDENTITY BANNER (Fixes Demo Confusion) ---
+            st.success(f"🏥 **SECURE TERMINAL ACTIVE:** YOU ARE VIEWING AS **{dest_name.upper()}**")
+            st.markdown("---")
+
             if st.session_state.synthetic_data is not None:
                 df_analytics = st.session_state.synthetic_data
                 if 'dest_facility' in df_analytics.columns:
@@ -374,8 +378,8 @@ elif nav_selection == "RECEIVING HOSPITAL BAY":
                         st.markdown("---")
 
             st.warning(f"INCOMING ALERT: ETA {dest['eta']} mins")
-            
-            # --- THE TRANSPARENT DIVERSION UI ---
+
+            # --- REROUTE TELEMETRY (Chain of Custody) ---
             diversion_text = ""
             if case.get("rejection_log"):
                 st.error("⚠️ SECONDARY REROUTE PROTOCOL ENGAGED")
@@ -386,7 +390,6 @@ elif nav_selection == "RECEIVING HOSPITAL BAY":
                         st.markdown(f"↳ **Rationale:** *{rej['reason']}*")
                     st.caption("AI autonomously rerouted to your facility as the next mathematically optimal destination.")
                 
-                # Format for the ISBAR document
                 diversion_text = "\n[DIVERSION AUDIT]: " + " -> ".join([f"Bypassed {r['facility']} ({r['reason']})" for r in case["rejection_log"]])
 
             # --- DISPLAY FULL ISBAR BEFORE DECISION ---
@@ -406,14 +409,25 @@ R - RECOMMENDATION: {('ED STABILIZATION ONLY DUE TO ZERO ICU BEDS.' if dest['sco
             if not st.session_state.patient_accepted:
                 st.markdown("### Decision Matrix")
                 col_acc, col_rej = st.columns(2)
-                
+
                 with col_acc:
                     if st.button("✅ Acknowledge & Accept Patient", type="primary", use_container_width=True):
                         st.session_state.patient_accepted = True
                         st.rerun()
-                        
+
                 with col_rej:
                     with st.expander("❌ Reject & Trigger AI Reroute"):
+                        
+                        # --- 2. THE AI REROUTE PREVIEW (Shows the exact fallback) ---
+                        current_idx = case.get("current_dest_index", 0)
+                        viable_list = case.get("viable_destinations", [])
+                        
+                        if current_idx + 1 < len(viable_list):
+                            next_dest = viable_list[current_idx + 1]
+                            st.info(f"**AI Fallback Target:** If you divert this case, the AI will immediately reroute the ambulance to **{next_dest['facility']}** (ETA: {next_dest['eta']} mins).")
+                        else:
+                            st.error("**AI Fallback Target:** ZERO viable facilities remaining in the state network. Rejecting forces on-site stabilization.")
+
                         reject_reason = st.selectbox(
                             "Standardized Reason for Diversion",
                             ["Select Reason...",
@@ -422,13 +436,18 @@ R - RECOMMENDATION: {('ED STABILIZATION ONLY DUE TO ZERO ICU BEDS.' if dest['sco
                              "Hardware/Equipment Failure (e.g., CT Down)",
                              "Facility Currently on State Diversion Status"]
                         )
+                        
                         if st.button("Confirm Diversion", type="primary", disabled=reject_reason == "Select Reason..."):
-                            # Log the rejection for medico-legal tracking
                             case["rejection_log"].append({
-                                "facility": dest_name, 
-                                "reason": reject_reason, 
+                                "facility": dest_name,
+                                "reason": reject_reason,
                                 "time": datetime.now().strftime("%H:%M:%S")
                             })
+
+                            if current_idx + 1 < len(viable_list):
+                                case["destination"] = viable_list[current_idx + 1]
+                                case["current_dest_index"] = current_idx + 1
+                                st.rerun()
                             
                             # Shift to the next best facility in the array
                             current_idx = case["current_dest_index"]
