@@ -338,11 +338,11 @@ R - RECOMMENDATION:
             col_b.button("🔗 Share to Secure Network")
 
 # ==========================================
-# VIEW 2: TRANSIT TELEMETRY
+# VIEW 2: ACTIVE TRANSIT TELEMETRY
 # ==========================================
 elif nav_selection == "ACTIVE TRANSIT TELEMETRY":
     st.header("Active Transit & Paramedic Dashboard")
-    
+
     with st.container(border=True):
         if not st.session_state.active_case:
             st.info("No active dispatch. Initiate a transfer from the Referral tab.")
@@ -350,19 +350,97 @@ elif nav_selection == "ACTIVE TRANSIT TELEMETRY":
             case = st.session_state.active_case
             dest = case["destination"]
             
-            st.error(f"PRIORITY {case['triage_color']} EN ROUTE TO {dest['facility'].upper()}")
-            
+            # --- INITIALIZE TRANSIT LOG MEMORY ---
+            if "transit_log" not in case:
+                case["transit_log"] = []
+
+            # --- HEADER ROW ---
+            st.error(f"🚑 PRIORITY {case['triage_color']} EN ROUTE TO {dest['facility'].upper()}")
             c1, c2, c3 = st.columns(3)
             c1.metric("Topography-Adjusted ETA", f"{dest['eta']} min")
             c2.metric("Modeled Mortality Risk", f"{dest['mortality_risk']}%")
             c3.metric("Dispatch Time", case["dispatch_time"])
 
-            st.markdown("### ISBAR Clinical Handover")
-            st.markdown(f"**Identification:** {case['patient_name']}, {case['age']} Y/O.")
-            st.markdown(f"**Assessment:** HR {case['vitals']['hr']} | BP {case['vitals']['sbp']} | RR {case['vitals']['rr']} | SpO2 {case['vitals']['spo2']}% | Temp {case['vitals']['temp']}°C | AVPU: {case['vitals']['avpu']}")
-            
             if dest["scoring_details"].get("gate_capacity") == "WARNING_ED_STABILIZATION_ONLY":
-                st.warning("PARAMEDIC ALERT: Destination ICU is at capacity. You are routing for ED STABILIZATION ONLY.")
+                st.warning("⚠️ PARAMEDIC ALERT: Destination ICU is at capacity. You are routing for ED STABILIZATION ONLY.")
+
+            st.markdown("---")
+            
+            # --- INNOVATION 1 & 2: FAT-FINGER LEDGER & VITALS UPDATE ---
+            col_actions, col_vitals = st.columns([1.5, 1])
+            
+            with col_actions:
+                st.subheader("⚡ Med-Legal Action Ledger (One-Tap)")
+                st.caption("Timestamps lock instantly for Receiving ED visibility.")
+                
+                # Massive buttons for moving ambulances
+                a1, a2, a3 = st.columns(3)
+                if a1.button("💉 Push ACLS Meds", use_container_width=True):
+                    case["transit_log"].append({"time": datetime.now().strftime("%H:%M:%S"), "action": "ACLS Medications Administered"})
+                    st.rerun()
+                if a2.button("🫁 Advanced Airway", use_container_width=True):
+                    case["transit_log"].append({"time": datetime.now().strftime("%H:%M:%S"), "action": "Advanced Airway / Intubation Secured"})
+                    st.rerun()
+                if a3.button("🩸 Hemorrhage Control", use_container_width=True):
+                    case["transit_log"].append({"time": datetime.now().strftime("%H:%M:%S"), "action": "Massive Hemorrhage Protocol / Tourniquet"})
+                    st.rerun()
+                    
+                st.markdown("**Active Transit Audit Trail:**")
+                if not case["transit_log"]:
+                    st.info("No mid-transit interventions logged.")
+                else:
+                    for log in reversed(case["transit_log"]):
+                        st.markdown(f"⏱️ **{log['time']}** - {log['action']}")
+                        
+            with col_vitals:
+                st.subheader("📉 Quick Vitals Delta")
+                new_spo2 = st.slider("Update SpO2 %", 50, 100, case['vitals']['spo2'])
+                new_sbp = st.slider("Update SBP mmHg", 40, 200, case['vitals']['sbp'])
+                
+                if st.button("Update Vitals to ED Board", type="secondary", use_container_width=True):
+                    case['vitals']['spo2'] = new_spo2
+                    case['vitals']['sbp'] = new_sbp
+                    case["transit_log"].append({"time": datetime.now().strftime("%H:%M:%S"), "action": f"Vitals Deterioration Logged: SpO2 {new_spo2}%, SBP {new_sbp}"})
+                    st.success("ED Board Updated!")
+                    time.sleep(0.5)
+                    st.rerun()
+
+            st.markdown("---")
+            
+            # --- INNOVATION 3: THE MID-FLIGHT CRASH OVERRIDE ---
+            st.subheader("🚨 Autonomous Mid-Flight Escalation")
+            st.caption("Use ONLY if patient suffers sudden cardiac arrest or catastrophic deterioration requiring higher-tier facility.")
+            
+            if st.button("🚨 PATIENT CRASHING - INITIATE AI REROUTE TO LEVEL 1 CENTER", type="primary", use_container_width=True):
+                # Med-legal logging
+                case["transit_log"].append({"time": datetime.now().strftime("%H:%M:%S"), "action": "CRITICAL: Patient Arrest/Crash. Paramedic initiated AI Reroute."})
+                case["triage_color"] = "RED"
+                case["severity_index"] = 1.00
+                
+                # The AI looks for the highest tier facility in the viable list that HAS An ICU
+                viable = case.get("viable_destinations", [])
+                
+                # Find the first Tier 1 or Tertiary center
+                emergency_dest = None
+                for fac in viable:
+                    if fac["scoring_details"].get("icu_beds", 0) > 0 and fac["facility"] != dest["facility"]:
+                        emergency_dest = fac
+                        break
+                
+                if emergency_dest:
+                    case["destination"] = emergency_dest
+                    case["current_dest_index"] = viable.index(emergency_dest)
+                    # Add to rejection log so the new hospital knows it was a mid-flight diversion
+                    case["rejection_log"].append({
+                        "facility": dest['facility'], 
+                        "reason": "Mid-Flight Patient Crash. Paramedic Escalation.", 
+                        "time": datetime.now().strftime("%H:%M:%S")
+                    })
+                    st.error(f"REROUTING... LOCKING ONTO {emergency_dest['facility']}...")
+                    time.sleep(1.5)
+                    st.rerun()
+                else:
+                    st.error("CRITICAL OVERRIDE FAILED: No higher-tier facilities available in range. Continue to current destination with maximal resuscitation.")
 
 # ==========================================
 # VIEW 3: RECEIVING HOSPITAL
