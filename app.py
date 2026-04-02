@@ -29,6 +29,10 @@ if 'transfer_initiated' not in st.session_state:
     st.session_state.transfer_initiated = False
 if 'patient_accepted' not in st.session_state:
     st.session_state.patient_accepted = False
+if 'match_results' not in st.session_state:
+    st.session_state.match_results = None
+if 'civic_override_active' not in st.session_state:
+    st.session_state.civic_override_active = False
 
 # --- THE CACHE-BUSTER: We are temporarily removing @st.cache_data ---
 def load_datasets_v3():
@@ -366,26 +370,24 @@ elif nav_selection == "ACTIVE TRANSIT TELEMETRY":
 
             st.markdown("---")
             
-            # --- INNOVATION 1 & 2: FAT-FINGER LEDGER & VITALS UPDATE ---
-            col_actions, col_vitals = st.columns([1.5, 1])
+            # --- INNOVATION 1, 2 & 3: ACTION LEDGER, VITALS & DRIFT TELEMETRY ---
+            col_actions, col_vitals, col_traffic = st.columns([1.5, 1, 1.2])
             
             with col_actions:
-                st.subheader("⚡ Med-Legal Action Ledger (One-Tap)")
-                st.caption("Timestamps lock instantly for Receiving ED visibility.")
-                
-                # Massive buttons for moving ambulances
+                st.subheader("⚡ Med-Legal Ledger")
+                st.caption("Timestamps lock for Receiving ED visibility.")
                 a1, a2, a3 = st.columns(3)
-                if a1.button("💉 Push ACLS Meds", use_container_width=True):
+                if a1.button("💉 Push ACLS", use_container_width=True):
                     case["transit_log"].append({"time": datetime.now().strftime("%H:%M:%S"), "action": "ACLS Medications Administered"})
                     st.rerun()
-                if a2.button("🫁 Advanced Airway", use_container_width=True):
-                    case["transit_log"].append({"time": datetime.now().strftime("%H:%M:%S"), "action": "Advanced Airway / Intubation Secured"})
+                if a2.button("🫁 Airway", use_container_width=True):
+                    case["transit_log"].append({"time": datetime.now().strftime("%H:%M:%S"), "action": "Advanced Airway Secured"})
                     st.rerun()
-                if a3.button("🩸 Hemorrhage Control", use_container_width=True):
-                    case["transit_log"].append({"time": datetime.now().strftime("%H:%M:%S"), "action": "Massive Hemorrhage Protocol / Tourniquet"})
+                if a3.button("🩸 Tourniquet", use_container_width=True):
+                    case["transit_log"].append({"time": datetime.now().strftime("%H:%M:%S"), "action": "Hemorrhage Control Applied"})
                     st.rerun()
                     
-                st.markdown("**Active Transit Audit Trail:**")
+                st.markdown("**Transit Audit Trail:**")
                 if not case["transit_log"]:
                     st.info("No mid-transit interventions logged.")
                 else:
@@ -393,55 +395,70 @@ elif nav_selection == "ACTIVE TRANSIT TELEMETRY":
                         st.markdown(f"⏱️ **{log['time']}** - {log['action']}")
                         
             with col_vitals:
-                st.subheader("📉 Quick Vitals Delta")
-                new_spo2 = st.slider("Update SpO2 %", 50, 100, case['vitals']['spo2'])
-                new_sbp = st.slider("Update SBP mmHg", 40, 200, case['vitals']['sbp'])
+                st.subheader("📉 Vitals Delta")
+                new_spo2 = st.slider("SpO2 %", 50, 100, case['vitals']['spo2'])
+                new_sbp = st.slider("SBP mmHg", 40, 200, case['vitals']['sbp'])
                 
-                if st.button("Update Vitals to ED Board", type="secondary", use_container_width=True):
+                if st.button("Update ED Board", type="secondary", use_container_width=True):
                     case['vitals']['spo2'] = new_spo2
                     case['vitals']['sbp'] = new_sbp
-                    case["transit_log"].append({"time": datetime.now().strftime("%H:%M:%S"), "action": f"Vitals Deterioration Logged: SpO2 {new_spo2}%, SBP {new_sbp}"})
-                    st.success("ED Board Updated!")
-                    time.sleep(0.5)
+                    case["transit_log"].append({"time": datetime.now().strftime("%H:%M:%S"), "action": f"Vitals Updated: SpO2 {new_spo2}%, SBP {new_sbp}"})
                     st.rerun()
+
+            with col_traffic:
+                st.subheader("🚧 ETA Drift Telemetry")
+                st.caption("Live GPS vs Baseline Analytics")
+                
+                traffic_delay = st.slider("Live Traffic/Blockade Delay (Mins)", 0, 60, 0)
+                live_eta = dest['eta'] + traffic_delay
+                
+                st.metric("Live GPS ETA", f"{live_eta} mins", delta=f"+{traffic_delay} mins" if traffic_delay > 0 else "On Time", delta_color="inverse")
+                
+                if traffic_delay > 5 and traffic_delay <= 15:
+                    st.warning("⚠️ **Drift Detected:** Receiving ED notified.")
+                    if "delay_notified" not in case:
+                        case["transit_log"].append({"time": datetime.now().strftime("%H:%M:%S"), "action": f"Traffic Drift (+{traffic_delay}m). ED Notified."})
+                        case["delay_notified"] = True
+                        
+                elif traffic_delay > 15 and case['triage_color'] == "RED":
+                    st.error("🚨 **CRITICAL BLOCKADE**")
+                    
+                    if st.button("🌐 INITIATE CIVIC OVERRIDE & ALS INTERCEPT", type="primary", use_container_width=True):
+                        st.session_state.civic_override_active = True
+                        case["transit_log"].append({"time": datetime.now().strftime("%H:%M:%S"), "action": "CRITICAL BLOCKADE. ALS Intercept Unit dispatched."})
+                        case["transit_log"].append({"time": datetime.now().strftime("%H:%M:%S"), "action": "GREEN CORRIDOR: API Sync to Traffic Command & Public Broadcast."})
+                        st.rerun()
+                        
+                # Visualize Active Civic Override
+                if st.session_state.get('civic_override_active', False) and traffic_delay > 15:
+                    st.success("✅ **Civic Override Executing**")
+                    with st.expander("📡 View Active API Broadcasts", expanded=True):
+                        st.info("**Logistics:** ALS Motorcycle Intercept dispatched. ETA: 6 mins.")
+                        st.warning("**Police:** Ping sent to Patrol Unit (MEGH-P-42) for immediate escort.")
+                        st.code(f"URGENT: Critical Medical Emergency in transit. Ambulance approaching {dest['facility']}. Clear the right lane immediately.", language="markdown")
 
             st.markdown("---")
             
-            # --- INNOVATION 3: THE MID-FLIGHT CRASH OVERRIDE ---
+            # --- INNOVATION 4: THE MID-FLIGHT CRASH OVERRIDE ---
             st.subheader("🚨 Autonomous Mid-Flight Escalation")
-            st.caption("Use ONLY if patient suffers sudden cardiac arrest or catastrophic deterioration requiring higher-tier facility.")
-            
             if st.button("🚨 PATIENT CRASHING - INITIATE AI REROUTE TO LEVEL 1 CENTER", type="primary", use_container_width=True):
-                # Med-legal logging
                 case["transit_log"].append({"time": datetime.now().strftime("%H:%M:%S"), "action": "CRITICAL: Patient Arrest/Crash. Paramedic initiated AI Reroute."})
                 case["triage_color"] = "RED"
                 case["severity_index"] = 1.00
                 
-                # The AI looks for the highest tier facility in the viable list that HAS An ICU
                 viable = case.get("viable_destinations", [])
-                
-                # Find the first Tier 1 or Tertiary center
-                emergency_dest = None
-                for fac in viable:
-                    if fac["scoring_details"].get("icu_beds", 0) > 0 and fac["facility"] != dest["facility"]:
-                        emergency_dest = fac
-                        break
+                emergency_dest = next((fac for fac in viable if fac["scoring_details"].get("icu_beds", 0) > 0 and fac["facility"] != dest["facility"]), None)
                 
                 if emergency_dest:
                     case["destination"] = emergency_dest
                     case["current_dest_index"] = viable.index(emergency_dest)
-                    # Add to rejection log so the new hospital knows it was a mid-flight diversion
-                    case["rejection_log"].append({
-                        "facility": dest['facility'], 
-                        "reason": "Mid-Flight Patient Crash. Paramedic Escalation.", 
-                        "time": datetime.now().strftime("%H:%M:%S")
-                    })
+                    if "rejection_log" not in case: case["rejection_log"] = []
+                    case["rejection_log"].append({"facility": dest['facility'], "reason": "Mid-Flight Patient Crash. Paramedic Escalation.", "time": datetime.now().strftime("%H:%M:%S")})
                     st.error(f"REROUTING... LOCKING ONTO {emergency_dest['facility']}...")
                     time.sleep(1.5)
                     st.rerun()
                 else:
-                    st.error("CRITICAL OVERRIDE FAILED: No higher-tier facilities available in range. Continue to current destination with maximal resuscitation.")
-
+                    st.error("CRITICAL OVERRIDE FAILED: No higher-tier facilities available.")
 # ==========================================
 # VIEW 3: RECEIVING HOSPITAL
 # ==========================================
