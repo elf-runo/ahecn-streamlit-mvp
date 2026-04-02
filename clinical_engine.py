@@ -120,19 +120,19 @@ def validated_triage_decision(vitals: Dict[str, Any], icd_row: Dict[str, Any], c
 
     is_time_critical = any(k.lower() in default_interventions_text.lower() for k in [kw.lower() for kw in CRITICAL_INTERVENTION_KEYWORDS])
 
-    # --- VECTOR 1: PATHOLOGY OVERRIDE ---
+    # --- VECTOR 1: PATHOLOGY OVERRIDE (Absolute Emergencies) ---
     if icd10 in COMPLETE_AUTO_RED_CODES or is_time_critical:
         meta = {
             "primary_driver": "Pathological Risk",
             "reason": f"Absolute clinical emergency: {label}",
             "ews_type": "Bypassed",
-            "ews_score": "Bypassed",
+            "ews_score": 0,
             "severity_index": 1.0,
             "score_details": {"auto_red": True, "icd10": icd10, "bundle": bundle, "severity_index": 1.0},
         }
         return "RED", meta
 
-    # --- VECTOR 2: PHYSIOLOGY SAFETY NET ---
+    # --- VECTOR 2: PHYSIOLOGY SAFETY NET (Catches non-critical pathologies with bad vitals) ---
     age = float(context.get("age", 30) or 30)
     pregnant = bool(context.get("pregnant", False) or (bundle == "Maternal"))
 
@@ -142,49 +142,71 @@ def validated_triage_decision(vitals: Dict[str, Any], icd_row: Dict[str, Any], c
     spo2_scale = int(context.get("spo2_scale", 1) or 1)
     behavior = context.get("behavior", "Normal")
 
+    is_red = False
+    is_yellow = False
+
     if age < 18:
         pews = calc_pews(age, rr, hr, spo2, behavior=behavior)
         ews_type = "PEWS"
         score = pews["score"]
-        urgent = pews["urgent"]
         severity_index = clamp(score / 10.0, 0.0, 1.0)
         score_details = {"PEWS": pews}
+        
+        # PERFECTED PEWS THRESHOLDS (Unconditional Override)
+        if score >= 5 or pews.get("urgent", False): is_red = True
+        elif score >= 3: is_yellow = True
+
     elif pregnant:
         meows = calc_meows(hr, rr, sbp, temp, spo2)
         ews_type = "MEOWS"
-        urgent = len(meows["red"]) > 0
         score = len(meows["red"]) * 2 + len(meows["yellow"]) 
-        if urgent:
+        
+        # PERFECTED MEOWS THRESHOLDS (Any single Red parameter = RED Triage)
+        if len(meows["red"]) >= 1: 
+            is_red = True
             severity_index = clamp(0.6 + (len(meows["red"]) * 0.15), 0.0, 1.0)
-        else:
+        elif len(meows["yellow"]) >= 1: 
+            is_yellow = True
             severity_index = clamp(len(meows["yellow"]) * 0.1, 0.0, 0.5)
+        else:
+            severity_index = 0.0
+            
         score_details = {"MEOWS": meows}
+
     else:
         news = calc_news2(rr, spo2, sbp, hr, temp, avpu=avpu, o2_device=o2_device, spo2_scale=spo2_scale)
         ews_type = "NEWS2"
         score = news["score"]
-        urgent = news["emergency"] or news["review"]
         severity_index = clamp(score / 12.0, 0.0, 1.0)
         score_details = {"NEWS2": news}
+        
+        # PERFECTED NEWS2 THRESHOLDS
+        if score >= 7 or news.get("emergency", False): is_red = True
+        elif score >= 5 or news.get("review", False): is_yellow = True
 
     qsofa = calc_qsofa(rr, sbp, avpu=avpu)
     score_details["qSOFA"] = qsofa
 
-    if urgent and (ews_type in ["NEWS2", "PEWS"] and score >= 7):
+    # --- DUAL-VECTOR RESOLUTION ---
+    if is_red:
         color = "RED"
-        reason = f"Critical physiological instability ({ews_type} threshold)"
-    elif urgent:
+        reason = f"Critical physiological instability ({ews_type} threshold breached)"
+    elif is_yellow:
         color = "YELLOW"
         reason = f"Elevated clinical risk detected ({ews_type} trigger)"
-    elif score >= 5:
-        color = "YELLOW"
-        reason = f"Deteriorating vitals ({ews_type} score {score})"
     else:
-        color = "GREEN"
-        reason = f"Stable physiology ({ews_type} score {score})"
+        # Baseline Pathology check for non-critical cases (Gastroenteritis, etc.)
+        # If vitals are perfect, but the bundle inherently carries some risk, default to YELLOW
+        if bundle in ['Maternal', 'Pediatric', 'GI', 'Renal', 'Toxicology']:
+            color = "YELLOW"
+            reason = f"Stable vitals, but elevated baseline pathological risk ({bundle})"
+            severity_index = max(0.3, severity_index)
+        else:
+            color = "GREEN"
+            reason = f"Stable physiology ({ews_type} score {score})"
 
     meta = {
-        "primary_driver": "Physiological Instability",
+        "primary_driver": "Physiological Instability" if is_red or is_yellow else "Baseline Assessment",
         "reason": reason,
         "ews_type": ews_type,
         "ews_score": int(score),
