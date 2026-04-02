@@ -124,17 +124,24 @@ if nav_selection == "REFERRAL INITIATION":
             icd_row = dfb[dfb["label"] == dx].iloc[0].to_dict()
         required_caps = [x.strip() for x in (icd_row.get("default_caps","") or "").split(";") if x.strip()]
 
+    # --- 3. CLINICAL RATIONALE INJECTION ---
+    with st.container(border=True):
+        st.subheader("3. Clinical Rationale")
+        reason_for_referral = st.text_area(
+            "Primary Reason for Transfer (Medico-Legal)", 
+            placeholder="E.g., Requires urgent neurosurgical intervention, deteriorating on BiPAP..."
+        )
+
     # --- THE CLINICAL FIREWALL ---
     vitals = {"hr": hr, "rr": rr, "sbp": sbp, "temp": temp, "spo2": spo2, "avpu": avpu}
     context = {"age": age, "pregnant": pregnant, "o2_device": "Air", "spo2_scale": 1, "behavior": "Normal"}
     
     guardrail_passed = True
-    
     if "Pediatric" in bundle and age >= 18:
-        st.error("🛑 **CLINICAL INTERLOCK TRIGGERED:** You have selected a Pediatric pathology for an adult patient. Please correct the patient's age (< 18) or update the provisional diagnosis.")
+        st.error("🛑 **CLINICAL INTERLOCK TRIGGERED:** You have selected a Pediatric pathology for an adult patient.")
         guardrail_passed = False
     elif "Maternal" in bundle and not pregnant:
-        st.warning("⚠️ **CLINICAL AUTOCORRECTION:** Maternal bundle detected. Auto-verifying pregnancy status to engage correct obstetric triage protocols.")
+        st.warning("⚠️ **CLINICAL AUTOCORRECTION:** Maternal bundle detected. Auto-verifying pregnancy status.")
         context["pregnant"] = True 
         
     if guardrail_passed:
@@ -147,81 +154,98 @@ if nav_selection == "REFERRAL INITIATION":
         st.stop()
 
     with st.container(border=True):
-        st.subheader("3. Dual-Vector Triage Result")
+        st.subheader("4. Dual-Vector Triage Result")
         pill = {"RED":"CRITICAL (RED)", "YELLOW":"URGENT (YELLOW)", "GREEN":"STABLE (GREEN)"}[triage_color]
         if triage_color == "RED": st.error(pill)
         elif triage_color == "YELLOW": st.warning(pill)
         else: st.success(pill)
         st.markdown(f"**Primary Driver:** {meta['primary_driver']} | **Reason:** {meta['reason']} | **Severity Index:** {meta['severity_index']:.2f}")
 
+    # --- 5. THE FACILITY MATCHING UI (WITH EXPLICIT TRIGGER) ---
     with st.container(border=True):
-        st.subheader("4. Facility Matching (Gated Clinical Safety)")
-        origin = (float(src_lat), float(src_lon))
-        results = []
-        pathology_bundle = icd_row.get("bundle", "Other")
-        sev = float((meta or {}).get("severity_index", 0.0) or 0.0)
+        st.subheader("5. Facility Matching (Gated Clinical Safety)")
+        
+        # The Explicit Button you requested
+        if st.button("🔍 Run AI Facility Matcher", type="primary", use_container_width=True):
+            with st.spinner("Analyzing topography, capabilities, and capacity..."):
+                origin = (float(src_lat), float(src_lon))
+                results = []
+                pathology_bundle = icd_row.get("bundle", "Other")
+                sev = float(meta.get("severity_index", 0.0))
 
-        for _, row in facilities_df.iterrows():
-            f_dict = row.to_dict()
-            dest = (float(f_dict.get("lat", 0.0)), float(f_dict.get("lon", 0.0)))
-            f_dict["ownership"] = str(f_dict.get("ownership", "Private") or "Private")
-            try: route_eta = get_eta(origin, dest, speed_kmh=40.0, is_hilly_terrain=True)
-            except: route_eta = 999.0
+                for _, row in facilities_df.iterrows():
+                    f_dict = row.to_dict()
+                    dest = (float(f_dict.get("lat", 0.0)), float(f_dict.get("lon", 0.0)))
+                    f_dict["ownership"] = str(f_dict.get("ownership", "Private") or "Private")
+                    try: route_eta = get_eta(origin, dest, speed_kmh=40.0, is_hilly_terrain=True)
+                    except: route_eta = 999.0
 
-            try:
-                score, details = calculate_facility_score(
-                    facility=f_dict, required_caps=required_caps, eta=route_eta,
-                    triage_color=triage_color, severity_index=sev, case_type=pathology_bundle
-                )
-            except: continue
+                    try:
+                        score, details = calculate_facility_score(
+                            facility=f_dict, required_caps=required_caps, eta=route_eta,
+                            triage_color=triage_color, severity_index=sev, case_type=pathology_bundle
+                        )
+                    except Exception as e: 
+                        continue
 
-            if score > 0 or details.get("gate_capacity") == "WARNING_ED_STABILIZATION_ONLY":
-                try: m_risk = mortality_risk(sev, route_eta, pathology=pathology_bundle)
-                except: m_risk = 99.9
-                results.append({
-                    "facility": f_dict["name"], "score": score, "eta": round(route_eta, 1),
-                    "ownership": f_dict["ownership"], "mortality_risk": m_risk, "scoring_details": details
-                })
+                    if score > 0 or details.get("gate_capacity") == "WARNING_ED_STABILIZATION_ONLY":
+                        try: m_risk = mortality_risk(sev, route_eta, pathology=pathology_bundle)
+                        except: m_risk = 99.9
+                        results.append({
+                            "facility": f_dict["name"], "score": score, "eta": round(route_eta, 1),
+                            "ownership": f_dict["ownership"], "mortality_risk": m_risk, "scoring_details": details
+                        })
 
-        results = sorted(results, key=lambda x: (-x["score"], x["eta"]))
+                # Lock the results into the session state so they don't disappear
+                st.session_state.match_results = sorted(results, key=lambda x: (-x["score"], x["eta"]))
 
-        if not results:
-            st.error("CRITICAL ALERT: ZERO STATEWIDE CAPACITY. Initiate on-site ED stabilization.")
-        else:
-            # --- THE RESTORED SCORING ENGINE VISIBILITY ---
-            radio_options = [f"{r['facility']} (Score: {r['score']})" for r in results[:5]]
-            selected_option = st.radio("Select Destination Facility:", radio_options)
+        # --- RENDER RESULTS IF THEY EXIST IN MEMORY ---
+        if st.session_state.match_results is not None:
+            results = st.session_state.match_results
             
-            selected_fac_name = selected_option.split(" (Score:")[0]
-            selected_fac = next(r for r in results if r["facility"] == selected_fac_name)
-            
-            with st.expander(f"📊 Explainable AI Logic for {selected_fac['facility']}"):
-                details = selected_fac["scoring_details"]
+            if not results:
+                st.error("CRITICAL ALERT: ZERO STATEWIDE CAPACITY. Initiate on-site ED stabilization.")
+            else:
+                st.success(f"✅ AI routing complete. Found {len(results)} viable destinations.")
+                radio_options = [f"{r['facility']} (Score: {r['score']})" for r in results[:5]]
+                selected_option = st.radio("Select Destination Facility:", radio_options)
                 
-                st.markdown("**1. Safety Gates (Absolute Mandates)**")
-                if details.get('gate_capability') == "PASSED":
-                    st.markdown("✅ **Infrastructure Gate:** Passed. 100% of requested life-saving capabilities present.")
+                selected_fac_name = selected_option.split(" (Score:")[0]
+                selected_fac = next(r for r in results if r["facility"] == selected_fac_name)
                 
-                if details.get('gate_capacity') == "PASSED":
-                    st.markdown("✅ **Capacity Gate:** Passed. Minimum required critical care beds available.")
-                elif details.get('gate_capacity') == "WARNING_ED_STABILIZATION_ONLY":
-                    st.markdown("⚠️ **Capacity Gate Override:** ICU Full. Facility selected for immediate ED Resuscitation ONLY.")
+                with st.expander(f"📊 Explainable AI Logic for {selected_fac['facility']}"):
+                    details = selected_fac["scoring_details"]
+                    
+                    st.markdown("**1. Safety & Infrastructure Gates**")
+                    if details.get('gate_capability') == "PASSED":
+                        st.success("✅ **Capability Gate:** 100% of requested life-saving capabilities present.")
+                    elif details.get('gate_capability') == "PARTIAL_MATCH":
+                        st.warning(f"⚠️ **Graceful Degradation:** Facility missing requested optimal capabilities: **{', '.join(details.get('missing_capabilities', [])).upper()}**.")
+                    
+                    if details.get('gate_capacity') == "PASSED":
+                        st.success(f"✅ **Capacity Gate:** Passed. {details.get('icu_beds')} ICU beds available.")
+                    elif details.get('gate_capacity') == "WARNING_ED_STABILIZATION_ONLY":
+                        st.error("⚠️ **Capacity Gate Override:** ICU Full. Facility selected for immediate ED Resuscitation ONLY.")
 
-                st.markdown(f"**2. Optimization Matrix (Total Score: {details.get('total_score', 0)}/100)**")
-                st.markdown(f"🚑 **Topography-Adjusted ETA:** {details.get('eta_minutes', 'N/A')} mins *(Score: {details.get('proximity_score', 0)}/50)*")
-                st.markdown(f"🛏️ **Surge Buffer:** {details.get('icu_beds', 0)} open beds *(Score: {details.get('icu_score', 0)}/15)*")
-                st.markdown(f"🏛️ **Fiscal Guardrail:** {details.get('ownership')} facility *(Score: {details.get('fiscal_score', 0)}/20)*")
-                st.markdown(f"⚖️ **Acuity Bonus:** Criticality weight *(Score: {details.get('severity_bonus', 0)}/5)*")
+                    st.markdown(f"**2. Optimization Matrix (Total Score: {details.get('total_score', 0)}/100)**")
+                    st.markdown(f"🚑 **Topography-Adjusted ETA:** {details.get('eta_minutes', 'N/A')} mins *(Score: {details.get('proximity_score', 0)}/50)*")
+                    st.markdown(f"🛏️ **Surge Buffer:** *(Score: {details.get('icu_score', 0)}/15)*")
+                    st.markdown(f"🏛️ **Fiscal Guardrail:** {details.get('ownership')} facility *(Score: {details.get('fiscal_score', 0)}/20)*")
+                    st.markdown(f"⚖️ **Acuity Bonus:** Criticality weight *(Score: {details.get('severity_bonus', 0)}/5)*")
 
-            if st.button("🚀 Initiate E2EE Transfer & Dispatch Ambulance", type="primary"):
-                st.session_state.active_case = {
-                    "patient_name": patient_name, "age": age, "vitals": vitals, "diagnosis": dx,
-                    "bundle": bundle, "triage_color": triage_color, "severity_index": meta['severity_index'],
-                    "destination": selected_fac, "dispatch_time": datetime.now().strftime("%H:%M:%S")
-                }
-                st.session_state.transfer_initiated = True
-                st.session_state.patient_accepted = False
-                st.rerun()
+                # The final dispatch button
+                if st.button("🚀 Initiate E2EE Transfer & Dispatch Ambulance", type="primary"):
+                    st.session_state.active_case = {
+                        "patient_name": patient_name, "age": age, "vitals": vitals, "diagnosis": dx,
+                        "bundle": bundle, "triage_color": triage_color, "severity_index": meta['severity_index'],
+                        "destination": selected_fac, "dispatch_time": datetime.now().strftime("%H:%M:%S"),
+                        "rationale": reason_for_referral 
+                    }
+                    st.session_state.transfer_initiated = True
+                    st.session_state.patient_accepted = False
+                    # Clear the match results for the next patient
+                    st.session_state.match_results = None 
+                    st.rerun()
 
     # --- Phase 5: Med-Legal Zero-Friction Handover ---
     if st.session_state.transfer_initiated and st.session_state.active_case:
@@ -243,6 +267,7 @@ Provisional DX: {case['diagnosis']}
 
 B - BACKGROUND:
 Bundle: {case['bundle']}. Topography-Adjusted Transit ETA: {case['destination']['eta']} mins.
+Transfer Rationale: {case.get('rationale', 'N/A')}
 
 A - ASSESSMENT:
 HR: {case['vitals']['hr']} bpm | SBP: {case['vitals']['sbp']} mmHg | RR: {case['vitals']['rr']} rpm
