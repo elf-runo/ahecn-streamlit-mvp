@@ -124,13 +124,40 @@ if nav_selection == "REFERRAL INITIATION":
             icd_row = dfb[dfb["label"] == dx].iloc[0].to_dict()
         required_caps = [x.strip() for x in (icd_row.get("default_caps","") or "").split(";") if x.strip()]
 
-    # --- 3. CLINICAL RATIONALE INJECTION ---
+    # --- 3. DYNAMIC CLINICAL RATIONALE INJECTION ---
     with st.container(border=True):
         st.subheader("3. Clinical Rationale")
-        reason_for_referral = st.text_area(
-            "Primary Reason for Transfer (Medico-Legal)", 
-            placeholder="E.g., Requires urgent neurosurgical intervention, deteriorating on BiPAP..."
-        )
+        
+        # Auto-generate medico-legal rationales based on required capabilities
+        auto_rationales = [f"General escalation of care required for {dx}."]
+        caps_lower = [c.lower() for c in required_caps]
+        
+        if "neurosurgeon" in caps_lower or "neurosurgery" in caps_lower:
+            auto_rationales.insert(0, "Emergent Neurosurgical evaluation and intervention required.")
+        if "cathlab" in caps_lower or "cardiologist" in caps_lower:
+            auto_rationales.insert(0, "Requires emergent Cath Lab activation and Cardiology intervention.")
+        if "dialysis" in caps_lower or "crrt" in caps_lower:
+            auto_rationales.insert(0, "Requires urgent Hemodialysis / Nephrology intervention.")
+        if "icu" in caps_lower or "ventilator" in caps_lower:
+            auto_rationales.insert(0, "Requires immediate ICU admission and advanced critical care/ventilation.")
+        if "bloodbank" in caps_lower or "or" in caps_lower or "surgeon" in caps_lower:
+            auto_rationales.insert(0, "Requires emergent surgical control and massive transfusion protocol capability.")
+        if "neonatologist" in caps_lower or "nicu" in caps_lower:
+            auto_rationales.insert(0, "Requires Level 3 NICU and specialized neonatal resuscitation.")
+        if "picu" in caps_lower or "pediatrician" in caps_lower:
+            auto_rationales.insert(0, "Pediatric emergency requiring specialized PICU escalation.")
+        if bundle == "Maternal":
+            auto_rationales.insert(0, "High-risk obstetric emergency requiring tertiary maternal-fetal care and OBGYN OT.")
+            
+        auto_rationales.append("Other / Custom (Specify below)")
+        
+        selected_rationale = st.selectbox("Standardized Reason for Transfer", auto_rationales)
+        
+        if selected_rationale == "Other / Custom (Specify below)":
+            reason_for_referral = st.text_area("Specify Rationale", placeholder="Type specific clinical details here...")
+        else:
+            custom_notes = st.text_input("Additional Clinical Notes (Optional)", placeholder="E.g., deteriorating on current O2 support...")
+            reason_for_referral = f"{selected_rationale} {custom_notes}".strip()
 
     # --- THE CLINICAL FIREWALL ---
     vitals = {"hr": hr, "rr": rr, "sbp": sbp, "temp": temp, "spo2": spo2, "avpu": avpu}
