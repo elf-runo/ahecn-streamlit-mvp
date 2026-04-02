@@ -30,8 +30,8 @@ if 'transfer_initiated' not in st.session_state:
 if 'patient_accepted' not in st.session_state:
     st.session_state.patient_accepted = False
 
-@st.cache_data(show_spinner=False)
-def load_datasets():
+# --- THE CACHE-BUSTER: We are temporarily removing @st.cache_data ---
+def load_datasets_v3():
     fac_file, icd_file = 'meghalaya_facilities.csv', 'icd_catalogue.csv'
     f_path, i_path = None, None
     for root, _, files in os.walk("."):
@@ -42,24 +42,22 @@ def load_datasets():
         st.error(f"CRITICAL: Missing '{fac_file}' or '{icd_file}' in repository.")
         st.stop()
 
-    # --- BULLETPROOF DATA LOADING (Fixes hidden BOM characters) ---
     try:
-        fac_df = pd.read_csv(f_path, encoding='utf-8-sig')
-        icd_df = pd.read_csv(i_path, encoding='utf-8-sig')
+        # on_bad_lines='skip' ensures a single stray comma in the CSV won't crash the engine
+        fac_df = pd.read_csv(f_path, encoding='utf-8-sig', on_bad_lines='skip')
+        icd_df = pd.read_csv(i_path, encoding='utf-8-sig', on_bad_lines='skip')
     except Exception as e:
-        st.error(f"CRITICAL: Failed to read CSV files. File may be corrupted. Error: {e}")
+        st.error(f"CRITICAL: Failed to read CSV. Error: {e}")
         st.stop()
 
-    # Aggressive column cleanup
+    # Extreme column sanitization (strips invisible characters and accidental quotes)
     icd_df.columns = icd_df.columns.str.replace(r'^ï»¿', '', regex=True).str.replace(r'^\ufeff', '', regex=True)
-    icd_df.columns = [str(c).strip().lower() for c in icd_df.columns]
+    icd_df.columns = [str(c).strip().lower().replace('"', '').replace("'", "") for c in icd_df.columns]
     
-    # --- DIAGNOSTIC FIREWALL ---
-    # If the column still isn't found, this forces the app to tell us exactly what it sees
+    # The Firewall
     if 'bundle' not in icd_df.columns:
-        st.error("🚨 DATA FORMAT ERROR: The column 'bundle' is missing from icd_catalogue.csv.")
-        st.warning(f"Columns actually found by the system: {icd_df.columns.tolist()}")
-        st.info("Fix: Ensure your CSV is comma-separated, not separated by tabs or semicolons.")
+        st.error("🚨 DATA FORMAT ERROR: The column 'bundle' is missing from the dataset.")
+        st.warning(f"The system is actually seeing these columns: {icd_df.columns.tolist()}")
         st.stop()
 
     rename_map = {'icd-10': 'icd10', 'icd_10': 'icd10', 'icd code': 'icd10', 'code': 'icd10'}
@@ -71,6 +69,9 @@ def load_datasets():
     fac_df["ownership"] = fac_df.get("ownership", "Private").fillna("Private")
     
     return fac_df, icd_df
+
+# Call the new function name to completely bypass Streamlit's old memory
+facilities_df, icd_df = load_datasets_v3()
     
 # --- Sidebar Navigation ---
 with st.sidebar:
