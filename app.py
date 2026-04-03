@@ -289,7 +289,6 @@ if nav_selection == "REFERRAL INITIATION":
 
                 # The final dispatch button
                 if st.button("🚀 Initiate E2EE Transfer & Dispatch Ambulance", type="primary"):
-                    # Find exactly where the selected facility ranks in the total list
                     selected_idx = next(i for i, r in enumerate(results) if r["facility"] == selected_fac["facility"])
                     
                     st.session_state.active_case = {
@@ -298,9 +297,10 @@ if nav_selection == "REFERRAL INITIATION":
                         "destination": selected_fac, "dispatch_time": datetime.now().strftime("%H:%M:%S"),
                         "rationale": reason_for_referral,
                         "interventions": completed_interventions, 
-                        "viable_destinations": results,          # Stores the full ranked list for rerouting
-                        "current_dest_index": selected_idx,      # Tracks where we are in the list
-                        "rejection_log": []                      # Tracks medico-legal reasons for rejection
+                        "viable_destinations": results,          
+                        "current_dest_index": selected_idx,      
+                        "rejection_log": [],
+                        "medical_orders": []                    
                     }
                     st.session_state.transfer_initiated = True
                     st.session_state.patient_accepted = False
@@ -383,6 +383,15 @@ elif nav_selection == "ACTIVE TRANSIT TELEMETRY":
             if dest["scoring_details"].get("gate_capacity") == "WARNING_ED_STABILIZATION_ONLY":
                 st.warning("⚠️ PARAMEDIC ALERT: Destination ICU is at capacity. You are routing for ED STABILIZATION ONLY.")
 
+            st.markdown("---")
+
+            # --- INNOVATION 1 LISTENER: MEDICAL COMMAND ORDERS ---
+            if case.get("medical_orders"):
+                st.warning("🎙️ **INCOMING MEDICAL COMMAND ORDER**")
+                latest_order = case["medical_orders"][-1]
+                st.markdown(f"### 🩺 {latest_order['order']}")
+                st.caption(f"Received at {latest_order['time']} from {dest['facility']} ED Director")
+                
             st.markdown("---")
             
             # --- INNOVATION 1, 2 & 3: ACTION LEDGER, VITALS & DRIFT TELEMETRY ---
@@ -520,6 +529,56 @@ elif nav_selection == "RECEIVING HOSPITAL BAY":
 
             st.warning(f"INCOMING ALERT: ETA {dest['eta']} mins")
 
+            # --- INNOVATION 3: TIME-SPACE COLLISION RADAR ---
+            st.markdown("### 📡 Arrival Collision Radar")
+            collision_detected = False
+            
+            # Simulated collision detection logic based on ETA window
+            if dest['triage_color'] == 'RED' and 10 <= dest['eta'] <= 25:
+                collision_detected = True
+                ghost_eta = dest['eta'] + random.randint(1, 4)
+                
+            if collision_detected:
+                st.error("⚠️ **COLLISION ALERT:** Multiple critical units inbound.")
+                st.markdown(f"**Unit 1 (Active Patient):** ETA {dest['eta']} mins | **Unit 2 (Network Tracking):** ETA {ghost_eta} mins")
+                st.info("💡 **Command Prompt:** Deploy secondary triage team to ambulance bay immediately.")
+            else:
+                st.success("✅ **Radar Clear:** No overlapping critical arrivals detected in your 15-minute window.")
+
+            # --- INNOVATION 1: BI-DIRECTIONAL MEDICAL CONTROL ---
+            st.markdown("### 🎙️ Medical Command Uplink")
+            st.caption("Transmit legally-binding counter-orders directly to the paramedic mid-transit.")
+            
+            col_order, col_send = st.columns([3, 1])
+            with col_order:
+                standard_orders = [
+                    "Select Order...",
+                    "Administer TXA 1g IV Push immediately",
+                    "Hold all blood thinners/anticoagulants",
+                    "Push 1 Amp Bicarbonate",
+                    "Begin permissive hypotension protocol (Target SBP 90)",
+                    "Initiate Massive Transfusion Protocol prep on arrival"
+                ]
+                selected_order = st.selectbox("Standardized Counter-Orders", standard_orders, label_visibility="collapsed")
+            with col_send:
+                if st.button("📡 Transmit Order", type="primary", use_container_width=True, disabled=(selected_order == "Select Order...")):
+                    if "medical_orders" not in case: case["medical_orders"] = []
+                    timestamp = datetime.now().strftime("%H:%M:%S")
+                    
+                    # Save to the distinct orders list AND the general transit log
+                    case["medical_orders"].append({"time": timestamp, "order": selected_order})
+                    case["transit_log"].append({"time": timestamp, "action": f"[ED COMMAND RECEIVED]: {selected_order}"})
+                    st.success("Transmitted!")
+                    time.sleep(1)
+                    st.rerun()
+                    
+            if case.get("medical_orders"):
+                with st.expander("Active Transmitted Orders", expanded=True):
+                    for o in reversed(case["medical_orders"]):
+                        st.markdown(f"**{o['time']}** - 🩺 {o['order']}")
+            
+            st.markdown("---")
+            
             # --- REROUTE TELEMETRY (Chain of Custody) ---
             diversion_text = ""
             if case.get("rejection_log"):
