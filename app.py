@@ -534,7 +534,7 @@ elif nav_selection == "RECEIVING HOSPITAL BAY":
             collision_detected = False
             
             # Simulated collision detection logic based on ETA window
-            if dest['triage_color'] == 'RED' and 10 <= dest['eta'] <= 25:
+            if case['triage_color'] == 'RED' and 10 <= dest['eta'] <= 25:
                 collision_detected = True
                 ghost_eta = dest['eta'] + random.randint(1, 4)
                 
