@@ -748,7 +748,9 @@ elif nav_selection == "STATE COMMAND & AI":
                                 "eta_min": r["transport"]["eta_min"], "facility_ownership": r["facility_ownership"],
                                 "dest_facility": r["dest"],
                                 "pre_hospital_intervention": "Yes" if had_intervention else "No",
-                                "mortality_risk": min(99.9, final_mortality)
+                                "mortality_risk": min(99.9, final_mortality),
+                                "origin_district": random.choice(["East Khasi Hills", "West Garo Hills", "Jaintia Hills", "Ri-Bhoi", "South Garo Hills"]),
+                                "status": random.choices(["Accepted", "Diverted"], weights=[0.78, 0.22])[0]
                             })
                         st.session_state.synthetic_data = pd.DataFrame(safe_records)
                         st.success("Data injected successfully.")
@@ -758,11 +760,12 @@ elif nav_selection == "STATE COMMAND & AI":
         if st.session_state.synthetic_data is not None:
             df_analytics = st.session_state.synthetic_data
 
-            # --- THE GOVERNMENT ENTERPRISE DASHBOARD ---
-            tab_fleet, tab_geo, tab_econ = st.tabs([
-                "🚁 Fleet & Logistics", 
-                "🌍 Geo-Epidemiology & Surges", 
-                "💰 Health Economics & Policy"
+            # --- THE 4-PILLAR GOVERNMENT ENTERPRISE DASHBOARD ---
+            tab_fleet, tab_geo, tab_perf, tab_econ = st.tabs([
+                "🚁 Fleet Logistics", 
+                "🌍 Epidemiology & Anomalies", 
+                "🏆 Institutional Performance",
+                "💰 Health Economics"
             ])
 
             with tab_fleet:
@@ -782,7 +785,7 @@ elif nav_selection == "STATE COMMAND & AI":
                         st.dataframe(pd.DataFrame(fleet_data), hide_index=True, use_container_width=True)
 
                 with col_ai2:
-                    st.markdown("**Fleet Utilization Matrix (ALS vs BLS/PTV)**")
+                    st.markdown("**Fleet Utilization Matrix (ALS vs BLS)**")
                     st.caption("Tracking resource misallocation to optimize fleet deployment costs.")
                     
                     fleet_usage = pd.DataFrame({
@@ -796,48 +799,78 @@ elif nav_selection == "STATE COMMAND & AI":
                     ).properties(height=200), use_container_width=True)
 
             with tab_geo:
-                st.subheader("Statewide Epidemiology & Transit Friction")
+                st.subheader("Statewide Epidemiology & Anomaly Detection")
                 
                 c1, c2 = st.columns(2)
                 with c1:
+                    st.markdown("**Case Type Referrals (Statewide Pathology Load)**")
+                    st.caption("Real-time breakdown of critical emergency categories.")
+                    if 'bundle' in df_analytics.columns:
+                        bundle_counts = df_analytics['bundle'].value_counts().reset_index()
+                        bundle_counts.columns = ['Pathology', 'Volume']
+                        st.altair_chart(alt.Chart(bundle_counts).mark_arc(innerRadius=40).encode(
+                            theta=alt.Theta(field="Volume", type="quantitative"),
+                            color=alt.Color(field="Pathology", type="nominal"),
+                            tooltip=["Pathology", "Volume"]
+                        ).properties(height=250), use_container_width=True)
+
+                with c2:
                     st.markdown("**Temporal Surge Radar (Time of Day)**")
                     st.caption("Case volumes mapped against 24-hour cycles to guide shift staffing.")
-                    
                     hours = list(range(24))
                     surge_vols = [random.randint(10, 30) if h < 6 or h > 20 else random.randint(40, 100) for h in hours]
-                    surge_data = pd.DataFrame({"Hour": hours, "Referrals": surge_vols})
-                    
-                    st.altair_chart(alt.Chart(surge_data).mark_area(color="#faca2b", opacity=0.6).encode(
-                        x=alt.X("Hour:O", title="Hour of Day (24H)"),
-                        y=alt.Y("Referrals:Q", title="Volume")
-                    ).properties(height=300), use_container_width=True)
-                    
-                with c2:
-                    st.markdown("**Transit Delay Autopsy (Root Causes)**")
-                    st.caption("Why ambulances failed to meet the AI-predicted ETA.")
-                    delay_reasons = pd.DataFrame({
-                        "Cause": ["Traffic Gridlock", "Terrain / Landslide", "VIP Movement", "Vehicle Breakdown", "Address Not Found"],
-                        "Incidents": [450, 120, 85, 40, 15]
-                    })
-                    st.altair_chart(alt.Chart(delay_reasons).mark_arc(innerRadius=60).encode(
-                        theta="Incidents:Q",
-                        color="Cause:N",
-                        tooltip=["Cause", "Incidents"]
-                    ).properties(height=300), use_container_width=True)
+                    st.altair_chart(alt.Chart(pd.DataFrame({"Hour": hours, "Referrals": surge_vols})).mark_area(color="#faca2b", opacity=0.6).encode(
+                        x=alt.X("Hour:O", title="Hour of Day (24H)"), y=alt.Y("Referrals:Q", title="Volume")
+                    ).properties(height=250), use_container_width=True)
                     
                 st.markdown("---")
-                st.markdown("**Origin Hotspots (High-Frequency Referral Districts)**")
-                hotspot_data = pd.DataFrame({
-                    "District": ["East Khasi Hills", "West Garo Hills", "Jaintia Hills", "Ri-Bhoi", "South Garo Hills"],
-                    "Cases Originated": [342, 215, 180, 150, 95]
+                st.error("🦠 **EPIDEMIC ANOMALY DETECTOR (Sub-District Alerts)**")
+                st.caption("AI-flagged statistical deviations indicating potential localized outbreaks or clinical failures.")
+                
+                anomaly_data = pd.DataFrame({
+                    "Origin Block/District": ["Mawphlang (East Khasi)", "Tikrikilla (West Garo)", "Khliehriat (Jaintia)"],
+                    "Institution Type": ["Govt CHC", "Private PHC", "Govt Civil Hosp"],
+                    "Pathology Flag": ["Pediatric Respiratory", "Maternal Hemorrhage", "Acute Trauma"],
+                    "Deviation": ["+420% Surge", "+185% Surge", "+210% Surge"],
+                    "AI Recommendation": ["Deploy Mobile Ped Unit. Investigate Viral Pneumonia.", "Audit referring physician protocols.", "Check highway conditions for major MVA."]
                 })
-                st.altair_chart(alt.Chart(hotspot_data).mark_bar(color="#1f77b4").encode(
-                    x=alt.X("Cases Originated:Q"),
-                    y=alt.Y("District:N", sort="-x")
-                ).properties(height=200), use_container_width=True)
+                st.dataframe(anomaly_data, use_container_width=True, hide_index=True)
+
+            with tab_perf:
+                st.subheader("Institutional Performance & Quality Assurance")
+                
+                col_p1, col_p2 = st.columns(2)
+                with col_p1:
+                    st.markdown("**Statewide Institutional Leaderboard (Top 5)**")
+                    st.caption("Ranked by Acceptance Rate and SLA Reliability.")
+                    perf_data = pd.DataFrame({
+                        "Institution": ["NEIGRIHMS", "Woodland Hospital", "Bethany Hospital", "Civil Hosp Shillong", "Tura Civil Hosp"],
+                        "Sector": ["Govt", "Private", "Private", "Govt", "Govt"],
+                        "Acceptance %": ["94%", "88%", "85%", "78%", "71%"],
+                        "Avg Handover Delay": ["4.2m", "6.1m", "6.5m", "9.4m", "11.2m"]
+                    })
+                    st.dataframe(perf_data, use_container_width=True, hide_index=True)
+                
+                with col_p2:
+                    st.markdown("**Rejection Rates by District & Sector**")
+                    st.caption("Identifying regional failure points between Public and Private infrastructure.")
+                    rej_data = pd.DataFrame({
+                        "District": ["East Khasi", "East Khasi", "West Garo", "West Garo", "Jaintia", "Jaintia"],
+                        "Sector": ["Govt", "Private", "Govt", "Private", "Govt", "Private"],
+                        "Rejection Rate %": [12, 18, 41, 22, 35, 15]
+                    })
+                    rej_chart = alt.Chart(rej_data).mark_bar().encode(
+                        x=alt.X('District:N'),
+                        y=alt.Y('Rejection Rate %:Q'),
+                        color=alt.Color('Sector:N', scale=alt.Scale(domain=['Govt', 'Private'], range=['#1f77b4', '#ff7f0e'])),
+                        xOffset='Sector:N'
+                    )
+                    st.altair_chart(rej_chart.properties(height=250), use_container_width=True)
+                    
+                st.info("💡 **Governance Insight:** The data reveals a critical failure point in **West Garo Hills**, where Government facilities are rejecting 41% of cases, forcing reliance on Private institutions. Meanwhile, NEIGRIHMS maintains a 94% acceptance rate, proving high efficiency in East Khasi Hills.")
 
             with tab_econ:
-                st.subheader("Macro Health Economics & Institutional Governance")
+                st.subheader("Macro Health Economics & Fiscal Governance")
                 
                 total_cases = len(df_analytics)
                 gov_first_choice = int(total_cases * 0.65)
@@ -854,7 +887,7 @@ elif nav_selection == "STATE COMMAND & AI":
 
                 st.markdown("---")
                 st.error("🚨 **THE FISCAL LEAKAGE MATRIX (Capacity-Driven Economic Drain)**")
-                st.markdown("This tracks state insurance funds lost to the Private Sector exclusively because Government facilities lacked capacity (Zero ICU Beds/Specialists) and forced an AI reroute.")
+                st.markdown("Tracks state insurance funds lost to the Private Sector exclusively because Government facilities lacked capacity (Zero ICU Beds) and forced an AI reroute.")
                 
                 col_e1, col_e2 = st.columns([1, 1.5])
                 with col_e1:
@@ -871,5 +904,3 @@ elif nav_selection == "STATE COMMAND & AI":
                         x='Volume:Q',
                         color=alt.condition(alt.datum['Routing Path'] == 'Govt -> Private (Forced Diversion)', alt.value('#ff4b4b'), alt.value('#00cc96'))
                     ).properties(height=200), use_container_width=True)
-
-                st.info("💡 **Policy Formulation:** The data clearly demonstrates that building a 20-bed ICU annex at the primary Government hospital will pay for itself in 8 months by halting the ₹3.9 Crore annual fiscal leakage currently bleeding into the private sector via forced ambulance diversions.")
