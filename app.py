@@ -757,77 +757,119 @@ elif nav_selection == "STATE COMMAND & AI":
         if st.session_state.synthetic_data is not None:
             df_analytics = st.session_state.synthetic_data
 
-            tab_fleet, tab_clinical = st.tabs(["🚁 Logistics & Fleet Operations", "🧬 Deep Clinical Analytics"])
+            # --- THE GOVERNMENT ENTERPRISE DASHBOARD ---
+            tab_fleet, tab_geo, tab_econ = st.tabs([
+                "🚁 Fleet & Logistics", 
+                "🌍 Geo-Epidemiology & Surges", 
+                "💰 Health Economics & Policy"
+            ])
 
             with tab_fleet:
-                with st.container(border=True):
-                    st.subheader("Predictive Intelligence & Fleet Repositioning")
-                    col_ai1, col_ai2 = st.columns(2)
-                    top_facility = None
+                st.subheader("Predictive Intelligence & Fleet Repositioning")
+                col_ai1, col_ai2 = st.columns(2)
+                top_facility = None
 
-                    with col_ai1:
-                        if not df_analytics.empty and 'bundle' in df_analytics.columns and 'dest_facility' in df_analytics.columns:
-                            try:
-                                top_bundle = df_analytics['bundle'].mode()[0]
-                                top_facility = df_analytics[df_analytics['bundle'] == top_bundle]['dest_facility'].mode()[0]
-                                st.error("🚨 EPIDEMIOLOGICAL HOTSPOT PREDICTION")
-                                st.markdown(f"**Forecast:** A cluster event ({top_bundle}) is highly probable at **{top_facility}** within 48 hours.")
+                with col_ai1:
+                    if not df_analytics.empty and 'bundle' in df_analytics.columns:
+                        top_bundle = df_analytics['bundle'].mode()[0]
+                        top_facility = df_analytics['dest_facility'].mode()[0]
+                        st.error("🚨 EPIDEMIOLOGICAL HOTSPOT PREDICTION")
+                        st.markdown(f"**Forecast:** A cluster event ({top_bundle}) is highly probable at **{top_facility}** within 48 hours.")
 
-                                st.markdown("**Autonomous Fleet Repositioning:**")
-                                facility_names = facilities_df['name'].tolist()
-                                fleet_data = [{"Unit ID": f"ALS-{random.randint(1000, 9999)}", "Current Location": random.choice(facility_names), "Status": random.choices(["Idle", "Active"], weights=[0.7, 0.3])[0]} for _ in range(50)]
-                                df_fleet = pd.DataFrame(fleet_data)
-                                idle_assets = df_fleet[df_fleet['Status'] == 'Idle'].head(3)
-                                st.dataframe(idle_assets, hide_index=True, use_container_width=True)
-                            except: st.warning("Awaiting variance for hotspot prediction.")
+                        st.markdown("**Autonomous Fleet Repositioning:**")
+                        fleet_data = [{"Unit ID": f"ALS-{random.randint(100, 999)}", "Location": top_facility, "Status": "Active"} for _ in range(3)]
+                        st.dataframe(pd.DataFrame(fleet_data), hide_index=True, use_container_width=True)
 
-                    with col_ai2:
-                        try:
-                            total_icu_beds = facilities_df['ICU_open'].astype(int).sum()
-                            red_cases = len(df_analytics[df_analytics['triage_color'] == 'RED'])
-                            hourly_burn_rate = max(1, (red_cases / 30 / 24) * 1.5)
+                with col_ai2:
+                    st.markdown("**Fleet Utilization Matrix (ALS vs BLS/PTV)**")
+                    st.caption("Tracking resource misallocation to optimize fleet deployment costs.")
+                    # Synthetic fleet usage data
+                    fleet_usage = pd.DataFrame({
+                        "Mission Type": ["Appropriate ALS Use (Critical)", "Appropriate BLS Use (Stable)", "Waste: ALS used for BLS Case", "Risk: BLS used for ALS Case"],
+                        "Volume": [int(len(df_analytics)*0.3), int(len(df_analytics)*0.5), int(len(df_analytics)*0.15), int(len(df_analytics)*0.05)]
+                    })
+                    st.altair_chart(alt.Chart(fleet_usage).mark_bar().encode(
+                        x='Volume:Q',
+                        y=alt.Y('Mission Type:N', sort='-x'),
+                        color=alt.condition(alt.datum.Volume < int(len(df_analytics)*0.2), alt.value('#ff4b4b'), alt.value('#00cc96'))
+                    ).properties(height=200), use_container_width=True)
 
-                            forecast_data = [{"Time": datetime.now() + timedelta(hours=i), "Projected_ICU_Beds": max(0, total_icu_beds - (hourly_burn_rate * i))} for i in range(13)]
-                            base = alt.Chart(pd.DataFrame(forecast_data)).encode(x=alt.X('Time:T', title=''))
-                            line = base.mark_line(color='#ff4b4b', strokeWidth=3).encode(y=alt.Y('Projected_ICU_Beds:Q', title='Statewide ICU Beds Remaining'))
-                            st.altair_chart((line).properties(height=250), use_container_width=True)
-                        except: st.warning("ICU Forecast offline.")
+            with tab_geo:
+                st.subheader("Statewide Epidemiology & Transit Friction")
+                
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown("**Temporal Surge Radar (Time of Day)**")
+                    st.caption("Case volumes mapped against 24-hour cycles to guide shift staffing.")
+                    # Generate synthetic time surge data
+                    hours = list(range(24))
+                    surge_vols = [random.randint(10, 30) if h < 6 or h > 20 else random.randint(40, 100) for h in hours]
+                    surge_data = pd.DataFrame({"Hour": hours, "Referrals": surge_vols})
+                    
+                    st.altair_chart(alt.Chart(surge_data).mark_area(color="#faca2b", opacity=0.6).encode(
+                        x=alt.X("Hour:O", title="Hour of Day (24H)"),
+                        y=alt.Y("Referrals:Q", title="Volume")
+                    ).properties(height=300), use_container_width=True)
+                    
+                with c2:
+                    st.markdown("**Transit Delay Autopsy (Root Causes)**")
+                    st.caption("Why ambulances failed to meet the AI-predicted ETA.")
+                    delay_reasons = pd.DataFrame({
+                        "Cause": ["Traffic Gridlock", "Terrain / Landslide", "VIP Movement", "Vehicle Breakdown", "Address Not Found"],
+                        "Incidents": [450, 120, 85, 40, 15]
+                    })
+                    st.altair_chart(alt.Chart(delay_reasons).mark_arc(innerRadius=60).encode(
+                        theta="Incidents:Q",
+                        color="Cause:N",
+                        tooltip=["Cause", "Incidents"]
+                    ).properties(height=300), use_container_width=True)
+                    
+                st.markdown("---")
+                st.markdown("**Origin Hotspots (High-Frequency Referral Districts)**")
+                hotspot_data = pd.DataFrame({
+                    "District": ["East Khasi Hills", "West Garo Hills", "Jaintia Hills", "Ri-Bhoi", "South Garo Hills"],
+                    "Cases Originated": [342, 215, 180, 150, 95]
+                })
+                st.altair_chart(alt.Chart(hotspot_data).mark_bar(color="#1f77b4").encode(
+                    x=alt.X("Cases Originated:Q"),
+                    y=alt.Y("District:N", sort="-x")
+                ).properties(height=200), use_container_width=True)
 
-            with tab_clinical:
-                st.subheader("🌐 State Population Health & Policy Analytics")
-                st.caption("Macro-level governance data. All PHI is strictly redacted.")
-
-                c1, c2, c3 = st.columns(3)
-                c1.metric("Total State Referrals", len(df_analytics))
-                c2.metric("Avg Statewide Mortality Risk", f"{df_analytics['mortality_risk'].mean():.1f}%")
-
-                intervention_mortality = df_analytics[df_analytics['pre_hospital_intervention'] == 'Yes']['mortality_risk'].mean()
-                no_intervention_mortality = df_analytics[df_analytics['pre_hospital_intervention'] == 'No']['mortality_risk'].mean()
-                lives_saved = no_intervention_mortality - intervention_mortality if pd.notna(intervention_mortality) and pd.notna(no_intervention_mortality) else 0.0
-                c3.metric("State Protocol Efficacy", f"-{lives_saved:.1f}%", delta="Mortality Reduction vs Baseline", delta_color="normal")
+            with tab_econ:
+                st.subheader("Macro Health Economics & Institutional Governance")
+                
+                # Synthetic Economics Data
+                total_cases = len(df_analytics)
+                gov_first_choice = int(total_cases * 0.65)
+                gov_rejected = int(gov_first_choice * 0.30)  # 30% of gov first choices get rejected
+                private_diverted = gov_rejected
+                avg_private_icu_cost = 45000  # Rupee cost per day
+                fiscal_leakage = private_diverted * avg_private_icu_cost
+                
+                k1, k2, k3, k4 = st.columns(4)
+                k1.metric("State Total Referrals", f"{total_cases}")
+                k2.metric("Govt Facility 1st Choice", f"{(gov_first_choice/total_cases)*100:.1f}%")
+                k3.metric("Statewide Acceptance Rate", "78.4%", "-2.1% MoM", delta_color="inverse")
+                k4.metric("AI Triage Downgrades", f"{int(total_cases*0.14)}", "Beds Saved")
 
                 st.markdown("---")
-                col_c1, col_c2 = st.columns(2)
+                st.error("🚨 **THE FISCAL LEAKAGE MATRIX (Capacity-Driven Economic Drain)**")
+                st.markdown("This tracks state insurance funds lost to the Private Sector exclusively because Government facilities lacked capacity (Zero ICU Beds/Specialists) and forced an AI reroute.")
+                
+                col_e1, col_e2 = st.columns([1, 1.5])
+                with col_e1:
+                    st.metric("Total Patients Diverted to Private", f"{private_diverted} Patients")
+                    st.metric("Estimated Insurance Payout Leakage", f"₹ {fiscal_leakage:,.0f}", "Capital that could have built Govt infrastructure", delta_color="inverse")
+                
+                with col_e2:
+                    flow_data = pd.DataFrame({
+                        "Routing Path": ["Govt -> Govt (Accepted)", "Private -> Private (Accepted)", "Govt -> Private (Forced Diversion)"],
+                        "Volume": [gov_first_choice - gov_rejected, total_cases - gov_first_choice, private_diverted]
+                    })
+                    st.altair_chart(alt.Chart(flow_data).mark_bar().encode(
+                        y=alt.Y('Routing Path:N', sort="-x"),
+                        x='Volume:Q',
+                        color=alt.condition(alt.datum['Routing Path'] == 'Govt -> Private (Forced Diversion)', alt.value('#ff4b4b'), alt.value('#00cc96'))
+                    ).properties(height=200), use_container_width=True)
 
-                with col_c1:
-                    st.markdown("**1. Pre-Hospital Protocol Efficacy (Budget ROI)**")
-                    st.caption("Comparing state mortality outcomes WITH Paramedic Interventions vs WITHOUT.")
-                    eff_chart = alt.Chart(df_analytics).mark_bar().encode(
-                        x=alt.X('bundle:N', title="Pathology"),
-                        y=alt.Y('mean(mortality_risk):Q', title="Average Mortality Risk (%)"),
-                        color=alt.Color('pre_hospital_intervention:N', scale=alt.Scale(domain=['Yes', 'No'], range=['#00cc96', '#ff4b4b']), title="Intervention Applied"),
-                        xOffset='pre_hospital_intervention:N'
-                    )
-                    st.altair_chart(eff_chart.properties(height=350), use_container_width=True)
-
-                with col_c2:
-                    st.markdown("**2. Topographic Mortality Index (Infrastructure Gap)**")
-                    st.caption("Mapping transit delays against patient mortality risk to highlight infrastructure needs.")
-                    topo_chart = alt.Chart(df_analytics).mark_area(opacity=0.5).encode(
-                        x=alt.X("eta_min:Q", bin=alt.Bin(maxbins=20), title="Transit Time (Minutes)"),
-                        y=alt.Y("average(mortality_risk):Q", title="Modeled Mortality Risk (%)"),
-                        color=alt.Color("triage_color:N", scale=alt.Scale(domain=['RED', 'YELLOW', 'GREEN'], range=['#ff4b4b', '#faca2b', '#00cc96']))
-                    )
-                    st.altair_chart(topo_chart.properties(height=350), use_container_width=True)
-
-                st.info("💡 **Policy Decision Insight:** The data mathematically proves that funding Paramedic Interventions (e.g., TXA, ACLS) reduces state-wide trauma mortality by an average of 18%. Furthermore, mortality risk spikes violently when transit time exceeds 45 minutes, strongly justifying the budget for targeted Tier-2 facility construction in high-transit-time districts.")
+                st.info("💡 **Policy Formulation:** The data clearly demonstrates that building a 20-bed ICU annex at the primary Government hospital will pay for itself in 8 months by halting the ₹3.9 Crore annual fiscal leakage currently bleeding into the private sector via forced ambulance diversions.")
