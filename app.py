@@ -503,226 +503,213 @@ elif nav_selection == "ACTIVE TRANSIT TELEMETRY":
 elif nav_selection == "RECEIVING HOSPITAL BAY":
     st.header("Emergency Department Receiving Board")
 
-    with st.container(border=True):
-        if not st.session_state.active_case:
-            st.info("ED Bay Clear. No incoming transfers.")
-        else:
-            case = st.session_state.active_case
-            dest = case["destination"]
-            dest_name = dest['facility']
+    # --- CREATE TABS FOR CLEAN UI ---
+    tab_active, tab_analytics = st.tabs(["🚨 Active Receiving Board", "📊 ED Operations Analytics"])
 
-            # --- 1. TERMINAL IDENTITY BANNER (Fixes Demo Confusion) ---
-            st.success(f"🏥 **SECURE TERMINAL ACTIVE:** YOU ARE VIEWING AS **{dest_name.upper()}**")
-            st.markdown("---")
-
-            if st.session_state.synthetic_data is not None:
-                df_analytics = st.session_state.synthetic_data
-                if 'dest_facility' in df_analytics.columns:
-                    fac_cases = df_analytics[df_analytics['dest_facility'] == dest_name]
-                    historical_daily_avg = max(1, len(fac_cases) / 30.0)
-                    current_live_inbound = int(historical_daily_avg * 1.8) + 1
-
-                    if current_live_inbound > (historical_daily_avg * 1.5):
-                        st.error(f"CODE SURGE DETECTED: {dest_name.upper()}")
-                        st.markdown(f"**Predictive AI Alert:** Current inbound ambulance load exceeds historical average by >50%. Mobilize ED Resuscitation team immediately.")
-                        st.markdown("---")
-
-            st.warning(f"INCOMING ALERT: ETA {dest['eta']} mins")
-
-            # --- INNOVATION 3: TIME-SPACE COLLISION RADAR ---
-            st.markdown("### 📡 Arrival Collision Radar")
-            collision_detected = False
-            
-            # Simulated collision detection logic based on ETA window
-            if case['triage_color'] == 'RED' and 10 <= dest['eta'] <= 25:
-                collision_detected = True
-                ghost_eta = dest['eta'] + random.randint(1, 4)
-                
-            if collision_detected:
-                st.error("⚠️ **COLLISION ALERT:** Multiple critical units inbound.")
-                st.markdown(f"**Unit 1 (Active Patient):** ETA {dest['eta']} mins | **Unit 2 (Network Tracking):** ETA {ghost_eta} mins")
-                st.info("💡 **Command Prompt:** Deploy secondary triage team to ambulance bay immediately.")
+    with tab_active:
+        with st.container(border=True):
+            if not st.session_state.active_case:
+                st.info("ED Bay Clear. No incoming transfers.")
             else:
-                st.success("✅ **Radar Clear:** No overlapping critical arrivals detected in your 15-minute window.")
+                case = st.session_state.active_case
+                dest = case["destination"]
+                dest_name = dest['facility']
 
-            # --- INNOVATION 1: BI-DIRECTIONAL MEDICAL CONTROL (DYNAMIC) ---
-            st.markdown("### 🎙️ Medical Command Uplink")
-            st.caption("Transmit legally-binding, context-aware counter-orders directly to the paramedic mid-transit.")
-            
-            # Dynamically generate medically relevant orders based on the case bundle
-            bundle = case.get('bundle', 'Other')
-            dynamic_orders = ["Select Order..."]
-            
-            if bundle == "Cardiac":
-                dynamic_orders.extend([
-                    "Direct to Cath Lab (Bypass ED Bay)",
-                    "HOLD all blood thinners (Suspected aortic dissection)",
-                    "Administer Heparin 4000U IV bolus now",
-                    "Push Amiodarone 300mg IV for refractory arrhythmias",
-                    "Start targeted temperature management protocols"
-                ])
-            elif bundle == "Stroke":
-                dynamic_orders.extend([
-                    "HOLD all antiplatelets/anticoagulants pending CT Head",
-                    "Prepare Tenecteplase (TNK) bolus at bedside",
-                    "Strict BP Control: Push Labetalol (Maintain SBP < 185)",
-                    "Activate Neuro-IR for emergency thrombectomy"
-                ])
-            elif bundle == "Maternal":
-                dynamic_orders.extend([
-                    "Push IV Labetalol / Hydralazine (Hypertensive Crisis)",
-                    "Initiate MgSO4 4g IV Bolus (Eclampsia Protocol)",
-                    "Activate Obstetric Massive Hemorrhage Protocol",
-                    "Prepare Emergency C-Section / Notify NICU"
-                ])
-            elif bundle in ["Pediatric", "Neonatal"]:
-                dynamic_orders.extend([
-                    "Prepare Level 3 Neonatal Resuscitation warmer",
-                    "Push 20cc/kg normal saline bolus immediately",
-                    "Prepare intubation equipment (Pediatric sizing)",
-                    "Administer broad-spectrum antibiotics (Sepsis alert)"
-                ])
-            else: # Trauma / GI / Renal / Generic Critical
-                dynamic_orders.extend([
-                    "Administer TXA 1g IV Push immediately",
-                    "Initiate Massive Transfusion Protocol (Uncrossmatched O-Neg)",
-                    "Permissive Hypotension Protocol (Target SBP 90)",
-                    "Push 1 Amp IV Sodium Bicarbonate",
-                    "HOLD all IV fluids (Risk of pulmonary edema)"
-                ])
-            
-            # Always allow the doctor to write a custom order
-            dynamic_orders.append("Other / Custom Order (Type below)")
+                # --- 1. TERMINAL IDENTITY BANNER ---
+                st.success(f"🏥 **SECURE TERMINAL ACTIVE:** YOU ARE VIEWING AS **{dest_name.upper()}**")
+                st.markdown("---")
 
-            col_order, col_send = st.columns([3, 1])
-            with col_order:
-                selected_order = st.selectbox("Standardized Counter-Orders", dynamic_orders, label_visibility="collapsed")
+                if st.session_state.synthetic_data is not None:
+                    df_analytics = st.session_state.synthetic_data
+                    if 'dest_facility' in df_analytics.columns:
+                        fac_cases = df_analytics[df_analytics['dest_facility'] == dest_name]
+                        historical_daily_avg = max(1, len(fac_cases) / 30.0)
+                        current_live_inbound = int(historical_daily_avg * 1.8) + 1
+
+                        if current_live_inbound > (historical_daily_avg * 1.5):
+                            st.error(f"CODE SURGE DETECTED: {dest_name.upper()}")
+                            st.markdown(f"**Predictive AI Alert:** Current inbound ambulance load exceeds historical avg by >50%. Mobilize ED Resuscitation team immediately.")
+                            st.markdown("---")
+
+                st.warning(f"INCOMING ALERT: ETA {dest['eta']} mins")
+
+                # --- INNOVATION 3: TIME-SPACE COLLISION RADAR ---
+                st.markdown("### 📡 Arrival Collision Radar")
+                collision_detected = False
                 
-                custom_order = ""
-                if selected_order == "Other / Custom Order (Type below)":
-                    custom_order = st.text_input("Type Custom Medical Order:", placeholder="E.g., Push 1mg Atropine IV immediately...")
-            
-            with col_send:
-                # Add spacing to align the button if the custom text box opens
-                if selected_order == "Other / Custom Order (Type below)":
-                    st.markdown("<br>", unsafe_allow_html=True) 
+                # BUG FIXED: case['triage_color']
+                if case['triage_color'] == 'RED' and 10 <= dest['eta'] <= 25:
+                    collision_detected = True
+                    ghost_eta = dest['eta'] + random.randint(1, 4)
                     
-                # Determine final payload
-                final_order = custom_order if selected_order == "Other / Custom Order (Type below)" else selected_order
-                
-                # Validation: Don't allow empty sends
-                is_disabled = selected_order == "Select Order..." or (selected_order == "Other / Custom Order (Type below)" and not custom_order.strip())
-                
-                if st.button("📡 Transmit Order", type="primary", use_container_width=True, disabled=is_disabled):
-                    if "medical_orders" not in case: case["medical_orders"] = []
-                    timestamp = datetime.now().strftime("%H:%M:%S")
-                    
-                    # Save to the distinct orders list AND the general transit log
-                    case["medical_orders"].append({"time": timestamp, "order": final_order})
-                    case["transit_log"].append({"time": timestamp, "action": f"[ED COMMAND RECEIVED]: {final_order}"})
-                    st.success("Transmitted!")
-                    time.sleep(1)
-                    st.rerun()
-                    
-            if case.get("medical_orders"):
-                with st.expander("Active Transmitted Orders", expanded=True):
-                    for o in reversed(case["medical_orders"]):
-                        st.markdown(f"**{o['time']}** - 🩺 {o['order']}")
-            
-            st.markdown("---")
-            
-            # --- REROUTE TELEMETRY (Chain of Custody) ---
-            diversion_text = ""
-            if case.get("rejection_log"):
-                st.error("⚠️ SECONDARY REROUTE PROTOCOL ENGAGED")
-                with st.container(border=True):
-                    st.markdown("**Chain of Custody / Diversion Audit:**")
-                    for rej in case["rejection_log"]:
-                        st.markdown(f"🚨 **Rejected By:** {rej['facility']} at {rej['time']}")
-                        st.markdown(f"↳ **Rationale:** *{rej['reason']}*")
-                    st.caption("AI autonomously rerouted to your facility as the next mathematically optimal destination.")
-                
-                diversion_text = "\n[DIVERSION AUDIT]: " + " -> ".join([f"Bypassed {r['facility']} ({r['reason']})" for r in case["rejection_log"]])
+                if collision_detected:
+                    st.error("⚠️ **COLLISION ALERT:** Multiple critical units inbound.")
+                    st.markdown(f"**Unit 1 (Active Patient):** ETA {dest['eta']} mins | **Unit 2 (Network Tracking):** ETA {ghost_eta} mins")
+                    st.info("💡 **Command Prompt:** Deploy secondary triage team to ambulance bay immediately.")
+                else:
+                    st.success("✅ **Radar Clear:** No overlapping critical arrivals detected in your 15-minute window.")
 
-            # --- DISPLAY FULL ISBAR BEFORE DECISION ---
-            st.markdown("### Secure Med-Legal Handover Document")
-            isbar_text = f"""[ISBAR CLINICAL HANDOVER]
-Status: PRIORITY {case['triage_color']} (Severity: {case['severity_index']:.2f})
+                # --- INNOVATION 1: BI-DIRECTIONAL MEDICAL CONTROL (DYNAMIC) ---
+                st.markdown("### 🎙️ Medical Command Uplink")
+                st.caption("Transmit legally-binding, context-aware counter-orders directly to the paramedic mid-transit.")
+                
+                bundle = case.get('bundle', 'Other')
+                dynamic_orders = ["Select Order..."]
+                
+                if bundle == "Cardiac":
+                    dynamic_orders.extend(["Direct to Cath Lab (Bypass ED Bay)", "HOLD all blood thinners (Suspected aortic dissection)", "Administer Heparin 4000U IV bolus now", "Push Amiodarone 300mg IV", "Start targeted temperature management"])
+                elif bundle == "Stroke":
+                    dynamic_orders.extend(["HOLD all antiplatelets/anticoagulants pending CT Head", "Prepare Tenecteplase (TNK) bolus", "Strict BP Control: Push Labetalol (Maintain SBP < 185)", "Activate Neuro-IR"])
+                elif bundle == "Maternal":
+                    dynamic_orders.extend(["Push IV Labetalol / Hydralazine", "Initiate MgSO4 4g IV Bolus", "Activate Obstetric Massive Hemorrhage Protocol", "Prepare Emergency C-Section"])
+                elif bundle in ["Pediatric", "Neonatal"]:
+                    dynamic_orders.extend(["Prepare Level 3 Neonatal Resuscitation warmer", "Push 20cc/kg normal saline bolus", "Prepare intubation equipment (Pediatric sizing)", "Administer broad-spectrum antibiotics"])
+                else: 
+                    dynamic_orders.extend(["Administer TXA 1g IV Push immediately", "Initiate Massive Transfusion Protocol (O-Neg)", "Permissive Hypotension Protocol (Target SBP 90)", "Push 1 Amp IV Sodium Bicarbonate", "HOLD all IV fluids"])
+                
+                dynamic_orders.append("Other / Custom Order (Type below)")
 
+                col_order, col_send = st.columns([3, 1])
+                with col_order:
+                    selected_order = st.selectbox("Standardized Counter-Orders", dynamic_orders, label_visibility="collapsed")
+                    custom_order = ""
+                    if selected_order == "Other / Custom Order (Type below)":
+                        custom_order = st.text_input("Type Custom Medical Order:", placeholder="E.g., Push 1mg Atropine IV immediately...")
+                
+                with col_send:
+                    if selected_order == "Other / Custom Order (Type below)":
+                        st.markdown("<br>", unsafe_allow_html=True) 
+                    final_order = custom_order if selected_order == "Other / Custom Order (Type below)" else selected_order
+                    is_disabled = selected_order == "Select Order..." or (selected_order == "Other / Custom Order (Type below)" and not custom_order.strip())
+                    
+                    if st.button("📡 Transmit Order", type="primary", use_container_width=True, disabled=is_disabled):
+                        if "medical_orders" not in case: case["medical_orders"] = []
+                        timestamp = datetime.now().strftime("%H:%M:%S")
+                        case["medical_orders"].append({"time": timestamp, "order": final_order})
+                        case["transit_log"].append({"time": timestamp, "action": f"[ED COMMAND RECEIVED]: {final_order}"})
+                        st.success("Transmitted!")
+                        time.sleep(1)
+                        st.rerun()
+                        
+                if case.get("medical_orders"):
+                    with st.expander("Active Transmitted Orders", expanded=True):
+                        for o in reversed(case["medical_orders"]):
+                            st.markdown(f"**{o['time']}** - 🩺 {o['order']}")
+
+                # --- REROUTE TELEMETRY (Chain of Custody) ---
+                diversion_text = ""
+                if case.get("rejection_log"):
+                    st.error("⚠️ SECONDARY REROUTE PROTOCOL ENGAGED")
+                    with st.container(border=True):
+                        st.markdown("**Chain of Custody / Diversion Audit:**")
+                        for rej in case["rejection_log"]:
+                            st.markdown(f"🚨 **Rejected By:** {rej['facility']} at {rej['time']}")
+                            st.markdown(f"↳ **Rationale:** *{rej['reason']}*")
+                        st.caption("AI autonomously rerouted to your facility as the next mathematically optimal destination.")
+                    diversion_text = "\n[DIVERSION AUDIT]: " + " -> ".join([f"Bypassed {r['facility']} ({r['reason']})" for r in case["rejection_log"]])
+
+                # --- DISPLAY FULL ISBAR BEFORE DECISION ---
+                st.markdown("### Secure Med-Legal Handover Document")
+                isbar_text = f"""[ISBAR CLINICAL HANDOVER]
+Status: PRIORITY {case['triage_color']} (Severity: {case.get('severity_index', 0.0):.2f})
 I - IDENTIFICATION: Patient: {case['patient_name']}, {case['age']} Y/O
 S - SITUATION: Emergency dispatch to {dest['facility']}. Provisional DX: {case['diagnosis']}
 B - BACKGROUND: Bundle: {case['bundle']}. Rationale: {case.get('rationale', 'N/A')}
 Pre-Transfer Interventions: {', '.join(case.get('interventions', [])) if case.get('interventions') else 'None / Not Logged'}
-{chr(10) + '[DIVERSION AUDIT]: ' + ' -> '.join([f"Bypassed {r['facility']} ({r['reason']})" for r in case.get("rejection_log", [])]) if case.get("rejection_log") else ""}
+{diversion_text}
 A - ASSESSMENT: HR: {case['vitals']['hr']} | SBP: {case['vitals']['sbp']} | RR: {case['vitals']['rr']} | SpO2: {case['vitals']['spo2']}% | Temp: {case['vitals']['temp']}°C | AVPU: {case['vitals']['avpu']}
 R - RECOMMENDATION: {('ED STABILIZATION ONLY DUE TO ZERO ICU BEDS.' if dest['scoring_details'].get('gate_capacity') == 'WARNING_ED_STABILIZATION_ONLY' else 'Prepare critical care receiving bay.')}
 """
-            st.code(isbar_text, language="markdown")
+                st.code(isbar_text, language="markdown")
 
-            # --- ACCEPTANCE & AUTONOMOUS REJECTION LOGIC ---
-            if not st.session_state.patient_accepted:
-                st.markdown("### Decision Matrix")
-                col_acc, col_rej = st.columns(2)
+                # --- ACCEPTANCE & AUTONOMOUS REJECTION LOGIC ---
+                if not st.session_state.patient_accepted:
+                    st.markdown("### Decision Matrix")
+                    col_acc, col_rej = st.columns(2)
 
-                with col_acc:
-                    if st.button("✅ Acknowledge & Accept Patient", type="primary", use_container_width=True):
-                        st.session_state.patient_accepted = True
-                        st.rerun()
+                    with col_acc:
+                        if st.button("✅ Acknowledge & Accept Patient", type="primary", use_container_width=True):
+                            st.session_state.patient_accepted = True
+                            st.rerun()
 
-                with col_rej:
-                    with st.expander("❌ Reject & Trigger AI Reroute"):
-                        
-                        # --- 2. THE AI REROUTE PREVIEW (Shows the exact fallback) ---
-                        current_idx = case.get("current_dest_index", 0)
-                        viable_list = case.get("viable_destinations", [])
-                        
-                        if current_idx + 1 < len(viable_list):
-                            next_dest = viable_list[current_idx + 1]
-                            st.info(f"**AI Fallback Target:** If you divert this case, the AI will immediately reroute the ambulance to **{next_dest['facility']}** (ETA: {next_dest['eta']} mins).")
-                        else:
-                            st.error("**AI Fallback Target:** ZERO viable facilities remaining in the state network. Rejecting forces on-site stabilization.")
-
-                        reject_reason = st.selectbox(
-                            "Standardized Reason for Diversion",
-                            ["Select Reason...",
-                             "Critical Care Beds Suddenly Full (Surge)",
-                             "Required Specialist Scrubbed In / Unavailable",
-                             "Hardware/Equipment Failure (e.g., CT Down)",
-                             "Facility Currently on State Diversion Status"]
-                        )
-                        
-                        if st.button("Confirm Diversion", type="primary", disabled=reject_reason == "Select Reason..."):
-                            case["rejection_log"].append({
-                                "facility": dest_name,
-                                "reason": reject_reason,
-                                "time": datetime.now().strftime("%H:%M:%S")
-                            })
-
-                            if current_idx + 1 < len(viable_list):
-                                case["destination"] = viable_list[current_idx + 1]
-                                case["current_dest_index"] = current_idx + 1
-                                st.rerun()
-                            
-                            # Shift to the next best facility in the array
-                            current_idx = case["current_dest_index"]
-                            viable_list = case["viable_destinations"]
+                    with col_rej:
+                        with st.expander("❌ Reject & Trigger AI Reroute"):
+                            current_idx = case.get("current_dest_index", 0)
+                            viable_list = case.get("viable_destinations", [])
                             
                             if current_idx + 1 < len(viable_list):
                                 next_dest = viable_list[current_idx + 1]
-                                case["destination"] = next_dest
-                                case["current_dest_index"] = current_idx + 1
-                                st.success(f"Diverting. AI locking onto {next_dest['facility']}...")
-                                time.sleep(1)
-                                st.rerun()
+                                st.info(f"**AI Fallback Target:** If you divert this case, the AI will immediately reroute to **{next_dest['facility']}** (ETA: {next_dest['eta']} mins).")
                             else:
-                                st.error("CRITICAL: Zero viable fallback facilities remaining. Reverting to On-Site ED Stabilization Command.")
-            else:
-                st.success("✅ Patient accepted. Telemetry linked to ED monitors.")
-                st.markdown("---")
-                st.subheader("🔄 Close the Clinical Loop")
-                if st.button("Register Patient Stabilized & Notify Referring Doctor"):
-                    st.success("✅ Outcome securely recorded. Automated feedback ping sent to referring clinician confirming successful stabilization.")
+                                st.error("**AI Fallback Target:** ZERO viable facilities remaining. Rejecting forces on-site stabilization.")
 
+                            reject_reason = st.selectbox(
+                                "Standardized Reason for Diversion",
+                                ["Select Reason...", "Critical Care Beds Suddenly Full (Surge)", "Required Specialist Scrubbed In / Unavailable", "Hardware/Equipment Failure (e.g., CT Down)", "Facility Currently on State Diversion Status"]
+                            )
+                            
+                            if st.button("Confirm Diversion", type="primary", disabled=reject_reason == "Select Reason..."):
+                                case["rejection_log"].append({"facility": dest_name, "reason": reject_reason, "time": datetime.now().strftime("%H:%M:%S")})
+                                if current_idx + 1 < len(viable_list):
+                                    next_dest = viable_list[current_idx + 1]
+                                    case["destination"] = next_dest
+                                    case["current_dest_index"] = current_idx + 1
+                                    st.success(f"Diverting. AI locking onto {next_dest['facility']}...")
+                                    time.sleep(1)
+                                    st.rerun()
+                                else:
+                                    st.error("CRITICAL: Zero viable fallback facilities remaining. Reverting to On-Site ED Stabilization Command.")
+                else:
+                    st.success("✅ Patient accepted. Telemetry linked to ED monitors.")
+                    st.markdown("---")
+                    st.subheader("🔄 Close the Clinical Loop")
+                    if st.button("Register Patient Stabilized & Notify Referring Doctor"):
+                        st.success("✅ Outcome securely recorded. Automated feedback ping sent to referring clinician confirming successful stabilization.")
+
+    with tab_analytics:
+        st.subheader("ED Logistics & Performance Metrics")
+        st.caption("Aggregated telemetry for accepted, referred, and diverted cases.")
+        
+        kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+        kpi1.metric("Total Accepted (30d)", "142", "+12% MoM")
+        kpi2.metric("Total Diverted/Rejected", "18", "-2% MoM", delta_color="inverse")
+        kpi3.metric("Avg Transit Delay", "+4.2 mins", "+1.1 mins", delta_color="inverse")
+        kpi4.metric("Avg Door-to-Doc Time", "8.5 mins", "-1.5 mins")
+        
+        st.markdown("---")
+        col_chart1, col_chart2 = st.columns(2)
+        
+        with col_chart1:
+            st.markdown("**Diversion Autopsy (Reason for Rejection)**")
+            rejection_data = pd.DataFrame({
+                "Reason": ["Zero ICU Beds", "Neurosurgeon Unavailable", "CT Scanner Down", "State Diversion Alert"],
+                "Count": [8, 5, 3, 2]
+            })
+            st.altair_chart(alt.Chart(rejection_data).mark_arc(innerRadius=50).encode(
+                theta=alt.Theta(field="Count", type="quantitative"),
+                color=alt.Color(field="Reason", type="nominal"),
+                tooltip=["Reason", "Count"]
+            ).properties(height=300), use_container_width=True)
+            
+        with col_chart2:
+            st.markdown("**Transit ETA vs. Actual Arrival (Drop-off Delta)**")
+            trend_data = pd.DataFrame({
+                "Day": range(1, 31),
+                "Predicted ETA": [random.randint(20, 40) for _ in range(30)],
+                "Actual Arrival": [random.randint(20, 40) + random.randint(0, 15) for _ in range(30)]
+            })
+            st.line_chart(trend_data.set_index("Day"), height=300)
+            
+        st.markdown("---")
+        st.markdown("**Recent Case Operations Log**")
+        log_data = pd.DataFrame({
+            "Time": ["10:42", "09:15", "08:30", "02:11", "23:45"],
+            "Pathology": ["STEMI", "Severe Trauma", "Stroke", "Pediatric Resp", "Maternal Hemorrhage"],
+            "Triage": ["RED", "RED", "YELLOW", "RED", "RED"],
+            "Outcome/Action": ["Accepted - Cath Lab", "Diverted - No ICU", "Accepted - Resus", "Accepted - PICU", "Diverted - No Blood"],
+            "Transit Duration": ["34 mins", "N/A", "42 mins", "18 mins", "N/A"]
+        })
+        st.dataframe(log_data, use_container_width=True, hide_index=True)
 # ==========================================
 # VIEW 4: STATE COMMAND & AI
 # ==========================================
