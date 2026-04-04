@@ -4,6 +4,7 @@ import altair as alt
 import time
 import random
 import os
+import hashlib
 from datetime import datetime, timedelta
 
 # --- Architecture Imports ---
@@ -644,7 +645,7 @@ R - RECOMMENDATION: {('ED STABILIZATION ONLY DUE TO ZERO ICU BEDS.' if dest['sco
                     if st.button("Register Patient Stabilized & Notify Referring Doctor"):
                         st.success("✅ Outcome securely recorded. Automated feedback ping sent to referring clinician confirming successful stabilization.")
 
-with tab_analytics:
+    with tab_analytics:
         st.subheader("🏥 Institutional Operations Analytics")
         
         if st.session_state.user_role == "State Health Command (Macro View)":
@@ -654,7 +655,6 @@ with tab_analytics:
             st.success(f"🔐 **DATA SILO ACTIVE:** Displaying isolated operational telemetry for {active_hospital} only.")
             
             # --- DETERMINISTIC DATA ENGINE (Creates unique, persistent profiles per hospital) ---
-            import hashlib
             h_seed = int(hashlib.md5(active_hospital.encode()).hexdigest(), 16) % 10000
             rng = random.Random(h_seed)
             
@@ -703,6 +703,7 @@ with tab_analytics:
                     color=alt.value('#1f77b4'),
                     tooltip=["Pathology", "Volume"]
                 ).properties(height=300), use_container_width=True)
+
 # ==========================================
 # VIEW 4: STATE COMMAND & AI
 # ==========================================
@@ -783,7 +784,7 @@ elif nav_selection == "STATE COMMAND & AI":
                 with col_ai2:
                     st.markdown("**Fleet Utilization Matrix (ALS vs BLS/PTV)**")
                     st.caption("Tracking resource misallocation to optimize fleet deployment costs.")
-                    # Synthetic fleet usage data
+                    
                     fleet_usage = pd.DataFrame({
                         "Mission Type": ["Appropriate ALS Use (Critical)", "Appropriate BLS Use (Stable)", "Waste: ALS used for BLS Case", "Risk: BLS used for ALS Case"],
                         "Volume": [int(len(df_analytics)*0.3), int(len(df_analytics)*0.5), int(len(df_analytics)*0.15), int(len(df_analytics)*0.05)]
@@ -801,7 +802,7 @@ elif nav_selection == "STATE COMMAND & AI":
                 with c1:
                     st.markdown("**Temporal Surge Radar (Time of Day)**")
                     st.caption("Case volumes mapped against 24-hour cycles to guide shift staffing.")
-                    # Generate synthetic time surge data
+                    
                     hours = list(range(24))
                     surge_vols = [random.randint(10, 30) if h < 6 or h > 20 else random.randint(40, 100) for h in hours]
                     surge_data = pd.DataFrame({"Hour": hours, "Referrals": surge_vols})
@@ -838,12 +839,11 @@ elif nav_selection == "STATE COMMAND & AI":
             with tab_econ:
                 st.subheader("Macro Health Economics & Institutional Governance")
                 
-                # Synthetic Economics Data
                 total_cases = len(df_analytics)
                 gov_first_choice = int(total_cases * 0.65)
-                gov_rejected = int(gov_first_choice * 0.30)  # 30% of gov first choices get rejected
+                gov_rejected = int(gov_first_choice * 0.30)  
                 private_diverted = gov_rejected
-                avg_private_icu_cost = 45000  # Rupee cost per day
+                avg_private_icu_cost = 45000  
                 fiscal_leakage = private_diverted * avg_private_icu_cost
                 
                 k1, k2, k3, k4 = st.columns(4)
