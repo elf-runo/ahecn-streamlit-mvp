@@ -667,49 +667,49 @@ R - RECOMMENDATION: {('ED STABILIZATION ONLY DUE TO ZERO ICU BEDS.' if dest['sco
                         st.success("✅ Outcome securely recorded. Automated feedback ping sent to referring clinician confirming successful stabilization.")
 
     with tab_analytics:
-        st.subheader("ED Logistics & Performance Metrics")
-        st.caption("Aggregated telemetry for accepted, referred, and diverted cases.")
+        st.subheader("🏥 Institutional Operations Analytics")
         
-        kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-        kpi1.metric("Total Accepted (30d)", "142", "+12% MoM")
-        kpi2.metric("Total Diverted/Rejected", "18", "-2% MoM", delta_color="inverse")
-        kpi3.metric("Avg Transit Delay", "+4.2 mins", "+1.1 mins", delta_color="inverse")
-        kpi4.metric("Avg Door-to-Doc Time", "8.5 mins", "-1.5 mins")
-        
-        st.markdown("---")
-        col_chart1, col_chart2 = st.columns(2)
-        
-        with col_chart1:
-            st.markdown("**Diversion Autopsy (Reason for Rejection)**")
-            rejection_data = pd.DataFrame({
-                "Reason": ["Zero ICU Beds", "Neurosurgeon Unavailable", "CT Scanner Down", "State Diversion Alert"],
-                "Count": [8, 5, 3, 2]
-            })
-            st.altair_chart(alt.Chart(rejection_data).mark_arc(innerRadius=50).encode(
-                theta=alt.Theta(field="Count", type="quantitative"),
-                color=alt.Color(field="Reason", type="nominal"),
-                tooltip=["Reason", "Count"]
-            ).properties(height=300), use_container_width=True)
+        # --- SECURITY FIREWALL ---
+        if st.session_state.user_role == "State Health Command (Macro View)":
+            st.warning("⚠️ **ACCESS DENIED:** Institutional Analytics are restricted to Facility Directors. Please use the 'State Command & AI' tab for macro-analytics.")
+        else:
+            active_hospital = st.session_state.user_role.replace("Director: ", "")
+            st.success(f"🔐 **DATA SILO ACTIVE:** Displaying isolated operational telemetry for {active_hospital} only.")
             
-        with col_chart2:
-            st.markdown("**Transit ETA vs. Actual Arrival (Drop-off Delta)**")
-            trend_data = pd.DataFrame({
-                "Day": range(1, 31),
-                "Predicted ETA": [random.randint(20, 40) for _ in range(30)],
-                "Actual Arrival": [random.randint(20, 40) + random.randint(0, 15) for _ in range(30)]
-            })
-            st.line_chart(trend_data.set_index("Day"), height=300)
+            kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+            kpi1.metric(f"Accepted at {active_hospital}", "142", "+12% MoM")
+            kpi2.metric("Local Diversions", "18", "-2% MoM", delta_color="inverse")
+            kpi3.metric("Fleet Arrival Delay (SLA)", "+4.2 mins", "+1.1 mins", delta_color="inverse")
+            kpi4.metric("Avg Triage-to-Bed Time", "8.5 mins", "-1.5 mins")
             
-        st.markdown("---")
-        st.markdown("**Recent Case Operations Log**")
-        log_data = pd.DataFrame({
-            "Time": ["10:42", "09:15", "08:30", "02:11", "23:45"],
-            "Pathology": ["STEMI", "Severe Trauma", "Stroke", "Pediatric Resp", "Maternal Hemorrhage"],
-            "Triage": ["RED", "RED", "YELLOW", "RED", "RED"],
-            "Outcome/Action": ["Accepted - Cath Lab", "Diverted - No ICU", "Accepted - Resus", "Accepted - PICU", "Diverted - No Blood"],
-            "Transit Duration": ["34 mins", "N/A", "42 mins", "18 mins", "N/A"]
-        })
-        st.dataframe(log_data, use_container_width=True, hide_index=True)
+            st.markdown("---")
+            col_chart1, col_chart2 = st.columns(2)
+            
+            with col_chart1:
+                st.markdown(f"**Local Diversion Autopsy ({active_hospital})**")
+                st.caption("Primary reasons this facility rejected critical transfers.")
+                rejection_data = pd.DataFrame({
+                    "Reason": ["Zero ICU Beds", "Neurosurgeon Unavailable", "CT Scanner Down", "Internal Code Black"],
+                    "Count": [8, 5, 3, 2]
+                })
+                st.altair_chart(alt.Chart(rejection_data).mark_arc(innerRadius=50).encode(
+                    theta=alt.Theta(field="Count", type="quantitative"),
+                    color=alt.Color(field="Reason", type="nominal"),
+                    tooltip=["Reason", "Count"]
+                ).properties(height=300), use_container_width=True)
+                
+            with col_chart2:
+                st.markdown("**Inbound Acuity Distribution**")
+                st.caption("Pathology breakdown of cases received this month.")
+                path_data = pd.DataFrame({
+                    "Pathology": ["Cardiac", "Trauma", "Stroke", "Maternal", "Pediatric"],
+                    "Volume": [45, 38, 22, 19, 18]
+                })
+                st.altair_chart(alt.Chart(path_data).mark_bar().encode(
+                    x=alt.X('Pathology:N', sort='-y'),
+                    y='Volume:Q',
+                    color=alt.value('#1f77b4')
+                ).properties(height=300), use_container_width=True)
 # ==========================================
 # VIEW 4: STATE COMMAND & AI
 # ==========================================
