@@ -545,29 +545,81 @@ elif nav_selection == "RECEIVING HOSPITAL BAY":
             else:
                 st.success("✅ **Radar Clear:** No overlapping critical arrivals detected in your 15-minute window.")
 
-            # --- INNOVATION 1: BI-DIRECTIONAL MEDICAL CONTROL ---
+            # --- INNOVATION 1: BI-DIRECTIONAL MEDICAL CONTROL (DYNAMIC) ---
             st.markdown("### 🎙️ Medical Command Uplink")
-            st.caption("Transmit legally-binding counter-orders directly to the paramedic mid-transit.")
+            st.caption("Transmit legally-binding, context-aware counter-orders directly to the paramedic mid-transit.")
             
+            # Dynamically generate medically relevant orders based on the case bundle
+            bundle = case.get('bundle', 'Other')
+            dynamic_orders = ["Select Order..."]
+            
+            if bundle == "Cardiac":
+                dynamic_orders.extend([
+                    "Direct to Cath Lab (Bypass ED Bay)",
+                    "HOLD all blood thinners (Suspected aortic dissection)",
+                    "Administer Heparin 4000U IV bolus now",
+                    "Push Amiodarone 300mg IV for refractory arrhythmias",
+                    "Start targeted temperature management protocols"
+                ])
+            elif bundle == "Stroke":
+                dynamic_orders.extend([
+                    "HOLD all antiplatelets/anticoagulants pending CT Head",
+                    "Prepare Tenecteplase (TNK) bolus at bedside",
+                    "Strict BP Control: Push Labetalol (Maintain SBP < 185)",
+                    "Activate Neuro-IR for emergency thrombectomy"
+                ])
+            elif bundle == "Maternal":
+                dynamic_orders.extend([
+                    "Push IV Labetalol / Hydralazine (Hypertensive Crisis)",
+                    "Initiate MgSO4 4g IV Bolus (Eclampsia Protocol)",
+                    "Activate Obstetric Massive Hemorrhage Protocol",
+                    "Prepare Emergency C-Section / Notify NICU"
+                ])
+            elif bundle in ["Pediatric", "Neonatal"]:
+                dynamic_orders.extend([
+                    "Prepare Level 3 Neonatal Resuscitation warmer",
+                    "Push 20cc/kg normal saline bolus immediately",
+                    "Prepare intubation equipment (Pediatric sizing)",
+                    "Administer broad-spectrum antibiotics (Sepsis alert)"
+                ])
+            else: # Trauma / GI / Renal / Generic Critical
+                dynamic_orders.extend([
+                    "Administer TXA 1g IV Push immediately",
+                    "Initiate Massive Transfusion Protocol (Uncrossmatched O-Neg)",
+                    "Permissive Hypotension Protocol (Target SBP 90)",
+                    "Push 1 Amp IV Sodium Bicarbonate",
+                    "HOLD all IV fluids (Risk of pulmonary edema)"
+                ])
+            
+            # Always allow the doctor to write a custom order
+            dynamic_orders.append("Other / Custom Order (Type below)")
+
             col_order, col_send = st.columns([3, 1])
             with col_order:
-                standard_orders = [
-                    "Select Order...",
-                    "Administer TXA 1g IV Push immediately",
-                    "Hold all blood thinners/anticoagulants",
-                    "Push 1 Amp Bicarbonate",
-                    "Begin permissive hypotension protocol (Target SBP 90)",
-                    "Initiate Massive Transfusion Protocol prep on arrival"
-                ]
-                selected_order = st.selectbox("Standardized Counter-Orders", standard_orders, label_visibility="collapsed")
+                selected_order = st.selectbox("Standardized Counter-Orders", dynamic_orders, label_visibility="collapsed")
+                
+                custom_order = ""
+                if selected_order == "Other / Custom Order (Type below)":
+                    custom_order = st.text_input("Type Custom Medical Order:", placeholder="E.g., Push 1mg Atropine IV immediately...")
+            
             with col_send:
-                if st.button("📡 Transmit Order", type="primary", use_container_width=True, disabled=(selected_order == "Select Order...")):
+                # Add spacing to align the button if the custom text box opens
+                if selected_order == "Other / Custom Order (Type below)":
+                    st.markdown("<br>", unsafe_allow_html=True) 
+                    
+                # Determine final payload
+                final_order = custom_order if selected_order == "Other / Custom Order (Type below)" else selected_order
+                
+                # Validation: Don't allow empty sends
+                is_disabled = selected_order == "Select Order..." or (selected_order == "Other / Custom Order (Type below)" and not custom_order.strip())
+                
+                if st.button("📡 Transmit Order", type="primary", use_container_width=True, disabled=is_disabled):
                     if "medical_orders" not in case: case["medical_orders"] = []
                     timestamp = datetime.now().strftime("%H:%M:%S")
                     
                     # Save to the distinct orders list AND the general transit log
-                    case["medical_orders"].append({"time": timestamp, "order": selected_order})
-                    case["transit_log"].append({"time": timestamp, "action": f"[ED COMMAND RECEIVED]: {selected_order}"})
+                    case["medical_orders"].append({"time": timestamp, "order": final_order})
+                    case["transit_log"].append({"time": timestamp, "action": f"[ED COMMAND RECEIVED]: {final_order}"})
                     st.success("Transmitted!")
                     time.sleep(1)
                     st.rerun()
