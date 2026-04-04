@@ -287,6 +287,21 @@ if nav_selection == "REFERRAL INITIATION":
                 if st.button("🚀 Initiate E2EE Transfer & Dispatch Ambulance", type="primary"):
                     selected_idx = next(i for i, r in enumerate(results) if r["facility"] == selected_fac["facility"])
                     
+                    # --- NEW: AUTONOMOUS FLEET ALLOCATION ENGINE ---
+                    ideal_fleet = "ALS" if triage_color == "RED" or meta['severity_index'] >= 0.6 else "BLS"
+                    # Simulate real-world scarcity (State ALS fleet is busy 30% of the time)
+                    als_available = random.choices([True, False], weights=[0.7, 0.3])[0]
+                    
+                    if ideal_fleet == "ALS" and not als_available:
+                        allocated_fleet = "BLS"
+                        fleet_status = "DOWNGRADE_RISK"
+                    elif ideal_fleet == "BLS" and random.random() < 0.15: # 15% chance dispatch misallocates an ALS
+                        allocated_fleet = "ALS"
+                        fleet_status = "RESOURCE_WASTE"
+                    else:
+                        allocated_fleet = ideal_fleet
+                        fleet_status = "OPTIMAL"
+                    
                     st.session_state.active_case = {
                         "patient_name": patient_name, "age": age, "vitals": vitals, "diagnosis": dx,
                         "bundle": bundle, "triage_color": triage_color, "severity_index": meta['severity_index'],
@@ -296,7 +311,8 @@ if nav_selection == "REFERRAL INITIATION":
                         "viable_destinations": results,          
                         "current_dest_index": selected_idx,      
                         "rejection_log": [],
-                        "medical_orders": []                    
+                        "medical_orders": [],
+                        "fleet": {"ideal": ideal_fleet, "allocated": allocated_fleet, "status": fleet_status}
                     }
                     st.session_state.transfer_initiated = True
                     st.session_state.patient_accepted = False
@@ -317,7 +333,7 @@ I - IDENTIFICATION:
 Patient: {case['patient_name']}, {case['age']} Y/O
 
 S - SITUATION:
-Emergency dispatch to {case['destination']['facility']}. 
+Emergency dispatch to {case['destination']['facility']} via [ {case['fleet']['allocated']} AMBULANCE ]. 
 Provisional DX: {case['diagnosis']}
 
 B - BACKGROUND: Bundle: {case['bundle']}. Rationale: {case.get('rationale', 'N/A')}
@@ -331,11 +347,6 @@ SpO2: {case['vitals']['spo2']}% | Temp: {case['vitals']['temp']}°C | AVPU: {cas
 R - RECOMMENDATION:
 {('ED STABILIZATION ONLY REQUIRED DUE TO ZERO ICU BEDS.' if case['destination']['scoring_details'].get('gate_capacity') == 'WARNING_ED_STABILIZATION_ONLY' else 'Prepare critical care receiving bay.')}
 """
-            st.code(isbar_text, language="markdown")
-            col_a, col_b = st.columns(2)
-            col_a.button("⬇️ Download Official PDF")
-            col_b.button("🔗 Share to Secure Network")
-
 # ==========================================
 # VIEW 2: ACTIVE TRANSIT TELEMETRY
 # ==========================================
@@ -352,7 +363,13 @@ elif nav_selection == "ACTIVE TRANSIT TELEMETRY":
             if "transit_log" not in case:
                 case["transit_log"] = []
 
-            st.error(f"🚑 PRIORITY {case['triage_color']} EN ROUTE TO {dest['facility'].upper()}")
+            fleet_type = case['fleet']['allocated']
+            st.error(f"🚑 PRIORITY {case['triage_color']} EN ROUTE TO {dest['facility'].upper()} [{fleet_type} UNIT]")
+            
+            if case['fleet']['status'] == "DOWNGRADE_RISK":
+                st.warning("⚠️ **FLEET WARNING:** Patient acuity requires ALS. Due to state shortage, BLS allocated. Proceed with maximum caution.")
+            elif case['fleet']['status'] == "RESOURCE_WASTE":
+                st.info("ℹ️ **FLEET NOTICE:** Patient is stable, but ALS was autonomously dispatched due to BLS regional shortage.")
             
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("Topography-Adjusted ETA", f"{dest['eta']} min")
@@ -735,22 +752,32 @@ elif nav_selection == "STATE COMMAND & AI":
                         safe_records = []
                         for r in raw_data:
                             had_intervention = random.choice([True, False])
-                            base_mortality = mortality_risk(
-                                    r["triage"]["decision"]["score_details"].get("severity_index", 0.0),
-                                    r["transport"]["eta_min"], pathology=r["provisionalDx"]["case_type"]
-                                )
+                            sev_idx = r["triage"]["decision"]["score_details"].get("severity_index", 0.0)
+                            base_mortality = mortality_risk(sev_idx, r["transport"]["eta_min"], pathology=r["provisionalDx"]["case_type"])
                             final_mortality = base_mortality * random.uniform(0.75, 0.85) if had_intervention else base_mortality
+
+                            # Synthetic Fleet Allocation Logic
+                            ideal = "ALS" if r["triage"]["decision"]["color"] == "RED" or sev_idx >= 0.6 else "BLS"
+                            als_avail = random.choices([True, False], weights=[0.75, 0.25])[0]
+                            
+                            if ideal == "ALS" and not als_avail:
+                                mission_type = "Risk: BLS deployed for Critical Case"
+                            elif ideal == "BLS" and random.random() < 0.15:
+                                mission_type = "Waste: ALS deployed for Stable Case"
+                            else:
+                                mission_type = "Optimal: ALS for Critical" if ideal == "ALS" else "Optimal: BLS for Stable"
 
                             safe_records.append({
                                 "timestamp": r["times"]["first_contact_ts"], "bundle": r["provisionalDx"]["case_type"],
                                 "triage_color": r["triage"]["decision"]["color"],
-                                "severity_index": r["triage"]["decision"]["score_details"].get("severity_index", 0.0),
+                                "severity_index": sev_idx,
                                 "eta_min": r["transport"]["eta_min"], "facility_ownership": r["facility_ownership"],
                                 "dest_facility": r["dest"],
                                 "pre_hospital_intervention": "Yes" if had_intervention else "No",
                                 "mortality_risk": min(99.9, final_mortality),
                                 "origin_district": random.choice(["East Khasi Hills", "West Garo Hills", "Jaintia Hills", "Ri-Bhoi", "South Garo Hills"]),
-                                "status": random.choices(["Accepted", "Diverted"], weights=[0.78, 0.22])[0]
+                                "status": random.choices(["Accepted", "Diverted"], weights=[0.78, 0.22])[0],
+                                "mission_type": mission_type
                             })
                         st.session_state.synthetic_data = pd.DataFrame(safe_records)
                         st.success("Data injected successfully.")
@@ -788,16 +815,28 @@ elif nav_selection == "STATE COMMAND & AI":
                     st.markdown("**Fleet Utilization Matrix (ALS vs BLS)**")
                     st.caption("Tracking resource misallocation to optimize fleet deployment costs.")
                     
-                    fleet_usage = pd.DataFrame({
-                        "Mission Type": ["Appropriate ALS Use (Critical)", "Appropriate BLS Use (Stable)", "Waste: ALS used for BLS Case", "Risk: BLS used for ALS Case"],
-                        "Volume": [int(len(df_analytics)*0.3), int(len(df_analytics)*0.5), int(len(df_analytics)*0.15), int(len(df_analytics)*0.05)]
-                    })
-                    st.altair_chart(alt.Chart(fleet_usage).mark_bar().encode(
-                        x='Volume:Q',
-                        y=alt.Y('Mission Type:N', sort='-x'),
-                        color=alt.condition(alt.datum.Volume < int(len(df_analytics)*0.2), alt.value('#ff4b4b'), alt.value('#00cc96'))
-                    ).properties(height=200), use_container_width=True)
-
+                    if 'mission_type' in df_analytics.columns:
+                        fleet_usage = df_analytics['mission_type'].value_counts().reset_index()
+                        fleet_usage.columns = ['Mission Type', 'Volume']
+                        
+                        st.altair_chart(alt.Chart(fleet_usage).mark_bar().encode(
+                            x='Volume:Q',
+                            y=alt.Y('Mission Type:N', sort='-x'),
+                            color=alt.condition(
+                                alt.datum['Mission Type'].field == 'Mission Type', 
+                                alt.condition(
+                                    alt.datum['Mission Type'] == 'Risk: BLS deployed for Critical Case', 
+                                    alt.value('#ff4b4b'),  # Red for risk
+                                    alt.condition(
+                                        alt.datum['Mission Type'] == 'Waste: ALS deployed for Stable Case',
+                                        alt.value('#faca2b'), # Yellow for waste
+                                        alt.value('#00cc96')  # Green for optimal
+                                    )
+                                ),
+                                alt.value('#00cc96')
+                            )
+                        ).properties(height=200), use_container_width=True)
+                        
             with tab_geo:
                 st.subheader("Statewide Epidemiology & Anomaly Detection")
                 
