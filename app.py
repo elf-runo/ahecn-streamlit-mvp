@@ -644,7 +644,7 @@ R - RECOMMENDATION: {('ED STABILIZATION ONLY DUE TO ZERO ICU BEDS.' if dest['sco
                     if st.button("Register Patient Stabilized & Notify Referring Doctor"):
                         st.success("✅ Outcome securely recorded. Automated feedback ping sent to referring clinician confirming successful stabilization.")
 
-    with tab_analytics:
+with tab_analytics:
         st.subheader("🏥 Institutional Operations Analytics")
         
         if st.session_state.user_role == "State Health Command (Macro View)":
@@ -653,11 +653,22 @@ R - RECOMMENDATION: {('ED STABILIZATION ONLY DUE TO ZERO ICU BEDS.' if dest['sco
             active_hospital = st.session_state.user_role.replace("Director: ", "")
             st.success(f"🔐 **DATA SILO ACTIVE:** Displaying isolated operational telemetry for {active_hospital} only.")
             
+            # --- DETERMINISTIC DATA ENGINE (Creates unique, persistent profiles per hospital) ---
+            import hashlib
+            h_seed = int(hashlib.md5(active_hospital.encode()).hexdigest(), 16) % 10000
+            rng = random.Random(h_seed)
+            
+            # Generate hospital-specific baseline volumes
+            base_vol = rng.randint(110, 450)
+            div_vol = rng.randint(5, int(base_vol * 0.15))
+            delay_mins = round(rng.uniform(1.2, 8.5), 1)
+            t2b_mins = round(rng.uniform(4.5, 14.0), 1)
+            
             kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-            kpi1.metric(f"Accepted at {active_hospital}", "142", "+12% MoM")
-            kpi2.metric("Local Diversions", "18", "-2% MoM", delta_color="inverse")
-            kpi3.metric("Fleet Arrival Delay (SLA)", "+4.2 mins", "+1.1 mins", delta_color="inverse")
-            kpi4.metric("Avg Triage-to-Bed Time", "8.5 mins", "-1.5 mins")
+            kpi1.metric(f"Accepted at {active_hospital}", f"{base_vol}", f"+{rng.randint(2, 18)}% MoM")
+            kpi2.metric("Local Diversions", f"{div_vol}", f"{rng.choice(['+', '-'])}{rng.randint(1, 5)}% MoM", delta_color="inverse")
+            kpi3.metric("Fleet Arrival Delay (SLA)", f"+{delay_mins} mins", f"+0.{rng.randint(1, 9)} mins", delta_color="inverse")
+            kpi4.metric("Avg Triage-to-Bed Time", f"{t2b_mins} mins", f"-1.{rng.randint(1, 5)} mins")
             
             st.markdown("---")
             col_chart1, col_chart2 = st.columns(2)
@@ -665,10 +676,13 @@ R - RECOMMENDATION: {('ED STABILIZATION ONLY DUE TO ZERO ICU BEDS.' if dest['sco
             with col_chart1:
                 st.markdown(f"**Local Diversion Autopsy ({active_hospital})**")
                 st.caption("Primary reasons this facility rejected critical transfers.")
-                rejection_data = pd.DataFrame({
-                    "Reason": ["Zero ICU Beds", "Neurosurgeon Unavailable", "CT Scanner Down", "Internal Code Black"],
-                    "Count": [8, 5, 3, 2]
-                })
+                
+                reasons = ["Zero ICU Beds", "Neurosurgeon Unavailable", "CT Scanner Down", "Internal Code Black", "Blood Bank Depleted"]
+                counts = [rng.randint(1, 10) for _ in range(5)]
+                rejection_data = pd.DataFrame({"Reason": reasons, "Count": counts})
+                # Filter out zeros for cleaner charts
+                rejection_data = rejection_data[rejection_data["Count"] > 0]
+                
                 st.altair_chart(alt.Chart(rejection_data).mark_arc(innerRadius=50).encode(
                     theta=alt.Theta(field="Count", type="quantitative"),
                     color=alt.Color(field="Reason", type="nominal"),
@@ -678,16 +692,17 @@ R - RECOMMENDATION: {('ED STABILIZATION ONLY DUE TO ZERO ICU BEDS.' if dest['sco
             with col_chart2:
                 st.markdown("**Inbound Acuity Distribution**")
                 st.caption("Pathology breakdown of cases received this month.")
-                path_data = pd.DataFrame({
-                    "Pathology": ["Cardiac", "Trauma", "Stroke", "Maternal", "Pediatric"],
-                    "Volume": [45, 38, 22, 19, 18]
-                })
+                
+                paths = ["Cardiac", "Trauma", "Stroke", "Maternal", "Pediatric", "Sepsis"]
+                vols = [rng.randint(10, int(base_vol*0.4)) for _ in range(6)]
+                path_data = pd.DataFrame({"Pathology": paths, "Volume": vols})
+                
                 st.altair_chart(alt.Chart(path_data).mark_bar().encode(
                     x=alt.X('Pathology:N', sort='-y'),
                     y='Volume:Q',
-                    color=alt.value('#1f77b4')
+                    color=alt.value('#1f77b4'),
+                    tooltip=["Pathology", "Volume"]
                 ).properties(height=300), use_container_width=True)
-
 # ==========================================
 # VIEW 4: STATE COMMAND & AI
 # ==========================================
