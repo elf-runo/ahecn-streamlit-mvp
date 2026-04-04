@@ -287,15 +287,13 @@ if nav_selection == "REFERRAL INITIATION":
                 if st.button("🚀 Initiate E2EE Transfer & Dispatch Ambulance", type="primary"):
                     selected_idx = next(i for i, r in enumerate(results) if r["facility"] == selected_fac["facility"])
                     
-                    # --- NEW: AUTONOMOUS FLEET ALLOCATION ENGINE ---
                     ideal_fleet = "ALS" if triage_color == "RED" or meta['severity_index'] >= 0.6 else "BLS"
-                    # Simulate real-world scarcity (State ALS fleet is busy 30% of the time)
                     als_available = random.choices([True, False], weights=[0.7, 0.3])[0]
                     
                     if ideal_fleet == "ALS" and not als_available:
                         allocated_fleet = "BLS"
                         fleet_status = "DOWNGRADE_RISK"
-                    elif ideal_fleet == "BLS" and random.random() < 0.15: # 15% chance dispatch misallocates an ALS
+                    elif ideal_fleet == "BLS" and random.random() < 0.15: 
                         allocated_fleet = "ALS"
                         fleet_status = "RESOURCE_WASTE"
                     else:
@@ -347,6 +345,11 @@ SpO2: {case['vitals']['spo2']}% | Temp: {case['vitals']['temp']}°C | AVPU: {cas
 R - RECOMMENDATION:
 {('ED STABILIZATION ONLY REQUIRED DUE TO ZERO ICU BEDS.' if case['destination']['scoring_details'].get('gate_capacity') == 'WARNING_ED_STABILIZATION_ONLY' else 'Prepare critical care receiving bay.')}
 """
+            st.code(isbar_text, language="markdown")
+            col_a, col_b = st.columns(2)
+            col_a.button("⬇️ Download Official PDF")
+            col_b.button("🔗 Share to Secure Network")
+
 # ==========================================
 # VIEW 2: ACTIVE TRANSIT TELEMETRY
 # ==========================================
@@ -764,8 +767,10 @@ elif nav_selection == "STATE COMMAND & AI":
                                 mission_type = "Risk: BLS deployed for Critical Case"
                             elif ideal == "BLS" and random.random() < 0.15:
                                 mission_type = "Waste: ALS deployed for Stable Case"
+                            elif ideal == "ALS":
+                                mission_type = "Optimal: ALS for Critical" 
                             else:
-                                mission_type = "Optimal: ALS for Critical" if ideal == "ALS" else "Optimal: BLS for Stable"
+                                mission_type = "Optimal: BLS for Stable"
 
                             safe_records.append({
                                 "timestamp": r["times"]["first_contact_ts"], "bundle": r["provisionalDx"]["case_type"],
@@ -822,18 +827,17 @@ elif nav_selection == "STATE COMMAND & AI":
                         st.altair_chart(alt.Chart(fleet_usage).mark_bar().encode(
                             x='Volume:Q',
                             y=alt.Y('Mission Type:N', sort='-x'),
-                            color=alt.condition(
-                                alt.datum['Mission Type'].field == 'Mission Type', 
-                                alt.condition(
-                                    alt.datum['Mission Type'] == 'Risk: BLS deployed for Critical Case', 
-                                    alt.value('#ff4b4b'),  # Red for risk
-                                    alt.condition(
-                                        alt.datum['Mission Type'] == 'Waste: ALS deployed for Stable Case',
-                                        alt.value('#faca2b'), # Yellow for waste
-                                        alt.value('#00cc96')  # Green for optimal
-                                    )
-                                ),
-                                alt.value('#00cc96')
+                            color=alt.Color(
+                                'Mission Type:N',
+                                scale=alt.Scale(
+                                    domain=[
+                                        'Risk: BLS deployed for Critical Case', 
+                                        'Waste: ALS deployed for Stable Case', 
+                                        'Optimal: ALS for Critical', 
+                                        'Optimal: BLS for Stable'
+                                    ],
+                                    range=['#ff4b4b', '#faca2b', '#00cc96', '#00cc96']
+                                )
                             )
                         ).properties(height=200), use_container_width=True)
                         
