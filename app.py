@@ -301,6 +301,10 @@ with st.sidebar:
         ],
         label_visibility="collapsed"
     )
+    
+    # THE CRITICAL MISSING LINE: Saving the role to session state!
+    st.session_state.user_role = simulated_role 
+    
     st.markdown("---")
     
     st.subheader("🧭 System Navigation")
