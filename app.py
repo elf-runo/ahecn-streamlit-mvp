@@ -488,8 +488,14 @@ elif nav_selection == "ACTIVE TRANSIT TELEMETRY":
 
             fleet_type = case['fleet']['allocated']
             if is_cab:
-                st.info(f"🚖 **TIER-3 CAB DISPATCHED TO {dest['facility'].upper()}**")
-                st.markdown(f"**Vehicle:** {case['fleet']['vehicle']} ({case['fleet']['plate']}) | **Driver:** {case['fleet']['driver']}")
+                if case['triage_color'] == 'RED':
+                    st.error(f"🚨 **CRITICAL CAB FALLBACK TO {dest['facility'].upper()}**")
+                    st.warning("⚠️ **CONTROL ROOM OVERRIDE:** This is a RED Category case in a civilian vehicle. Telemetry and hospital handover are now locked and actively managed by State Dispatch.")
+                    st.markdown(f"**Vehicle:** {case['fleet']['vehicle']} ({case['fleet']['plate']})")
+                else:
+                    st.info(f"🚖 **TIER-3 CAB DISPATCHED TO {dest['facility'].upper()}**")
+                    st.markdown(f"**Vehicle:** {case['fleet']['vehicle']} ({case['fleet']['plate']}) | **Driver:** {case['fleet']['driver']}")
+                    st.caption("Standard transport. No ED pre-alert required.")
             else:
                 st.error(f"🚑 PRIORITY {case['triage_color']} EN ROUTE TO {dest['facility'].upper()} [{fleet_type} UNIT]")
                 st.markdown(f"**Unit Details:** {case['fleet']['vehicle']} ({case['fleet']['plate']}) | **Pilot:** {case['fleet']['driver']} | **Lead EMT:** {case['fleet']['emt']}")
@@ -564,21 +570,25 @@ elif nav_selection == "RECEIVING HOSPITAL BAY":
 
     with tab_active:
         with st.container(border=True):
-            if not st.session_state.active_case:
-                st.info("ED Bay Clear. No incoming transfers.")
+            case = st.session_state.get('active_case')
+            
+            # THE NEW VISIBILITY GATE: Hide cabs unless they are RED
+            if not case or (case['fleet']['allocated'] == 'CAB' and case['triage_color'] != 'RED'):
+                st.info("ED Bay Clear. No incoming critical transfers.")
             else:
-                case = st.session_state.active_case
                 dest = case["destination"]
                 dest_name = dest['facility']
 
                 st.success(f"🏥 **SECURE TERMINAL ACTIVE:** YOU ARE VIEWING AS **{dest_name.upper()}**")
                 st.markdown("---")
-
-                # Enhanced Inbound Fleet Visibility
+                
                 is_cab = (case['fleet']['allocated'] == 'CAB')
+                
+                # If it's a cab, it means it's a RED case (due to the gate above)
                 if is_cab:
-                    st.warning(f"🚖 **INCOMING TIER-3 CAB: ETA {dest['eta']} mins**")
-                    st.markdown(f"**Vehicle:** {case['fleet']['vehicle']} ({case['fleet']['plate']}) | **Driver:** {case['fleet']['driver']}")
+                    st.error(f"🚨 **CRITICAL SCOOP & RUN ALERT: ETA {dest['eta']} mins**")
+                    st.markdown(f"**Vehicle:** {case['fleet']['vehicle']} ({case['fleet']['plate']}) | **Status:** Un-resuscitated transit.")
+                    st.warning("📡 **COMMUNICATION ROUTING:** Driver comms disabled. Handover and updates are being actively managed by State Control Room.")
                 else:
                     st.error(f"🚑 **INCOMING PRIORITY {case['triage_color']} AMBULANCE: ETA {dest['eta']} mins**")
                     st.markdown(f"**Unit:** {case['fleet']['vehicle']} ({case['fleet']['plate']}) | **Pilot:** {case['fleet']['driver']} | **Lead EMT:** {case['fleet']['emt']}")
