@@ -606,13 +606,44 @@ elif nav_selection == "RECEIVING HOSPITAL BAY":
                 if not st.session_state.patient_accepted:
                     st.markdown("### Decision Matrix")
                     col_acc, col_rej = st.columns(2)
+
                     with col_acc:
                         if st.button("✅ Acknowledge & Accept Patient", type="primary", use_container_width=True):
                             st.session_state.patient_accepted = True
                             st.rerun()
+
                     with col_rej:
-                        if st.button("❌ Reject & Trigger AI Reroute", use_container_width=True):
-                            st.error("Rerouting functionality active...")
+                        with st.expander("❌ Reject & Trigger AI Reroute"):
+                            current_idx = case.get("current_dest_index", 0)
+                            viable_list = case.get("viable_destinations", [])
+                            
+                            # Show the doctor exactly where the AI will send the patient next
+                            if current_idx + 1 < len(viable_list):
+                                next_dest = viable_list[current_idx + 1]
+                                st.info(f"**AI Fallback Target:** If you divert this case, the AI will immediately reroute to **{next_dest['facility']}** (ETA: {next_dest['eta']} mins).")
+                            else:
+                                st.error("**AI Fallback Target:** ZERO viable facilities remaining. Rejecting forces on-site stabilization.")
+
+                            # The Restored Reason Dropdown
+                            reject_reason = st.selectbox(
+                                "Standardized Reason for Diversion",
+                                ["Select Reason...", "Critical Care Beds Suddenly Full (Surge)", "Required Specialist Scrubbed In / Unavailable", "Hardware/Equipment Failure (e.g., CT Down)", "Facility Currently on State Diversion Status"]
+                            )
+                            
+                            if st.button("Confirm Diversion", type="primary", disabled=reject_reason == "Select Reason..."):
+                                # Log the rejection for the Diversion Audit trail
+                                case["rejection_log"].append({"facility": dest_name, "reason": reject_reason, "time": datetime.now().strftime("%H:%M:%S")})
+                                
+                                # Execute the AI Reroute
+                                if current_idx + 1 < len(viable_list):
+                                    next_dest = viable_list[current_idx + 1]
+                                    case["destination"] = next_dest
+                                    case["current_dest_index"] = current_idx + 1
+                                    st.success(f"Diverting. AI locking onto {next_dest['facility']}...")
+                                    time.sleep(1.5)
+                                    st.rerun()
+                                else:
+                                    st.error("CRITICAL: Zero viable fallback facilities remaining. Reverting to On-Site ED Stabilization Command.")
                 else:
                     st.success("✅ Patient accepted. Telemetry linked to ED monitors.")
 
