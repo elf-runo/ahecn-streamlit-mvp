@@ -510,7 +510,12 @@ elif nav_selection == "ACTIVE TRANSIT TELEMETRY":
 elif nav_selection == "RECEIVING HOSPITAL BAY":
     st.header("Emergency Department Receiving Board")
 
-    tab_active, tab_analytics = st.tabs(["🚨 Active Receiving Board", "📊 ED Operations Analytics"])
+    # --- THREE-TAB UI FOR CLINICAL COMPLETION ---
+    tab_active, tab_analytics, tab_outcomes = st.tabs([
+        "🚨 Active Receiving Board", 
+        "📊 ED Operations Analytics",
+        "🗃️ Clinical Milestones"
+    ])
 
     with tab_active:
         with st.container(border=True):
@@ -662,8 +667,8 @@ R - RECOMMENDATION: {('ED STABILIZATION ONLY DUE TO ZERO ICU BEDS.' if dest['sco
                     st.success("✅ Patient accepted. Telemetry linked to ED monitors.")
                     st.markdown("---")
                     st.subheader("🔄 Close the Clinical Loop")
-                    if st.button("Register Patient Stabilized & Notify Referring Doctor"):
-                        st.success("✅ Outcome securely recorded. Automated feedback ping sent to referring clinician confirming successful stabilization.")
+                    if st.button("Register Patient & Trigger AI Milestone Timers"):
+                        st.success("✅ Outcome securely recorded. AI has engaged the 24-Hour Resuscitation Check and Pathology ALOS Timers.")
 
     with tab_analytics:
         st.subheader("🏥 Institutional Operations Analytics")
@@ -674,11 +679,9 @@ R - RECOMMENDATION: {('ED STABILIZATION ONLY DUE TO ZERO ICU BEDS.' if dest['sco
             active_hospital = st.session_state.user_role.replace("Director: ", "")
             st.success(f"🔐 **DATA SILO ACTIVE:** Displaying isolated operational telemetry for {active_hospital} only.")
             
-            # --- DETERMINISTIC DATA ENGINE (Creates unique, persistent profiles per hospital) ---
             h_seed = int(hashlib.md5(active_hospital.encode()).hexdigest(), 16) % 10000
             rng = random.Random(h_seed)
             
-            # Generate hospital-specific baseline volumes
             base_vol = rng.randint(110, 450)
             div_vol = rng.randint(5, int(base_vol * 0.15))
             delay_mins = round(rng.uniform(1.2, 8.5), 1)
@@ -700,7 +703,6 @@ R - RECOMMENDATION: {('ED STABILIZATION ONLY DUE TO ZERO ICU BEDS.' if dest['sco
                 reasons = ["Zero ICU Beds", "Neurosurgeon Unavailable", "CT Scanner Down", "Internal Code Black", "Blood Bank Depleted"]
                 counts = [rng.randint(1, 10) for _ in range(5)]
                 rejection_data = pd.DataFrame({"Reason": reasons, "Count": counts})
-                # Filter out zeros for cleaner charts
                 rejection_data = rejection_data[rejection_data["Count"] > 0]
                 
                 st.altair_chart(alt.Chart(rejection_data).mark_arc(innerRadius=50).encode(
@@ -723,6 +725,52 @@ R - RECOMMENDATION: {('ED STABILIZATION ONLY DUE TO ZERO ICU BEDS.' if dest['sco
                     color=alt.value('#1f77b4'),
                     tooltip=["Pathology", "Volume"]
                 ).properties(height=300), use_container_width=True)
+
+    with tab_outcomes:
+        st.subheader("🗃️ Clinical Milestone & Outcome Reconciliation")
+        
+        if st.session_state.user_role == "State Health Command (Macro View)":
+            st.warning("⚠️ **ACCESS DENIED:** Patient-level outcome logging is restricted to Institutional Staff to protect PHI.")
+        else:
+            st.markdown("To measure pre-hospital efficacy and state network capacity, please clear the pending milestones below. *(Note: Duty officers receive 1-click WhatsApp 'Magic Links' to log these asynchronously).*")
+            
+            active_hospital = st.session_state.user_role.replace("Director: ", "")
+            h_seed = int(hashlib.md5(active_hospital.encode()).hexdigest(), 16) % 10000
+            rng = random.Random(h_seed + 3) 
+            
+            col_q1, col_q2 = st.columns(2)
+            
+            with col_q1:
+                st.markdown("### ⏱️ 24-Hour Stabilization Check")
+                st.caption("Assessing Pre-Hospital & ED Resuscitation Efficacy")
+                
+                for i in range(2):
+                    with st.container(border=True):
+                        st.markdown(f"**ID: AHECN-24H-{rng.randint(100,999)}** | {random.choice(['Severe Trauma', 'STEMI', 'Stroke'])}")
+                        st.caption("Arrived: ~24 Hours Ago")
+                        b1, b2, b3 = st.columns(3)
+                        if b1.button("🟢 Stabilized / Admitted", key=f"m1_a_{i}", use_container_width=True):
+                            st.success("Logged: Platform Routing Successful.")
+                        if b2.button("🔴 Deceased in ED", key=f"m1_d_{i}", type="primary", use_container_width=True):
+                            st.error("Logged: 24h Mortality Logged.")
+                        if b3.button("↪️ Re-Referred (Bounce)", key=f"m1_r_{i}", use_container_width=True):
+                            st.warning("Logged: Patient required higher center.")
+
+            with col_q2:
+                st.markdown("### 🛏️ ALOS Disposition Check")
+                st.caption("Assessing Resource Utilization & Final Outcome")
+                
+                for i in range(2):
+                    with st.container(border=True):
+                        st.markdown(f"**ID: AHECN-ALOS-{rng.randint(100,999)}** | {random.choice(['Maternal Hemorrhage', 'Pediatric Resp'])}")
+                        st.caption(f"Arrived: {rng.randint(3, 8)} Days Ago (ALOS Exceeded)")
+                        b1, b2, b3 = st.columns(3)
+                        if b1.button("🟢 Discharged Home", key=f"m2_d_{i}", use_container_width=True):
+                            st.success("Logged: Successful Discharge.")
+                        if b2.button("🟡 Still Admitted", key=f"m2_s_{i}", use_container_width=True):
+                            st.info("Logged: Timer extended by 72h.")
+                        if b3.button("🔴 Deceased in ICU", key=f"m2_x_{i}", type="primary", use_container_width=True):
+                            st.error("Logged: Late-stage mortality.")
 
 # ==========================================
 # VIEW 4: STATE COMMAND & AI
@@ -880,37 +928,46 @@ elif nav_selection == "STATE COMMAND & AI":
                 st.dataframe(anomaly_data, use_container_width=True, hide_index=True)
 
             with tab_perf:
-                st.subheader("Institutional Performance & Quality Assurance")
+                st.subheader("Platform Efficacy & Institutional Quality Assurance")
                 
+                c1, c2, c3 = st.columns(3)
+                c1.metric("24-Hour Resuscitation Survival", "89.4%", "+4.2% Post-AHECN Launch")
+                c2.metric("Statewide ALOS Compliance", "72%", "28% Bed-Blocking Rate", delta_color="inverse")
+                c3.metric("Secondary Re-Referral (Bounce) Rate", "6.8%", "114 Unnecessary Transfers", delta_color="inverse")
+
+                st.markdown("---")
                 col_p1, col_p2 = st.columns(2)
+                
                 with col_p1:
-                    st.markdown("**Statewide Institutional Leaderboard (Top 5)**")
-                    st.caption("Ranked by Acceptance Rate and SLA Reliability.")
+                    st.markdown("**Statewide Institutional Leaderboard**")
+                    st.caption("Ranked by Acceptance, 24H Survival, and Low Bounce Rates.")
                     perf_data = pd.DataFrame({
-                        "Institution": ["NEIGRIHMS", "Woodland Hospital", "Bethany Hospital", "Civil Hosp Shillong", "Tura Civil Hosp"],
+                        "Institution": ["NEIGRIHMS", "Woodland Hosp", "Bethany Hosp", "Civil Hosp Shillong", "Tura Civil Hosp"],
                         "Sector": ["Govt", "Private", "Private", "Govt", "Govt"],
                         "Acceptance %": ["94%", "88%", "85%", "78%", "71%"],
-                        "Avg Handover Delay": ["4.2m", "6.1m", "6.5m", "9.4m", "11.2m"]
+                        "24H Survival": ["92%", "89%", "87%", "81%", "76%"],
+                        "Bounce Rate (Re-Referred)": ["1.2%", "3.4%", "4.1%", "12.5%", "18.2%"]
                     })
                     st.dataframe(perf_data, use_container_width=True, hide_index=True)
                 
                 with col_p2:
-                    st.markdown("**Rejection Rates by District & Sector**")
-                    st.caption("Identifying regional failure points between Public and Private infrastructure.")
-                    rej_data = pd.DataFrame({
-                        "District": ["East Khasi", "East Khasi", "West Garo", "West Garo", "Jaintia", "Jaintia"],
-                        "Sector": ["Govt", "Private", "Govt", "Private", "Govt", "Private"],
-                        "Rejection Rate %": [12, 18, 41, 22, 35, 15]
-                    })
-                    rej_chart = alt.Chart(rej_data).mark_bar().encode(
-                        x=alt.X('District:N'),
-                        y=alt.Y('Rejection Rate %:Q'),
-                        color=alt.Color('Sector:N', scale=alt.Scale(domain=['Govt', 'Private'], range=['#1f77b4', '#ff7f0e'])),
-                        xOffset='Sector:N'
-                    )
-                    st.altair_chart(rej_chart.properties(height=250), use_container_width=True)
+                    st.markdown("**Mortality Shift Analysis (AHECN Efficacy)**")
+                    st.caption("Tracking when mortalities occur to validate Pre-Hospital platform success.")
                     
-                st.info("💡 **Governance Insight:** The data reveals a critical failure point in **West Garo Hills**, where Government facilities are rejecting 41% of cases, forcing reliance on Private institutions. Meanwhile, NEIGRIHMS maintains a 94% acceptance rate, proving high efficiency in East Khasi Hills.")
+                    mortality_shift = pd.DataFrame({
+                        "Phase": ["< 24h (Pre-Hospital/ED Failure)", "> 24h (ICU/Ward Complication)"],
+                        "Pre-AHECN OS": [65, 35],
+                        "Post-AHECN OS": [22, 78]
+                    }).melt(id_vars="Phase", var_name="Era", value_name="Percentage of Total Mortalities")
+                    
+                    shift_chart = alt.Chart(mortality_shift).mark_bar().encode(
+                        x=alt.X('Percentage of Total Mortalities:Q', stack='normalize', axis=alt.Axis(format='%')),
+                        y=alt.Y('Era:N', sort=['Pre-AHECN OS', 'Post-AHECN OS']),
+                        color=alt.Color('Phase:N', scale=alt.Scale(domain=['< 24h (Pre-Hospital/ED Failure)', '> 24h (ICU/Ward Complication)'], range=['#ff4b4b', '#5c5c5c']))
+                    ).properties(height=200)
+                    st.altair_chart(shift_chart, use_container_width=True)
+                    
+                st.info("💡 **Policy Governance Insight:** The Platform has successfully shifted mortality risk. Prior to this software, 65% of deaths happened in the first 24 hours (ambulances getting lost, wrong hospitals). Now, 24-hour survival is up to 89.4%. However, **Tura Civil Hospital** shows an 18.2% 'Bounce Rate', indicating they are actively accepting critical patients they lack the infrastructure to treat, requiring targeted capacity audits rather than punitive action.")
 
             with tab_econ:
                 st.subheader("Macro Health Economics & Fiscal Governance")
