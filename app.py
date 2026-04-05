@@ -15,50 +15,121 @@ st.set_page_config(
 )
 
 # ==========================================
-# 🎨 ENTERPRISE UI/UX CSS INJECTION
+# 🎨 MCECN BRANDING & UI/UX CSS INJECTION
 # ==========================================
 st.markdown("""
 <style>
     /* Global App Background & Typography */
     .stApp {
-        background-color: #F5F7FB;
+        background-color: #F8FAFC;
         font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    
+    /* Top-level spacing adjustment */
+    .block-container {
+        padding-top: 2rem !important;
+        padding-bottom: 2rem !important;
+    }
+    
+    /* --- THE MCECN GLOBAL BRAND HEADER --- */
+    .mcecn-header {
+        background: linear-gradient(135deg, #0F172A 0%, #1E3A8A 100%);
+        padding: 1.8rem 2.5rem;
+        border-radius: 16px;
+        color: white;
+        margin-bottom: 2rem;
+        box-shadow: 0 10px 30px -5px rgba(30, 58, 138, 0.4);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .mcecn-title-wrapper {
+        display: flex;
+        flex-direction: column;
+    }
+    .mcecn-title {
+        font-size: 2.8rem;
+        font-weight: 900;
+        margin: 0;
+        line-height: 1.1;
+        letter-spacing: 1.5px;
+        background: linear-gradient(to right, #48BBEA, #FFFFFF);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+    .mcecn-subtitle {
+        font-size: 1.05rem;
+        font-weight: 500;
+        color: #94A3B8;
+        margin: 5px 0 0 0;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+    }
+    .mcecn-status {
+        background: rgba(6, 182, 212, 0.15);
+        border: 1px solid rgba(6, 182, 212, 0.4);
+        color: #22D3EE;
+        padding: 0.6rem 1.2rem;
+        border-radius: 50px;
+        font-weight: 700;
+        font-size: 0.9rem;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        letter-spacing: 1px;
+    }
+    
+    /* CSS Animation for Live Pulse Indicator */
+    .pulse-dot {
+        height: 10px;
+        width: 10px;
+        background-color: #22D3EE;
+        border-radius: 50%;
+        display: inline-block;
+        box-shadow: 0 0 10px #22D3EE;
+        animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+        0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 211, 238, 0.7); }
+        70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(34, 211, 238, 0); }
+        100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 211, 238, 0); }
     }
     
     /* Transform Streamlit Containers into Modern EMR Cards */
     [data-testid="stVerticalBlockBorderWrapper"] {
         background-color: #FFFFFF !important;
-        border-radius: 12px !important;
-        border: 1px solid #E5E9F2 !important;
-        box-shadow: 0px 4px 16px rgba(0, 0, 0, 0.04) !important;
-        padding: 1.5rem !important;
-        transition: box-shadow 0.2s ease-in-out;
+        border-radius: 14px !important;
+        border: 1px solid #E2E8F0 !important;
+        box-shadow: 0px 4px 20px rgba(15, 23, 42, 0.04) !important;
+        padding: 1.8rem !important;
+        transition: box-shadow 0.3s ease-in-out, transform 0.3s ease;
     }
     [data-testid="stVerticalBlockBorderWrapper"]:hover {
-        box-shadow: 0px 6px 20px rgba(0, 0, 0, 0.08) !important;
+        box-shadow: 0px 8px 30px rgba(15, 23, 42, 0.08) !important;
     }
 
     /* Sidebar Modernization */
     [data-testid="stSidebar"] {
         background-color: #FFFFFF !important;
-        border-right: 1px solid #E5E9F2 !important;
-        box-shadow: 2px 0px 10px rgba(0, 0, 0, 0.02) !important;
+        border-right: 1px solid #E2E8F0 !important;
+        box-shadow: 4px 0px 15px rgba(0, 0, 0, 0.03) !important;
     }
     
-    /* Primary Gradient Buttons */
+    /* Primary Gradient Buttons (Aegis Blue) */
     button[kind="primary"] {
-        background: linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%) !important;
+        background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%) !important;
         color: white !important;
         border: none !important;
         border-radius: 8px !important;
         font-weight: 600 !important;
-        padding: 0.5rem 1rem !important;
-        box-shadow: 0 4px 6px rgba(37, 99, 235, 0.2) !important;
+        padding: 0.6rem 1.2rem !important;
+        box-shadow: 0 4px 10px rgba(37, 99, 235, 0.25) !important;
         transition: all 0.3s ease !important;
     }
     button[kind="primary"]:hover {
         transform: translateY(-2px) !important;
-        box-shadow: 0 6px 12px rgba(37, 99, 235, 0.3) !important;
+        box-shadow: 0 6px 15px rgba(37, 99, 235, 0.35) !important;
     }
 
     /* Standard/Secondary Buttons */
@@ -66,43 +137,78 @@ st.markdown("""
         border-radius: 8px !important;
         border: 1px solid #CBD5E1 !important;
         color: #334155 !important;
-        font-weight: 500 !important;
+        font-weight: 600 !important;
         background-color: #FFFFFF !important;
+        transition: all 0.2s ease !important;
     }
     button[kind="secondary"]:hover {
-        background-color: #F1F5F9 !important;
+        background-color: #F8FAFC !important;
         border-color: #94A3B8 !important;
+        color: #0F172A !important;
     }
 
     /* Header & Title Colors */
     h1, h2, h3, h4 {
         color: #0F172A !important;
-        font-weight: 700 !important;
+        font-weight: 800 !important;
         letter-spacing: -0.02em !important;
     }
     
-    /* Metric Analytics Styling */
+    /* Metric Analytics Styling (Pulse Cyan & Aegis Blue) */
     [data-testid="stMetricValue"] {
-        color: #1E3A8A !important;
-        font-size: 2.2rem !important;
-        font-weight: 800 !important;
+        color: #0F172A !important;
+        font-size: 2.4rem !important;
+        font-weight: 900 !important;
+        letter-spacing: -1px !important;
+    }
+    [data-testid="stMetricDelta"] {
+        font-weight: 700 !important;
     }
     [data-testid="stMetricLabel"] {
-        font-size: 1rem !important;
+        font-size: 1.05rem !important;
         color: #64748B !important;
-        font-weight: 500 !important;
+        font-weight: 600 !important;
+        text-transform: uppercase;
+        letter-spacing: 1px;
     }
     
     /* Clean up the input boxes */
-    .stTextInput>div>div>input, .stSelectbox>div>div>div {
-        border-radius: 6px !important;
+    .stTextInput>div>div>input, .stSelectbox>div>div>div, .stNumberInput>div>div>input {
+        border-radius: 8px !important;
         border: 1px solid #CBD5E1 !important;
+        background-color: #F8FAFC !important;
+        color: #0F172A !important;
+        font-weight: 500 !important;
+    }
+    .stTextInput>div>div>input:focus, .stSelectbox>div>div>div:focus {
+        border-color: #3B82F6 !important;
+        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2) !important;
     }
     
     /* Information / Alert Pills */
     .stAlert {
-        border-radius: 8px !important;
+        border-radius: 10px !important;
         border: none !important;
+        font-weight: 500 !important;
+    }
+    
+    /* Tab Styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 1rem;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        white-space: pre-wrap;
+        background-color: transparent;
+        border-radius: 8px 8px 0 0;
+        color: #64748B;
+        font-weight: 600;
+        font-size: 1rem;
+    }
+    .stTabs [aria-selected="true"] {
+        color: #1E3A8A !important;
+        border-bottom-color: #1E3A8A !important;
+        border-bottom-width: 3px !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -174,10 +280,14 @@ facilities_df, icd_df = load_datasets_v3()
     
 # --- Sidebar Navigation & RBAC Security ---
 with st.sidebar:
-    st.title("MCECN OS")
-    st.caption("Meghalaya Comprehensive Emergency Care Network v6.5")
+    # Sidebar sleek branding
+    st.markdown("""
+        <div style='padding-bottom: 2rem;'>
+            <h2 style='color: #1E3A8A !important; margin-bottom: 0;'>MCECN OS</h2>
+            <p style='color: #64748B; font-size: 0.85rem; font-weight: 600; margin-top: 0; letter-spacing: 1px;'>ENTERPRISE v7.0</p>
+        </div>
+    """, unsafe_allow_html=True)
     
-    st.markdown("---")
     st.subheader("🔐 Access Control")
     simulated_role = st.selectbox(
         "Simulate Active User Login:",
@@ -188,17 +298,34 @@ with st.sidebar:
             "Director: NEIGRIHMS", 
             "Director: Woodland Hospital", 
             "Director: Bethany Hospital"
-        ]
+        ],
+        label_visibility="collapsed"
     )
-    st.session_state.user_role = simulated_role
     st.markdown("---")
     
+    st.subheader("🧭 System Navigation")
     nav_selection = st.radio(
-        "SYSTEM NAVIGATION",
-        ["REFERRAL INITIATION", "ACTIVE TRANSIT TELEMETRY", "RECEIVING HOSPITAL BAY", "STATE COMMAND & AI"]
+        "Select Module:",
+        ["REFERRAL INITIATION", "ACTIVE TRANSIT TELEMETRY", "RECEIVING HOSPITAL BAY", "STATE COMMAND & AI"],
+        label_visibility="collapsed"
     )
     st.markdown("---")
-    st.caption("🟢 Status: All Systems Operational")
+    st.caption("🟢 Secure Connection Established")
+
+# ==========================================
+# 🌐 GLOBAL BRAND HEADER INJECTION
+# ==========================================
+st.markdown("""
+<div class="mcecn-header">
+    <div class="mcecn-title-wrapper">
+        <h1 class="mcecn-title">MCECN</h1>
+        <p class="mcecn-subtitle">Meghalaya Comprehensive Emergency Care Network</p>
+    </div>
+    <div class="mcecn-status">
+        <span class="pulse-dot"></span> LIVE NETWORK
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
 # ==========================================
 # VIEW 1: REFERRAL INITIATION
@@ -1020,8 +1147,8 @@ elif nav_selection == "STATE COMMAND & AI":
                             y=alt.Y('Total_Trips:Q', title="Total Missions Executed"),
                             color=alt.condition(
                                 alt.datum.Total_Trips > fleet_stats['Total_Trips'].quantile(0.8),
-                                alt.value('#EF4444'), 
-                                alt.value('#2563EB')  
+                                alt.value('#E11D48'), # Critical Crimson
+                                alt.value('#1E3A8A')  # Aegis Blue
                             ),
                             tooltip=['unit_id', 'Total_Trips', 'Critical_Cases']
                         ).properties(height=300)
@@ -1057,7 +1184,7 @@ elif nav_selection == "STATE COMMAND & AI":
                     st.caption("Case volumes mapped against 24-hour cycles to guide shift staffing.")
                     hours = list(range(24))
                     surge_vols = [random.randint(10, 30) if h < 6 or h > 20 else random.randint(40, 100) for h in hours]
-                    st.altair_chart(alt.Chart(pd.DataFrame({"Hour": hours, "Referrals": surge_vols})).mark_area(color="#2563EB", opacity=0.6).encode(
+                    st.altair_chart(alt.Chart(pd.DataFrame({"Hour": hours, "Referrals": surge_vols})).mark_area(color="#06B6D4", opacity=0.6).encode(
                         x=alt.X("Hour:O", title="Hour of Day (24H)"), y=alt.Y("Referrals:Q", title="Volume")
                     ).properties(height=250), use_container_width=True)
                     
@@ -1110,7 +1237,7 @@ elif nav_selection == "STATE COMMAND & AI":
                     shift_chart = alt.Chart(mortality_shift).mark_bar().encode(
                         x=alt.X('Percentage of Total Mortalities:Q', stack='normalize', axis=alt.Axis(format='%')),
                         y=alt.Y('Era:N', sort=['Pre-MCECN OS', 'Post-MCECN OS']),
-                        color=alt.Color('Phase:N', scale=alt.Scale(domain=['< 24h (Pre-Hospital/ED Failure)', '> 24h (ICU/Ward Complication)'], range=['#EF4444', '#94A3B8']))
+                        color=alt.Color('Phase:N', scale=alt.Scale(domain=['< 24h (Pre-Hospital/ED Failure)', '> 24h (ICU/Ward Complication)'], range=['#E11D48', '#94A3B8']))
                     ).properties(height=200)
                     st.altair_chart(shift_chart, use_container_width=True)
                     
@@ -1143,7 +1270,7 @@ elif nav_selection == "STATE COMMAND & AI":
                     ledger_chart = alt.Chart(ledger_data).mark_bar().encode(
                         x=alt.X('sum(mhis_value):Q', title="Total MHIS Value (₹)"),
                         y=alt.Y('routing_path:N', title=""),
-                        color=alt.Color('routing_path:N', scale=alt.Scale(domain=['Govt -> Govt (Retained)', 'Govt -> Private (Leakage)'], range=['#10B981', '#EF4444']), legend=None)
+                        color=alt.Color('routing_path:N', scale=alt.Scale(domain=['Govt -> Govt (Retained)', 'Govt -> Private (Leakage)'], range=['#06B6D4', '#E11D48']), legend=None)
                     ).properties(height=200)
                     st.altair_chart(ledger_chart, use_container_width=True)
 
@@ -1155,7 +1282,7 @@ elif nav_selection == "STATE COMMAND & AI":
                     flight_chart = alt.Chart(flight_data).mark_bar().encode(
                         x=alt.X('sum(mhis_value):Q', title="Leakage (₹)"),
                         y=alt.Y('origin_district:N', sort='-x', title="Origin District"),
-                        color=alt.value('#EF4444')
+                        color=alt.value('#E11D48')
                     ).properties(height=200)
                     st.altair_chart(flight_chart, use_container_width=True)
                     
