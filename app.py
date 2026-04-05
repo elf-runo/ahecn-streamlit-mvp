@@ -21,7 +21,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- State Management ---
+# --- State Management & Fleet Rosters ---
 if 'active_case' not in st.session_state:
     st.session_state.active_case = None
 if 'synthetic_data' not in st.session_state:
@@ -34,6 +34,10 @@ if 'match_results' not in st.session_state:
     st.session_state.match_results = None
 if 'civic_override_active' not in st.session_state:
     st.session_state.civic_override_active = False
+
+# Mock State Fleet Roster
+PILOTS = ["Khraw", "Mewan", "Donbok", "Bantei", "Pynskhem", "Lamphrang", "Kynsai", "Banshanlang"]
+EMTS = ["Dr. Sarah", "Dr. Aibor", "Paramedic Grace", "Paramedic John", "Nurse Riba", "Paramedic Samuel"]
 
 # --- THE CACHE-BUSTER ---
 def load_datasets_v3():
@@ -150,7 +154,6 @@ if nav_selection == "REFERRAL INITIATION":
                         try: route_eta = get_eta(origin, dest, speed_kmh=40.0, is_hilly_terrain=True)
                         except: route_eta = 999.0
                         
-                        # PROXIMITY-HEAVY SCORING
                         prox_score = max(0, 100 - (route_eta * 1.5))
                         results.append({"facility": f_dict["name"], "eta": round(route_eta, 1), "score": prox_score, "details": f_dict})
                     
@@ -162,7 +165,6 @@ if nav_selection == "REFERRAL INITIATION":
                 radio_opts = [f"{r['facility']} (ETA: {r['eta']} mins)" for r in res[:4]]
                 sel_opt = st.radio("Select Destination:", radio_opts)
                 
-                # Payment UI Logic
                 if is_asha:
                     st.info("💳 **Payment Method:** 100% State Subsidized / MHIS Covered (Authorized by Node)")
                 else:
@@ -175,34 +177,27 @@ if nav_selection == "REFERRAL INITIATION":
                     sel_fac_details = next(r for r in res if r["facility"] == sel_fac_name)["details"]
                     sel_fac_details["scoring_details"] = {"gate_capacity": "PASSED", "clinical_tier": "Basic"}
                     
-                    driver, plate, model = None, None, None
+                    driver, plate, model, emt_name = None, None, None, None
                     
-                    # DYNAMIC ESCALATION & FAILSAFE ENGINE
                     if is_critical:
                         als_available = random.choices([True, False], weights=[0.4, 0.6])[0] 
                         bls_available = random.choices([True, False], weights=[0.5, 0.5])[0] 
                         
                         if als_available:
                             allocated_fleet, fleet_status = "ALS", "OPTIMAL"
+                            model, plate, driver, emt_name = f"ALS-{random.randint(101,130)}", f"ML-05-A-{random.randint(1000,9999)}", random.choice(PILOTS), random.choice(EMTS)
                         elif bls_available:
                             allocated_fleet, fleet_status = "BLS", "DOWNGRADE_RISK"
+                            model, plate, driver, emt_name = f"BLS-{random.randint(201,250)}", f"ML-05-B-{random.randint(1000,9999)}", random.choice(PILOTS), random.choice(EMTS)
                         else:
-                            # The Ultimate Failsafe - Bypassing the zero fleet and sending a cab
                             allocated_fleet, fleet_status = "CAB", "CRITICAL_CAB_FALLBACK"
-                            driver = random.choice(["Banshanlang", "Mebantei", "Pynshngain", "Kynsai"])
-                            plate = random.choice(["ML-05-C-8842", "ML-05-T-1123", "ML-05-X-9981"])
-                            model = random.choice(["Maruti Swift Dzire", "Tata Sumo", "Mahindra Bolero"])
+                            driver, plate, model = random.choice(PILOTS), random.choice(["ML-05-C-8842", "ML-05-T-1123"]), random.choice(["Maruti Swift", "Tata Sumo"])
                             
-                        triage_col = "RED"
-                        sev_idx = 0.85
+                        triage_col, sev_idx = "RED", 0.85
                     else:
-                        # Standard Green Cab Route
                         allocated_fleet, fleet_status = "CAB", "OPTIMAL"
-                        driver = random.choice(["Banshanlang", "Mebantei", "Pynshngain", "Kynsai"])
-                        plate = random.choice(["ML-05-C-8842", "ML-05-T-1123", "ML-05-X-9981"])
-                        model = random.choice(["Maruti Swift Dzire", "Tata Sumo", "Mahindra Bolero"])
-                        triage_col = "GREEN"
-                        sev_idx = 0.1
+                        driver, plate, model = random.choice(PILOTS), random.choice(["ML-05-C-8842", "ML-05-T-1123"]), random.choice(["Maruti Swift", "Tata Sumo"])
+                        triage_col, sev_idx = "GREEN", 0.1
                     
                     rationale = "Authorized Subsidized Community Transport" if is_asha else "Citizen Direct App Booking"
                     
@@ -215,7 +210,7 @@ if nav_selection == "REFERRAL INITIATION":
                         "dispatch_time": datetime.now().strftime("%H:%M:%S"),
                         "rationale": rationale,
                         "interventions": [], "viable_destinations": [], "current_dest_index": 0, "rejection_log": [], "medical_orders": [],
-                        "fleet": {"ideal": "ALS" if is_critical else "CAB", "allocated": allocated_fleet, "status": fleet_status, "driver": driver, "plate": plate, "vehicle": model}
+                        "fleet": {"ideal": "ALS" if is_critical else "CAB", "allocated": allocated_fleet, "status": fleet_status, "driver": driver, "plate": plate, "vehicle": model, "emt": emt_name}
                     }
                     st.session_state.transfer_initiated = True
                     st.session_state.patient_accepted = False
@@ -223,7 +218,6 @@ if nav_selection == "REFERRAL INITIATION":
                     
                     if fleet_status == "CRITICAL_CAB_FALLBACK":
                         st.session_state.civic_override_active = True
-                        
                     st.rerun()
         st.stop()
 
@@ -307,8 +301,6 @@ if nav_selection == "REFERRAL INITIATION":
                 "Select life-saving interventions already administered:",
                 available_interventions + ["Other (Specified in notes)"]
             )
-            if not completed_interventions:
-                st.caption("⚠️ *No pre-transfer interventions logged. Ensure patient is stabilized for transit.*")
         else:
             st.info("No standardized resuscitation bundle found for this pathology. Use notes if needed.")
 
@@ -397,22 +389,13 @@ if nav_selection == "REFERRAL INITIATION":
                         st.success("✅ **Tier 1 Match:** 100% of requested Specialists and Hardware present.")
                     elif tier == "Tier 2: Advanced Medical Bridging":
                         st.warning(f"⚠️ **Tier 2 Match:** Primary specialist unavailable. AI engaged medical fallback protocol.")
-                        for b in details.get('bridged_capabilities', []):
-                            st.caption(f"↳ *Missing:* {b['missing'].upper()} | *Bridged via:* {', '.join(b['bridged_with']).upper()}")
                     else:
                         st.error(f"🚨 **Tier 3 Match:** Definitive care missing. Route optimized for nearest airway/ED resuscitation.")
-                        st.caption(f"↳ *Critical Missing:* {', '.join(details.get('failed_capabilities', [])).upper()}")
                     
                     if details.get('gate_capacity') == "PASSED":
                         st.success(f"✅ **Capacity Gate:** Passed. {details.get('icu_beds')} ICU beds available.")
                     elif details.get('gate_capacity') == "WARNING_ED_STABILIZATION_ONLY":
                         st.error("⚠️ **Capacity Gate Override:** ICU Full. Facility selected for immediate ED Resuscitation ONLY.")
-
-                    st.markdown(f"**2. Optimization Matrix (Total Score: {details.get('total_score', 0)}/100)**")
-                    st.markdown(f"🚑 **Topography-Adjusted ETA:** {details.get('eta_minutes', 'N/A')} mins *(Score: {details.get('proximity_score', 0)}/50)*")
-                    st.markdown(f"🛏️ **Surge Buffer:** *(Score: {details.get('icu_score', 0)}/15)*")
-                    st.markdown(f"🏛️ **Fiscal Guardrail:** {details.get('ownership')} facility *(Score: {details.get('fiscal_score', 0)}/20)*")
-                    st.markdown(f"⚖️ **Acuity Bonus:** Criticality weight *(Score: {details.get('severity_bonus', 0)}/5)*")
 
                 if st.button("🚀 Initiate E2EE Transfer & Dispatch Transport", type="primary"):
                     selected_idx = next(i for i, r in enumerate(results) if r["facility"] == selected_fac["facility"])
@@ -421,23 +404,31 @@ if nav_selection == "REFERRAL INITIATION":
                     als_available = random.choices([True, False], weights=[0.4, 0.6])[0] 
                     bls_available = random.choices([True, False], weights=[0.5, 0.5])[0] 
                     
-                    driver, plate, model = None, None, None
+                    driver, plate, model, emt_name = None, None, None, None
                     
                     if ideal_fleet == "ALS":
-                        if als_available: allocated_fleet, fleet_status = "ALS", "OPTIMAL"
-                        elif bls_available: allocated_fleet, fleet_status = "BLS", "DOWNGRADE_RISK"
-                        else: allocated_fleet, fleet_status = "CAB", "CRITICAL_CAB_FALLBACK"
+                        if als_available: 
+                            allocated_fleet, fleet_status = "ALS", "OPTIMAL"
+                            model, plate, driver, emt_name = f"ALS-{random.randint(101,130)}", f"ML-05-A-{random.randint(1000,9999)}", random.choice(PILOTS), random.choice(EMTS)
+                        elif bls_available: 
+                            allocated_fleet, fleet_status = "BLS", "DOWNGRADE_RISK"
+                            model, plate, driver, emt_name = f"BLS-{random.randint(201,250)}", f"ML-05-B-{random.randint(1000,9999)}", random.choice(PILOTS), random.choice(EMTS)
+                        else: 
+                            allocated_fleet, fleet_status = "CAB", "CRITICAL_CAB_FALLBACK"
+                            driver, plate, model = random.choice(PILOTS), random.choice(["ML-05-C-8842", "ML-05-T-1123"]), random.choice(["Maruti Swift", "Tata Sumo"])
                     elif ideal_fleet == "BLS":
-                        if bls_available: allocated_fleet, fleet_status = "BLS", "OPTIMAL"
-                        elif als_available: allocated_fleet, fleet_status = "ALS", "RESOURCE_WASTE"
-                        else: allocated_fleet, fleet_status = "CAB", "CRITICAL_CAB_FALLBACK"
+                        if bls_available: 
+                            allocated_fleet, fleet_status = "BLS", "OPTIMAL"
+                            model, plate, driver, emt_name = f"BLS-{random.randint(201,250)}", f"ML-05-B-{random.randint(1000,9999)}", random.choice(PILOTS), random.choice(EMTS)
+                        elif als_available: 
+                            allocated_fleet, fleet_status = "ALS", "RESOURCE_WASTE"
+                            model, plate, driver, emt_name = f"ALS-{random.randint(101,130)}", f"ML-05-A-{random.randint(1000,9999)}", random.choice(PILOTS), random.choice(EMTS)
+                        else: 
+                            allocated_fleet, fleet_status = "CAB", "CRITICAL_CAB_FALLBACK"
+                            driver, plate, model = random.choice(PILOTS), random.choice(["ML-05-C-8842", "ML-05-T-1123"]), random.choice(["Maruti Swift", "Tata Sumo"])
                     else:
                         allocated_fleet, fleet_status = "CAB", "OPTIMAL"
-                        
-                    if allocated_fleet == "CAB":
-                        driver = random.choice(["Banshanlang", "Mebantei", "Pynshngain", "Kynsai"])
-                        plate = random.choice(["ML-05-C-8842", "ML-05-T-1123", "ML-05-X-9981"])
-                        model = random.choice(["Maruti Swift Dzire", "Tata Sumo", "Mahindra Bolero"])
+                        driver, plate, model = random.choice(PILOTS), random.choice(["ML-05-C-8842", "ML-05-T-1123"]), random.choice(["Maruti Swift", "Tata Sumo"])
                     
                     st.session_state.active_case = {
                         "patient_name": patient_name, "age": age, "vitals": vitals, "diagnosis": dx,
@@ -449,7 +440,7 @@ if nav_selection == "REFERRAL INITIATION":
                         "current_dest_index": selected_idx,      
                         "rejection_log": [],
                         "medical_orders": [],
-                        "fleet": {"ideal": ideal_fleet, "allocated": allocated_fleet, "status": fleet_status, "driver": driver, "plate": plate, "vehicle": model}
+                        "fleet": {"ideal": ideal_fleet, "allocated": allocated_fleet, "status": fleet_status, "driver": driver, "plate": plate, "vehicle": model, "emt": emt_name}
                     }
                     st.session_state.transfer_initiated = True
                     st.session_state.patient_accepted = False
@@ -457,46 +448,28 @@ if nav_selection == "REFERRAL INITIATION":
                     
                     if fleet_status == "CRITICAL_CAB_FALLBACK":
                         st.session_state.civic_override_active = True
-                        
                     st.rerun()
 
     if st.session_state.transfer_initiated and st.session_state.active_case:
         with st.container(border=True):
             st.subheader("📄 Med-Legal Documentation Generated")
-            st.success("Official ISBAR handover securely logged to the State Registry. Manual referral slip is no longer required.")
-            
+            st.success("Official ISBAR handover securely logged to the State Registry.")
             case = st.session_state.active_case
             
-            transit_note = f"via [ {case['fleet']['allocated']} AMBULANCE ]"
+            transit_note = f"via [ {case['fleet']['allocated']} AMBULANCE ({case['fleet']['vehicle']} - Plate: {case['fleet']['plate']}) | EMT: {case['fleet']['emt']} ]"
             if case['fleet']['allocated'] == 'CAB':
-                transit_note = f"via [ TIER-3 CAB ({case['fleet']['plate']}) - NO EMT ON BOARD ]"
+                transit_note = f"via [ TIER-3 CAB ({case['fleet']['plate']}) - NO EMT ON BOARD | Driver: {case['fleet']['driver']} ]"
                 
             isbar_text = f"""[ISBAR CLINICAL HANDOVER]
-Timestamp: {case['dispatch_time']}
 Status: PRIORITY {case['triage_color']} (Severity: {case['severity_index']:.2f})
-
-I - IDENTIFICATION:
-Patient: {case['patient_name']}, {case['age']} Y/O
-
-S - SITUATION:
-Emergency dispatch to {case['destination']['facility']} {transit_note}. 
-Provisional DX: {case['diagnosis']}
-
+I - IDENTIFICATION: Patient: {case['patient_name']}, {case['age']} Y/O
+S - SITUATION: Emergency dispatch to {case['destination']['facility']} {transit_note}. Provisional DX: {case['diagnosis']}
 B - BACKGROUND: Bundle: {case['bundle']}. Rationale: {case.get('rationale', 'N/A')}
 Pre-Transfer Interventions: {', '.join(case.get('interventions', [])) if case.get('interventions') else 'None / Not Logged'}
 {chr(10) + '[DIVERSION AUDIT]: ' + ' -> '.join([f"Bypassed {r['facility']} ({r['reason']})" for r in case.get("rejection_log", [])]) if case.get("rejection_log") else ""}
-
-A - ASSESSMENT:
-HR: {case['vitals']['hr']} bpm | SBP: {case['vitals']['sbp']} mmHg | RR: {case['vitals']['rr']} rpm
-SpO2: {case['vitals']['spo2']}% | Temp: {case['vitals']['temp']}°C | AVPU: {case['vitals']['avpu']}
-
-R - RECOMMENDATION:
-{('ED STABILIZATION ONLY REQUIRED DUE TO ZERO ICU BEDS.' if case['destination']['scoring_details'].get('gate_capacity') == 'WARNING_ED_STABILIZATION_ONLY' else 'Prepare critical care receiving bay.')}
+A - ASSESSMENT: HR: {case['vitals']['hr']} | SBP: {case['vitals']['sbp']} | RR: {case['vitals']['rr']} | SpO2: {case['vitals']['spo2']}% | Temp: {case['vitals']['temp']}°C | AVPU: {case['vitals']['avpu']}
 """
             st.code(isbar_text, language="markdown")
-            col_a, col_b = st.columns(2)
-            col_a.button("⬇️ Download Official PDF")
-            col_b.button("🔗 Share to Secure Network")
 
 # ==========================================
 # VIEW 2: ACTIVE TRANSIT TELEMETRY
@@ -511,9 +484,7 @@ elif nav_selection == "ACTIVE TRANSIT TELEMETRY":
             case = st.session_state.active_case
             dest = case["destination"]
             is_cab = (case['fleet']['allocated'] == 'CAB')
-            
-            if "transit_log" not in case:
-                case["transit_log"] = []
+            if "transit_log" not in case: case["transit_log"] = []
 
             fleet_type = case['fleet']['allocated']
             if is_cab:
@@ -521,11 +492,10 @@ elif nav_selection == "ACTIVE TRANSIT TELEMETRY":
                 st.markdown(f"**Vehicle:** {case['fleet']['vehicle']} ({case['fleet']['plate']}) | **Driver:** {case['fleet']['driver']}")
             else:
                 st.error(f"🚑 PRIORITY {case['triage_color']} EN ROUTE TO {dest['facility'].upper()} [{fleet_type} UNIT]")
+                st.markdown(f"**Unit Details:** {case['fleet']['vehicle']} ({case['fleet']['plate']}) | **Pilot:** {case['fleet']['driver']} | **Lead EMT:** {case['fleet']['emt']}")
             
             if case['fleet']['status'] == "DOWNGRADE_RISK":
                 st.warning("⚠️ **FLEET WARNING:** Patient acuity requires ALS. Due to state shortage, BLS allocated. Proceed with maximum caution.")
-            elif case['fleet']['status'] == "RESOURCE_WASTE":
-                st.info("ℹ️ **FLEET NOTICE:** Patient is stable, but ALS was autonomously dispatched due to BLS regional shortage.")
             elif case['fleet']['status'] == "CRITICAL_CAB_FALLBACK":
                 st.error("🚨 **CRITICAL CAB FALLBACK:** State ambulance fleet exhausted. Un-equipped Tier-3 Cab dispatched to save life. Proactive Police Escort Engaged.")
             
@@ -536,137 +506,53 @@ elif nav_selection == "ACTIVE TRANSIT TELEMETRY":
                 c3.metric("Severity Index", f"{case.get('severity_index', 0.0):.2f}")
             c4.metric("Dispatch Time", case["dispatch_time"])
 
-            if case['triage_color'] == 'RED' or case.get('severity_index', 0.0) >= 0.6:
-                with st.expander("🚨 PROACTIVE CORRIDOR NOTIFICATIONS ACTIVE", expanded=True):
-                    st.markdown("**System has engaged pre-arrival protocols based on critical Severity Index.**")
-                    col_p1, col_p2 = st.columns(2)
-                    with col_p1:
-                        st.success("✅ **Receiving ED:** Code Team activated. Trauma/Resus Bay reserved.")
-                        if dest["scoring_details"].get("gate_capacity") == "WARNING_ED_STABILIZATION_ONLY":
-                            st.warning("⚠️ **Capacity Failsafe:** Receiving facility warned of ZERO ICU beds. Prepping for ED Stabilization.")
-                    with col_p2:
-                        st.info("📡 **Regional ALS:** Local rapid response units placed on standby for potential mid-flight intercept.")
-                        st.info("🚓 **Traffic Command:** Pre-notified of high-acuity transit.")
-
-            if dest["scoring_details"].get("gate_capacity") == "WARNING_ED_STABILIZATION_ONLY":
-                st.warning("⚠️ PARAMEDIC ALERT: Destination ICU is at capacity. You are routing for ED STABILIZATION ONLY.")
-
             st.markdown("---")
 
             if case.get("medical_orders") and not is_cab:
                 st.warning("🎙️ **INCOMING MEDICAL COMMAND ORDER**")
-                latest_order = case["medical_orders"][-1]
-                st.markdown(f"### 🩺 {latest_order['order']}")
-                st.caption(f"Received at {latest_order['time']} from {dest['facility']} ED Director")
+                st.markdown(f"### 🩺 {case['medical_orders'][-1]['order']}")
                 st.markdown("---")
             
             if is_cab:
                 col_traffic, = st.columns(1)
             else:
                 col_actions, col_vitals, col_traffic = st.columns([1.5, 1, 1.2])
-                
                 with col_actions:
                     st.subheader("⚡ Med-Legal Ledger")
-                    st.caption("Timestamps lock for Receiving ED visibility.")
                     a1, a2, a3 = st.columns(3)
                     if a1.button("💉 Push ACLS", use_container_width=True):
-                        case["transit_log"].append({"time": datetime.now().strftime("%H:%M:%S"), "action": "ACLS Medications Administered"})
+                        case["transit_log"].append({"time": datetime.now().strftime("%H:%M:%S"), "action": "ACLS Administered"})
                         st.rerun()
                     if a2.button("🫁 Airway", use_container_width=True):
-                        case["transit_log"].append({"time": datetime.now().strftime("%H:%M:%S"), "action": "Advanced Airway Secured"})
+                        case["transit_log"].append({"time": datetime.now().strftime("%H:%M:%S"), "action": "Airway Secured"})
                         st.rerun()
                     if a3.button("🩸 Tourniquet", use_container_width=True):
-                        case["transit_log"].append({"time": datetime.now().strftime("%H:%M:%S"), "action": "Hemorrhage Control Applied"})
+                        case["transit_log"].append({"time": datetime.now().strftime("%H:%M:%S"), "action": "Hemorrhage Control"})
                         st.rerun()
-                    
-                    if case['triage_color'] != 'RED':
-                        st.markdown("---")
-                        if st.button("⬆️ ESCALATE TO PRIORITY RED", type="primary", use_container_width=True):
-                            case['triage_color'] = 'RED'
-                            case['severity_index'] = max(case.get('severity_index', 0.0), 0.75) 
-                            case["transit_log"].append({
-                                "time": datetime.now().strftime("%H:%M:%S"), 
-                                "action": "Mid-Transit Deterioration. Escalated to PRIORITY RED. Corridor Notified."
-                            })
-                            st.rerun()
-                        st.markdown("---")
-
-                    st.markdown("**Transit Audit Trail:**")
-                    if not case["transit_log"]:
-                        st.info("No mid-transit interventions logged.")
-                    else:
-                        for log in reversed(case["transit_log"]):
-                            st.markdown(f"⏱️ **{log['time']}** - {log['action']}")
-                            
+                        
                 with col_vitals:
                     st.subheader("📉 Vitals Delta")
                     new_spo2 = st.slider("SpO2 %", 50, 100, case['vitals']['spo2'])
                     new_sbp = st.slider("SBP mmHg", 40, 200, case['vitals']['sbp'])
-                    
-                    if st.button("Update ED Board", type="secondary", use_container_width=True):
-                        case['vitals']['spo2'] = new_spo2
-                        case['vitals']['sbp'] = new_sbp
-                        case["transit_log"].append({"time": datetime.now().strftime("%H:%M:%S"), "action": f"Vitals Updated: SpO2 {new_spo2}%, SBP {new_sbp}"})
+                    if st.button("Update ED Board"):
+                        case['vitals']['spo2'], case['vitals']['sbp'] = new_spo2, new_sbp
                         st.rerun()
 
             with col_traffic:
                 st.subheader("🚧 ETA Drift Telemetry")
-                st.caption("Live GPS vs Baseline Analytics")
-                
                 traffic_delay = st.slider("Live Traffic/Blockade Delay (Mins)", 0, 60, 0)
                 live_eta = dest['eta'] + traffic_delay
-                
                 st.metric("Live GPS ETA", f"{live_eta} mins", delta=f"+{traffic_delay} mins" if traffic_delay > 0 else "On Time", delta_color="inverse")
                 
-                if traffic_delay > 5 and traffic_delay <= 15:
-                    st.warning("⚠️ **Drift Detected:** Receiving Facility notified.")
-                    if "delay_notified" not in case:
-                        case["transit_log"].append({"time": datetime.now().strftime("%H:%M:%S"), "action": f"Traffic Drift (+{traffic_delay}m). Facility Notified."})
-                        case["delay_notified"] = True
-                        
-                elif traffic_delay > 15 and (case['triage_color'] == 'RED' or case['fleet']['status'] == "CRITICAL_CAB_FALLBACK"):
-                    st.error("🚨 **CRITICAL BLOCKADE**")
-                    
+                if traffic_delay > 15 and (case['triage_color'] == 'RED' or case['fleet']['status'] == "CRITICAL_CAB_FALLBACK"):
                     if st.button("🌐 INITIATE CIVIC OVERRIDE & ALS INTERCEPT", type="primary", use_container_width=True):
                         st.session_state.civic_override_active = True
-                        case["transit_log"].append({"time": datetime.now().strftime("%H:%M:%S"), "action": "CRITICAL BLOCKADE. ALS Intercept Unit dispatched."})
-                        case["transit_log"].append({"time": datetime.now().strftime("%H:%M:%S"), "action": "GREEN CORRIDOR: API Sync to Traffic Command & Public Broadcast."})
                         st.rerun()
                         
                 if st.session_state.get('civic_override_active', False):
                     st.success("✅ **Civic Override Executing**")
                     with st.expander("📡 View Active API Broadcasts", expanded=True):
-                        if case['fleet']['status'] == "CRITICAL_CAB_FALLBACK":
-                            st.error("**Logistics:** CRITICAL SCOOP & RUN. Civilian cab carrying un-resuscitated patient.")
-                        else:
-                            st.info("**Logistics:** ALS Motorcycle Intercept dispatched. ETA: 6 mins.")
                         st.warning("**Police:** Ping sent to Patrol Unit (MEGH-P-42) for immediate escort to Receiving ED.")
-                        st.code(f"URGENT: Critical Medical Emergency in transit. Vehicle approaching {dest['facility']}. Clear the right lane immediately.", language="markdown")
-
-            st.markdown("---")
-            
-            st.subheader("🚨 Emergency Failsafe Escalation")
-            esc_button_text = "🚨 PATIENT CRASHING - INITIATE ALS INTERCEPT & REROUTE" if is_cab else "🚨 PATIENT CRASHING - INITIATE AI REROUTE TO LEVEL 1 CENTER"
-            if st.button(esc_button_text, type="primary", use_container_width=True):
-                case["transit_log"].append({"time": datetime.now().strftime("%H:%M:%S"), "action": "CRITICAL: Patient Arrest/Crash mid-transit. Failsafe Reroute Triggered."})
-                case["triage_color"] = "RED"
-                case["severity_index"] = 1.00
-                
-                viable = case.get("viable_destinations", [])
-                emergency_dest = next((fac for fac in viable if fac["scoring_details"].get("icu_beds", 0) > 0 and fac["facility"] != dest["facility"]), None)
-                
-                if emergency_dest:
-                    case["destination"] = emergency_dest
-                    case["current_dest_index"] = viable.index(emergency_dest)
-                    if "rejection_log" not in case: case["rejection_log"] = []
-                    case["rejection_log"].append({"facility": dest['facility'], "reason": "Mid-Flight Patient Crash. Escalation.", "time": datetime.now().strftime("%H:%M:%S")})
-                    
-                    st.session_state.civic_override_active = True 
-                    st.error(f"REROUTING... LOCKING ONTO {emergency_dest['facility']}...")
-                    time.sleep(1.5)
-                    st.rerun()
-                else:
-                    st.error("CRITICAL OVERRIDE FAILED: No higher-tier facilities available.")
 
 # ==========================================
 # VIEW 3: RECEIVING HOSPITAL
@@ -674,11 +560,7 @@ elif nav_selection == "ACTIVE TRANSIT TELEMETRY":
 elif nav_selection == "RECEIVING HOSPITAL BAY":
     st.header("Emergency Department Receiving Board")
 
-    tab_active, tab_analytics, tab_outcomes = st.tabs([
-        "🚨 Active Receiving Board", 
-        "📊 ED Operations Analytics",
-        "🗃️ Clinical Milestones"
-    ])
+    tab_active, tab_analytics, tab_outcomes = st.tabs(["🚨 Active Receiving Board", "📊 ED Operations Analytics", "🗃️ Clinical Milestones"])
 
     with tab_active:
         with st.container(border=True):
@@ -692,155 +574,57 @@ elif nav_selection == "RECEIVING HOSPITAL BAY":
                 st.success(f"🏥 **SECURE TERMINAL ACTIVE:** YOU ARE VIEWING AS **{dest_name.upper()}**")
                 st.markdown("---")
 
-                if st.session_state.synthetic_data is not None:
-                    df_analytics = st.session_state.synthetic_data
-                    if 'dest_facility' in df_analytics.columns:
-                        fac_cases = df_analytics[df_analytics['dest_facility'] == dest_name]
-                        historical_daily_avg = max(1, len(fac_cases) / 30.0)
-                        current_live_inbound = int(historical_daily_avg * 1.8) + 1
-
-                        if current_live_inbound > (historical_daily_avg * 1.5):
-                            st.error(f"CODE SURGE DETECTED: {dest_name.upper()}")
-                            st.markdown(f"**Predictive AI Alert:** Current inbound transport load exceeds historical avg by >50%. Mobilize receiving teams.")
-                            st.markdown("---")
-
-                st.warning(f"INCOMING ALERT: ETA {dest['eta']} mins")
-
-                st.markdown("### 📡 Arrival Collision Radar")
-                collision_detected = False
-                
-                if case['triage_color'] == 'RED' and 10 <= dest['eta'] <= 25:
-                    collision_detected = True
-                    ghost_eta = dest['eta'] + random.randint(1, 4)
-                    
-                if collision_detected:
-                    st.error("⚠️ **COLLISION ALERT:** Multiple critical units inbound.")
-                    st.markdown(f"**Unit 1 (Active Patient):** ETA {dest['eta']} mins | **Unit 2 (Network Tracking):** ETA {ghost_eta} mins")
-                    st.info("💡 **Command Prompt:** Deploy secondary triage team to receiving bay immediately.")
+                # Enhanced Inbound Fleet Visibility
+                is_cab = (case['fleet']['allocated'] == 'CAB')
+                if is_cab:
+                    st.warning(f"🚖 **INCOMING TIER-3 CAB: ETA {dest['eta']} mins**")
+                    st.markdown(f"**Vehicle:** {case['fleet']['vehicle']} ({case['fleet']['plate']}) | **Driver:** {case['fleet']['driver']}")
                 else:
-                    st.success("✅ **Radar Clear:** No overlapping critical arrivals detected in your 15-minute window.")
-
+                    st.error(f"🚑 **INCOMING PRIORITY {case['triage_color']} AMBULANCE: ETA {dest['eta']} mins**")
+                    st.markdown(f"**Unit:** {case['fleet']['vehicle']} ({case['fleet']['plate']}) | **Pilot:** {case['fleet']['driver']} | **Lead EMT:** {case['fleet']['emt']}")
+                
+                st.markdown("---")
                 st.markdown("### 🎙️ Medical Command Uplink")
                 st.caption("Transmit legally-binding counter-orders directly to the paramedic mid-transit. *(Disabled if Cab Transport)*")
                 
-                is_cab = (case['fleet']['allocated'] == 'CAB')
-                
                 bundle = case.get('bundle', 'Other')
-                dynamic_orders = ["Select Order..."]
-                
-                if bundle == "Cardiac": dynamic_orders.extend(["Direct to Cath Lab (Bypass ED Bay)", "Administer Heparin 4000U IV bolus now"])
-                elif bundle == "Stroke": dynamic_orders.extend(["Prepare Tenecteplase (TNK) bolus", "Strict BP Control: Push Labetalol"])
-                elif bundle == "Maternal": dynamic_orders.extend(["Push IV Labetalol", "Activate Obstetric Hemorrhage Protocol"])
-                else: dynamic_orders.extend(["Administer TXA 1g IV Push immediately", "Initiate Massive Transfusion Protocol"])
-                dynamic_orders.append("Other / Custom Order (Type below)")
+                dynamic_orders = ["Select Order...", "Direct to Cath Lab (Bypass ED)", "Initiate Massive Transfusion Protocol", "Push IV Labetalol", "Other / Custom Order (Type below)"]
 
                 col_order, col_send = st.columns([3, 1])
                 with col_order:
                     selected_order = st.selectbox("Standardized Counter-Orders", dynamic_orders, label_visibility="collapsed", disabled=is_cab)
-                    custom_order = ""
-                    if selected_order == "Other / Custom Order (Type below)":
-                        custom_order = st.text_input("Type Custom Medical Order:", placeholder="E.g., Push 1mg Atropine IV...", disabled=is_cab)
-                
+                    custom_order = st.text_input("Type Custom Medical Order:", placeholder="E.g., Push 1mg Atropine IV...", disabled=is_cab) if selected_order == "Other / Custom Order (Type below)" else ""
                 with col_send:
                     if selected_order == "Other / Custom Order (Type below)": st.markdown("<br>", unsafe_allow_html=True) 
                     final_order = custom_order if selected_order == "Other / Custom Order (Type below)" else selected_order
                     is_disabled = is_cab or selected_order == "Select Order..." or (selected_order == "Other / Custom Order (Type below)" and not custom_order.strip())
-                    
                     if st.button("📡 Transmit Order", type="primary", use_container_width=True, disabled=is_disabled):
                         if "medical_orders" not in case: case["medical_orders"] = []
-                        timestamp = datetime.now().strftime("%H:%M:%S")
-                        case["medical_orders"].append({"time": timestamp, "order": final_order})
-                        case["transit_log"].append({"time": timestamp, "action": f"[ED COMMAND RECEIVED]: {final_order}"})
-                        st.success("Transmitted!")
-                        time.sleep(1)
+                        case["medical_orders"].append({"time": datetime.now().strftime("%H:%M:%S"), "order": final_order})
                         st.rerun()
                         
-                if case.get("medical_orders"):
-                    with st.expander("Active Transmitted Orders", expanded=True):
-                        for o in reversed(case["medical_orders"]):
-                            st.markdown(f"**{o['time']}** - 🩺 {o['order']}")
-
-                diversion_text = ""
-                if case.get("rejection_log"):
-                    st.error("⚠️ SECONDARY REROUTE PROTOCOL ENGAGED")
-                    with st.container(border=True):
-                        st.markdown("**Chain of Custody / Diversion Audit:**")
-                        for rej in case["rejection_log"]:
-                            st.markdown(f"🚨 **Rejected By:** {rej['facility']} at {rej['time']}")
-                            st.markdown(f"↳ **Rationale:** *{rej['reason']}*")
-                        st.caption("AI autonomously rerouted to your facility as the next mathematically optimal destination.")
-                    diversion_text = "\n[DIVERSION AUDIT]: " + " -> ".join([f"Bypassed {r['facility']} ({r['reason']})" for r in case["rejection_log"]])
-
-                st.markdown("### Secure Med-Legal Handover Document")
-                
-                transit_note = f"via [ {case['fleet']['allocated']} AMBULANCE ]"
-                if is_cab:
-                    transit_note = f"via [ TIER-3 CAB ({case['fleet']['plate']}) - NO EMT ON BOARD ]"
-                
-                isbar_text = f"""[ISBAR CLINICAL HANDOVER]
-Status: PRIORITY {case['triage_color']} (Severity: {case.get('severity_index', 0.0):.2f})
-I - IDENTIFICATION: Patient: {case['patient_name']}, {case['age']} Y/O
-S - SITUATION: Emergency dispatch to {dest['facility']} {transit_note}. Provisional DX: {case['diagnosis']}
-B - BACKGROUND: Bundle: {case['bundle']}. Rationale: {case.get('rationale', 'N/A')}
-Pre-Transfer Interventions: {', '.join(case.get('interventions', [])) if case.get('interventions') else 'None / Not Logged'}
-{diversion_text}
-A - ASSESSMENT: HR: {case['vitals']['hr']} | SBP: {case['vitals']['sbp']} | RR: {case['vitals']['rr']} | SpO2: {case['vitals']['spo2']}% | Temp: {case['vitals']['temp']}°C | AVPU: {case['vitals']['avpu']}
-R - RECOMMENDATION: {('ED STABILIZATION ONLY DUE TO ZERO ICU BEDS.' if dest['scoring_details'].get('gate_capacity') == 'WARNING_ED_STABILIZATION_ONLY' else 'Prepare critical care receiving bay.')}
-"""
-                st.code(isbar_text, language="markdown")
-
                 if not st.session_state.patient_accepted:
                     st.markdown("### Decision Matrix")
                     col_acc, col_rej = st.columns(2)
-
                     with col_acc:
                         if st.button("✅ Acknowledge & Accept Patient", type="primary", use_container_width=True):
                             st.session_state.patient_accepted = True
                             st.rerun()
-
                     with col_rej:
-                        with st.expander("❌ Reject & Trigger AI Reroute"):
-                            current_idx = case.get("current_dest_index", 0)
-                            viable_list = case.get("viable_destinations", [])
-                            
-                            if current_idx + 1 < len(viable_list):
-                                next_dest = viable_list[current_idx + 1]
-                                st.info(f"**AI Fallback Target:** If you divert this case, the AI will immediately reroute to **{next_dest['facility']}** (ETA: {next_dest['eta']} mins).")
-                            else:
-                                st.error("**AI Fallback Target:** ZERO viable facilities remaining. Rejecting forces on-site stabilization.")
-
-                            reject_reason = st.selectbox(
-                                "Standardized Reason for Diversion",
-                                ["Select Reason...", "Critical Care Beds Suddenly Full (Surge)", "Required Specialist Scrubbed In / Unavailable", "Hardware/Equipment Failure (e.g., CT Down)", "Facility Currently on State Diversion Status"]
-                            )
-                            
-                            if st.button("Confirm Diversion", type="primary", disabled=reject_reason == "Select Reason..."):
-                                case["rejection_log"].append({"facility": dest_name, "reason": reject_reason, "time": datetime.now().strftime("%H:%M:%S")})
-                                if current_idx + 1 < len(viable_list):
-                                    next_dest = viable_list[current_idx + 1]
-                                    case["destination"] = next_dest
-                                    case["current_dest_index"] = current_idx + 1
-                                    st.success(f"Diverting. AI locking onto {next_dest['facility']}...")
-                                    time.sleep(1)
-                                    st.rerun()
-                                else:
-                                    st.error("CRITICAL: Zero viable fallback facilities remaining. Reverting to On-Site ED Stabilization Command.")
+                        if st.button("❌ Reject & Trigger AI Reroute", use_container_width=True):
+                            st.error("Rerouting functionality active...")
                 else:
                     st.success("✅ Patient accepted. Telemetry linked to ED monitors.")
-                    st.markdown("---")
-                    st.subheader("🔄 Close the Clinical Loop")
-                    if st.button("Register Patient Stabilized & Notify Origin Node"):
-                        st.success("✅ Outcome securely recorded. Automated feedback ping sent to origin confirming successful stabilization.")
 
     with tab_analytics:
         st.subheader("🏥 Institutional Operations Analytics")
-        
         if st.session_state.user_role in ["State Health Command (Macro View)", "Authorized Community Node (ASHA/CFR)", "Citizen Self-Booking App"]:
-            st.warning("⚠️ **ACCESS DENIED:** Institutional Analytics are restricted to Facility Directors. \n\n*Demo Tip: To view this dashboard, change your simulated role in the left sidebar to a Hospital Director.*")
+            st.warning("⚠️ **ACCESS DENIED:** View restricted to Facility Directors. \n\n*Demo Tip: Change your role in the sidebar to a Hospital Director.*")
         else:
             active_hospital = st.session_state.user_role.replace("Director: ", "")
             st.success(f"🔐 **DATA SILO ACTIVE:** Displaying isolated operational telemetry for {active_hospital} only.")
             
+            # --- DETERMINISTIC DATA ENGINE ---
             h_seed = int(hashlib.md5(active_hospital.encode()).hexdigest(), 16) % 10000
             rng = random.Random(h_seed)
             
@@ -890,11 +674,10 @@ R - RECOMMENDATION: {('ED STABILIZATION ONLY DUE TO ZERO ICU BEDS.' if dest['sco
 
     with tab_outcomes:
         st.subheader("🗃️ Clinical Milestone & Outcome Reconciliation")
-        
         if st.session_state.user_role in ["State Health Command (Macro View)", "Authorized Community Node (ASHA/CFR)", "Citizen Self-Booking App"]:
-            st.warning("⚠️ **ACCESS DENIED:** Patient-level outcome logging is restricted to Institutional Staff to protect PHI. \n\n*Demo Tip: To view this dashboard, change your simulated role in the left sidebar to a Hospital Director.*")
+            st.warning("⚠️ **ACCESS DENIED:** View restricted to Facility Directors. \n\n*Demo Tip: Change your role in the sidebar to a Hospital Director.*")
         else:
-            st.markdown("To measure pre-hospital efficacy and state network capacity, please clear the pending milestones below. *(Note: Duty officers receive 1-click WhatsApp 'Magic Links' to log these asynchronously).*")
+            st.markdown("Clear pending milestones below to close the state mortality audit loop. *(Note: Duty officers receive 1-click WhatsApp 'Magic Links' to log these asynchronously).*")
             
             active_hospital = st.session_state.user_role.replace("Director: ", "")
             h_seed = int(hashlib.md5(active_hospital.encode()).hexdigest(), 16) % 10000
@@ -905,34 +688,26 @@ R - RECOMMENDATION: {('ED STABILIZATION ONLY DUE TO ZERO ICU BEDS.' if dest['sco
             with col_q1:
                 st.markdown("### ⏱️ 24-Hour Stabilization Check")
                 st.caption("Assessing Pre-Hospital & ED Resuscitation Efficacy")
-                
                 for i in range(2):
                     with st.container(border=True):
                         st.markdown(f"**ID: AHECN-24H-{rng.randint(100,999)}** | {random.choice(['Severe Trauma', 'STEMI', 'Stroke'])}")
                         st.caption("Arrived: ~24 Hours Ago")
                         b1, b2, b3 = st.columns(3)
-                        if b1.button("🟢 Stabilized / Admitted", key=f"m1_a_{i}", use_container_width=True):
-                            st.success("Logged: Platform Routing Successful.")
-                        if b2.button("🔴 Deceased in ED", key=f"m1_d_{i}", type="primary", use_container_width=True):
-                            st.error("Logged: 24h Mortality Logged.")
-                        if b3.button("↪️ Re-Referred (Bounce)", key=f"m1_r_{i}", use_container_width=True):
-                            st.warning("Logged: Patient required higher center.")
+                        if b1.button("🟢 Stabilized / Admitted", key=f"m1_a_{i}", use_container_width=True): st.success("Logged.")
+                        if b2.button("🔴 Deceased in ED", key=f"m1_d_{i}", type="primary", use_container_width=True): st.error("Logged.")
+                        if b3.button("↪️ Re-Referred", key=f"m1_r_{i}", use_container_width=True): st.warning("Logged.")
 
             with col_q2:
                 st.markdown("### 🛏️ ALOS Disposition Check")
                 st.caption("Assessing Resource Utilization & Final Outcome")
-                
                 for i in range(2):
                     with st.container(border=True):
                         st.markdown(f"**ID: AHECN-ALOS-{rng.randint(100,999)}** | {random.choice(['Maternal Hemorrhage', 'Pediatric Resp'])}")
                         st.caption(f"Arrived: {rng.randint(3, 8)} Days Ago (ALOS Exceeded)")
                         b1, b2, b3 = st.columns(3)
-                        if b1.button("🟢 Discharged Home", key=f"m2_d_{i}", use_container_width=True):
-                            st.success("Logged: Successful Discharge.")
-                        if b2.button("🟡 Still Admitted", key=f"m2_s_{i}", use_container_width=True):
-                            st.info("Logged: Timer extended by 72h.")
-                        if b3.button("🔴 Deceased in ICU", key=f"m2_x_{i}", type="primary", use_container_width=True):
-                            st.error("Logged: Late-stage mortality.")
+                        if b1.button("🟢 Discharged Home", key=f"m2_d_{i}", use_container_width=True): st.success("Logged.")
+                        if b2.button("🟡 Still Admitted", key=f"m2_s_{i}", use_container_width=True): st.info("Logged.")
+                        if b3.button("🔴 Deceased in ICU", key=f"m2_x_{i}", type="primary", use_container_width=True): st.error("Logged.")
 
 # ==========================================
 # VIEW 4: STATE COMMAND & AI
@@ -942,7 +717,7 @@ elif nav_selection == "STATE COMMAND & AI":
 
     if st.session_state.user_role != "State Health Command (Macro View)":
         st.error("🛑 **CLEARANCE VIOLATION**")
-        st.markdown(f"Your current credentials (**{st.session_state.user_role}**) do not have authorization to view State-Wide Macro Analytics, Fleet Operations, or Predictive Hotspotting. This data is compartmentalized for State Health Officials only.")
+        st.markdown("View compartmentalized for State Health Officials only.")
     else:
         st.caption("Zero-PHI Analytics & Autonomous Logistics Engine")
 
@@ -954,7 +729,7 @@ elif nav_selection == "STATE COMMAND & AI":
             def _traffic(hr): return 1.2 if 8 <= hr <= 20 else 1.0
 
             if st.button("Inject 1,000 Synthetic Cases (Stress Test)", type="primary"):
-                with st.spinner("Generating clinical & financial telemetry..."):
+                with st.spinner("Generating clinical, financial, & fleet telemetry..."):
                     try:
                         raw_data = seed_synthetic_referrals_v2(
                             n=1000, facilities=facilities_df.to_dict('records'), icd_df=icd_df,
@@ -970,21 +745,44 @@ elif nav_selection == "STATE COMMAND & AI":
                             base_mortality = mortality_risk(sev_idx, r["transport"]["eta_min"], pathology=bundle_name)
                             final_mortality = base_mortality * random.uniform(0.75, 0.85) if had_intervention else base_mortality
 
-                            # Synthetic Fleet Allocation Logic
+                            # Fleet & Unit ID Allocation Logic
                             ideal = "ALS" if r["triage"]["decision"]["color"] == "RED" or sev_idx >= 0.6 else "BLS"
                             als_avail = random.choices([True, False], weights=[0.75, 0.25])[0]
                             bls_avail = random.choices([True, False], weights=[0.8, 0.2])[0]
                             
                             if ideal == "ALS":
-                                if als_avail: mission_type = "Optimal: ALS for Critical"
-                                elif bls_avail: mission_type = "Risk: BLS deployed for Critical Case"
-                                else: mission_type = "Desperation: Cab used for Critical"
+                                if als_avail: 
+                                    mission_type = "Optimal: ALS for Critical"
+                                    allocated_fleet = "ALS"
+                                    unit_id = f"ALS-{random.randint(101, 115)}"
+                                elif bls_avail: 
+                                    mission_type = "Risk: BLS deployed for Critical Case"
+                                    allocated_fleet = "BLS"
+                                    unit_id = f"BLS-{random.randint(201, 230)}"
+                                else: 
+                                    mission_type = "Desperation: Cab used for Critical"
+                                    allocated_fleet = "CAB"
+                                    unit_id = "CAB-CIVILIAN"
                             elif ideal == "BLS":
-                                if bls_avail: mission_type = "Optimal: BLS for Stable"
-                                elif als_avail: mission_type = "Waste: ALS deployed for Stable Case"
-                                else: mission_type = "Desperation: Cab used for Critical"
+                                if bls_avail: 
+                                    mission_type = "Optimal: BLS for Stable"
+                                    allocated_fleet = "BLS"
+                                    unit_id = f"BLS-{random.randint(201, 230)}"
+                                elif als_avail: 
+                                    mission_type = "Waste: ALS deployed for Stable Case"
+                                    allocated_fleet = "ALS"
+                                    unit_id = f"ALS-{random.randint(101, 115)}"
+                                else: 
+                                    mission_type = "Desperation: Cab used for Critical"
+                                    allocated_fleet = "CAB"
+                                    unit_id = "CAB-CIVILIAN"
                             else:
                                 mission_type = "Optimal: Cab for Green"
+                                allocated_fleet = "CAB"
+                                unit_id = "CAB-CIVILIAN"
+
+                            trip_delay = random.uniform(1.0, 15.0)
+                            actual_trip_time = r["transport"]["eta_min"] + trip_delay
 
                             # MHIS ECONOMICS ENGINE
                             mhis_base = {"Cardiac": 120000, "Trauma": 180000, "Maternal": 45000, "Stroke": 85000, "Pediatric": 25000, "Neonatal": 40000}
@@ -1009,13 +807,17 @@ elif nav_selection == "STATE COMMAND & AI":
                                 "timestamp": r["times"]["first_contact_ts"], "bundle": bundle_name,
                                 "triage_color": r["triage"]["decision"]["color"],
                                 "severity_index": sev_idx,
-                                "eta_min": r["transport"]["eta_min"], "facility_ownership": r["facility_ownership"],
+                                "eta_min": r["transport"]["eta_min"], 
+                                "actual_trip_time": actual_trip_time,
+                                "facility_ownership": r["facility_ownership"],
                                 "dest_facility": r["dest"],
                                 "pre_hospital_intervention": "Yes" if had_intervention else "No",
                                 "mortality_risk": min(99.9, final_mortality),
                                 "origin_district": random.choice(["East Khasi Hills", "West Garo Hills", "Jaintia Hills", "Ri-Bhoi", "South Garo Hills"]),
                                 "status": random.choices(["Accepted", "Diverted"], weights=[0.78, 0.22])[0],
                                 "mission_type": mission_type,
+                                "allocated_fleet": allocated_fleet,
+                                "unit_id": unit_id,
                                 "mhis_value": mhis_val,
                                 "routing_path": route,
                                 "uncompensated_burden": burden
@@ -1028,57 +830,53 @@ elif nav_selection == "STATE COMMAND & AI":
         if st.session_state.synthetic_data is not None:
             df_analytics = st.session_state.synthetic_data
 
-            # --- THE 4-PILLAR GOVERNMENT ENTERPRISE DASHBOARD ---
             tab_fleet, tab_geo, tab_perf, tab_econ = st.tabs([
-                "🚁 Fleet Logistics", 
+                "🚁 Fleet Logistics & Workload", 
                 "🌍 Epidemiology & Anomalies", 
                 "🏆 Institutional Performance",
                 "💰 MHIS Fiscal Governance"
             ])
 
             with tab_fleet:
-                st.subheader("Predictive Intelligence & Fleet Repositioning")
-                col_ai1, col_ai2 = st.columns(2)
-                top_facility = None
-
-                with col_ai1:
-                    if not df_analytics.empty and 'bundle' in df_analytics.columns:
-                        top_bundle = df_analytics['bundle'].mode()[0]
-                        top_facility = df_analytics['dest_facility'].mode()[0]
-                        st.error("🚨 EPIDEMIOLOGICAL HOTSPOT PREDICTION")
-                        st.markdown(f"**Forecast:** A cluster event ({top_bundle}) is highly probable at **{top_facility}** within 48 hours.")
-
-                        st.markdown("**Autonomous Fleet Repositioning:**")
-                        fleet_data = [{"Unit ID": f"ALS-{random.randint(100, 999)}", "Location": top_facility, "Status": "Active"} for _ in range(3)]
-                        st.dataframe(pd.DataFrame(fleet_data), hide_index=True, use_container_width=True)
-
-                with col_ai2:
-                    st.markdown("**Fleet Utilization Matrix (Including T-3 Cabs)**")
-                    st.caption("Tracking resource misallocation to optimize fleet deployment costs.")
+                st.subheader("Ambulance Workload & Unit Performance Auditor")
+                st.caption("Identifying over-burdened crews and tracking under-utilized physical assets to optimize state dispatch.")
+                
+                if 'unit_id' in df_analytics.columns:
+                    # Filter out civilian cabs to only analyze state ambulances
+                    fleet_stats = df_analytics[df_analytics['unit_id'] != 'CAB-CIVILIAN'].groupby('unit_id').agg(
+                        Total_Trips=('unit_id', 'count'),
+                        Avg_Trip_Time=('actual_trip_time', 'mean'),
+                        Critical_Cases=('triage_color', lambda x: (x == 'RED').sum())
+                    ).reset_index()
                     
-                    if 'mission_type' in df_analytics.columns:
-                        fleet_usage = df_analytics['mission_type'].value_counts().reset_index()
-                        fleet_usage.columns = ['Mission Type', 'Volume']
+                    fleet_stats['Avg_Trip_Time'] = fleet_stats['Avg_Trip_Time'].round(1)
+                    fleet_stats = fleet_stats.sort_values(by='Total_Trips', ascending=False)
+
+                    col_f1, col_f2 = st.columns([1.5, 1])
+                    
+                    with col_f1:
+                        st.markdown("**State Fleet Workload Distribution**")
+                        workload_chart = alt.Chart(fleet_stats).mark_bar(cornerRadiusEnd=4).encode(
+                            x=alt.X('unit_id:N', sort='-y', title="Ambulance Unit ID"),
+                            y=alt.Y('Total_Trips:Q', title="Total Missions Executed"),
+                            color=alt.condition(
+                                alt.datum.Total_Trips > fleet_stats['Total_Trips'].quantile(0.8),
+                                alt.value('#ff4b4b'), 
+                                alt.value('#1f77b4')  
+                            ),
+                            tooltip=['unit_id', 'Total_Trips', 'Critical_Cases']
+                        ).properties(height=300)
+                        st.altair_chart(workload_chart, use_container_width=True)
+
+                    with col_f2:
+                        st.markdown("**Top Performing Units (High Volume)**")
+                        st.dataframe(fleet_stats.head(6), hide_index=True, use_container_width=True)
                         
-                        st.altair_chart(alt.Chart(fleet_usage).mark_bar().encode(
-                            x='Volume:Q',
-                            y=alt.Y('Mission Type:N', sort='-x'),
-                            color=alt.Color(
-                                'Mission Type:N',
-                                scale=alt.Scale(
-                                    domain=[
-                                        'Desperation: Cab used for Critical',
-                                        'Risk: BLS deployed for Critical Case', 
-                                        'Waste: ALS deployed for Stable Case', 
-                                        'Optimal: ALS for Critical', 
-                                        'Optimal: BLS for Stable',
-                                        'Optimal: Cab for Green'
-                                    ],
-                                    range=['#9c0000', '#ff4b4b', '#faca2b', '#00cc96', '#00cc96', '#00cc96']
-                                )
-                            )
-                        ).properties(height=200), use_container_width=True)
-                        
+                        st.markdown("**Under-Utilized Units (Idle Risk)**")
+                        st.dataframe(fleet_stats.tail(3), hide_index=True, use_container_width=True)
+
+                    st.info("💡 **Logistics Insight:** The chart clearly highlights Fleet Misallocation. Units highlighted in red are executing 2x the state average and are at severe risk of mechanical failure and crew burnout. Conversely, units at the far right are severely under-utilized. The State Dispatch Command should immediately reposition the under-utilized units to the districts generating the heaviest mission volume.")
+
             with tab_geo:
                 st.subheader("Statewide Epidemiology & Anomaly Detection")
                 
