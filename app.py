@@ -510,7 +510,6 @@ elif nav_selection == "ACTIVE TRANSIT TELEMETRY":
 elif nav_selection == "RECEIVING HOSPITAL BAY":
     st.header("Emergency Department Receiving Board")
 
-    # --- THREE-TAB UI FOR CLINICAL COMPLETION ---
     tab_active, tab_analytics, tab_outcomes = st.tabs([
         "🚨 Active Receiving Board", 
         "📊 ED Operations Analytics",
@@ -667,14 +666,14 @@ R - RECOMMENDATION: {('ED STABILIZATION ONLY DUE TO ZERO ICU BEDS.' if dest['sco
                     st.success("✅ Patient accepted. Telemetry linked to ED monitors.")
                     st.markdown("---")
                     st.subheader("🔄 Close the Clinical Loop")
-                    if st.button("Register Patient & Trigger AI Milestone Timers"):
-                        st.success("✅ Outcome securely recorded. AI has engaged the 24-Hour Resuscitation Check and Pathology ALOS Timers.")
+                    if st.button("Register Patient Stabilized & Notify Referring Doctor"):
+                        st.success("✅ Outcome securely recorded. Automated feedback ping sent to referring clinician confirming successful stabilization.")
 
     with tab_analytics:
         st.subheader("🏥 Institutional Operations Analytics")
         
         if st.session_state.user_role == "State Health Command (Macro View)":
-            st.warning("⚠️ **ACCESS DENIED:** Institutional Analytics are restricted to Facility Directors. Please use the 'State Command & AI' tab for macro-analytics.")
+            st.warning("⚠️ **ACCESS DENIED:** Institutional Analytics are restricted to Facility Directors. \n\n*Demo Tip: To view this dashboard, change your simulated role in the left sidebar to a Hospital Director.*")
         else:
             active_hospital = st.session_state.user_role.replace("Director: ", "")
             st.success(f"🔐 **DATA SILO ACTIVE:** Displaying isolated operational telemetry for {active_hospital} only.")
@@ -730,7 +729,7 @@ R - RECOMMENDATION: {('ED STABILIZATION ONLY DUE TO ZERO ICU BEDS.' if dest['sco
         st.subheader("🗃️ Clinical Milestone & Outcome Reconciliation")
         
         if st.session_state.user_role == "State Health Command (Macro View)":
-            st.warning("⚠️ **ACCESS DENIED:** Patient-level outcome logging is restricted to Institutional Staff to protect PHI.")
+            st.warning("⚠️ **ACCESS DENIED:** Patient-level outcome logging is restricted to Institutional Staff to protect PHI. \n\n*Demo Tip: To view this dashboard, change your simulated role in the left sidebar to a Hospital Director.*")
         else:
             st.markdown("To measure pre-hospital efficacy and state network capacity, please clear the pending milestones below. *(Note: Duty officers receive 1-click WhatsApp 'Magic Links' to log these asynchronously).*")
             
@@ -792,7 +791,7 @@ elif nav_selection == "STATE COMMAND & AI":
             def _traffic(hr): return 1.2 if 8 <= hr <= 20 else 1.0
 
             if st.button("Inject 1,000 Synthetic Cases (Stress Test)", type="primary"):
-                with st.spinner("Generating clinical telemetry..."):
+                with st.spinner("Generating clinical & financial telemetry..."):
                     try:
                         raw_data = seed_synthetic_referrals_v2(
                             n=1000, facilities=facilities_df.to_dict('records'), icd_df=icd_df,
@@ -804,24 +803,39 @@ elif nav_selection == "STATE COMMAND & AI":
                         for r in raw_data:
                             had_intervention = random.choice([True, False])
                             sev_idx = r["triage"]["decision"]["score_details"].get("severity_index", 0.0)
-                            base_mortality = mortality_risk(sev_idx, r["transport"]["eta_min"], pathology=r["provisionalDx"]["case_type"])
+                            bundle_name = r["provisionalDx"]["case_type"]
+                            base_mortality = mortality_risk(sev_idx, r["transport"]["eta_min"], pathology=bundle_name)
                             final_mortality = base_mortality * random.uniform(0.75, 0.85) if had_intervention else base_mortality
 
-                            # Synthetic Fleet Allocation Logic
+                            # Fleet Logic
                             ideal = "ALS" if r["triage"]["decision"]["color"] == "RED" or sev_idx >= 0.6 else "BLS"
                             als_avail = random.choices([True, False], weights=[0.75, 0.25])[0]
+                            if ideal == "ALS" and not als_avail: mission_type = "Risk: BLS deployed for Critical Case"
+                            elif ideal == "BLS" and random.random() < 0.15: mission_type = "Waste: ALS deployed for Stable Case"
+                            elif ideal == "ALS": mission_type = "Optimal: ALS for Critical" 
+                            else: mission_type = "Optimal: BLS for Stable"
+
+                            # --- NEW: MHIS ECONOMICS ENGINE ---
+                            mhis_base = {"Cardiac": 120000, "Trauma": 180000, "Maternal": 45000, "Stroke": 85000, "Pediatric": 25000, "Neonatal": 40000}
+                            mhis_val = mhis_base.get(bundle_name, 50000) * random.uniform(0.9, 1.1)
                             
-                            if ideal == "ALS" and not als_avail:
-                                mission_type = "Risk: BLS deployed for Critical Case"
-                            elif ideal == "BLS" and random.random() < 0.15:
-                                mission_type = "Waste: ALS deployed for Stable Case"
-                            elif ideal == "ALS":
-                                mission_type = "Optimal: ALS for Critical" 
+                            first_choice_gov = random.choices([True, False], weights=[0.65, 0.35])[0]
+                            if first_choice_gov:
+                                if random.random() < 0.3: # Rejected by Govt
+                                    route = "Govt -> Private (Leakage)"
+                                    final_sec = "Private"
+                                else:
+                                    route = "Govt -> Govt (Retained)"
+                                    final_sec = "Government"
                             else:
-                                mission_type = "Optimal: BLS for Stable"
+                                route = "Private -> Private (Standard)"
+                                final_sec = "Private"
+                                
+                            alos_var = random.randint(-1, 6)
+                            burden = max(0, alos_var) * 5000 if final_sec == "Government" else 0
 
                             safe_records.append({
-                                "timestamp": r["times"]["first_contact_ts"], "bundle": r["provisionalDx"]["case_type"],
+                                "timestamp": r["times"]["first_contact_ts"], "bundle": bundle_name,
                                 "triage_color": r["triage"]["decision"]["color"],
                                 "severity_index": sev_idx,
                                 "eta_min": r["transport"]["eta_min"], "facility_ownership": r["facility_ownership"],
@@ -830,7 +844,10 @@ elif nav_selection == "STATE COMMAND & AI":
                                 "mortality_risk": min(99.9, final_mortality),
                                 "origin_district": random.choice(["East Khasi Hills", "West Garo Hills", "Jaintia Hills", "Ri-Bhoi", "South Garo Hills"]),
                                 "status": random.choices(["Accepted", "Diverted"], weights=[0.78, 0.22])[0],
-                                "mission_type": mission_type
+                                "mission_type": mission_type,
+                                "mhis_value": mhis_val,
+                                "routing_path": route,
+                                "uncompensated_burden": burden
                             })
                         st.session_state.synthetic_data = pd.DataFrame(safe_records)
                         st.success("Data injected successfully.")
@@ -845,7 +862,7 @@ elif nav_selection == "STATE COMMAND & AI":
                 "🚁 Fleet Logistics", 
                 "🌍 Epidemiology & Anomalies", 
                 "🏆 Institutional Performance",
-                "💰 Health Economics"
+                "💰 MHIS Fiscal Governance"
             ])
 
             with tab_fleet:
@@ -970,37 +987,57 @@ elif nav_selection == "STATE COMMAND & AI":
                 st.info("💡 **Policy Governance Insight:** The Platform has successfully shifted mortality risk. Prior to this software, 65% of deaths happened in the first 24 hours (ambulances getting lost, wrong hospitals). Now, 24-hour survival is up to 89.4%. However, **Tura Civil Hospital** shows an 18.2% 'Bounce Rate', indicating they are actively accepting critical patients they lack the infrastructure to treat, requiring targeted capacity audits rather than punitive action.")
 
             with tab_econ:
-                st.subheader("Macro Health Economics & Fiscal Governance")
+                st.subheader("MHIS Health Economics & Fiscal Governance")
                 
-                total_cases = len(df_analytics)
-                gov_first_choice = int(total_cases * 0.65)
-                gov_rejected = int(gov_first_choice * 0.30)  
-                private_diverted = gov_rejected
-                avg_private_icu_cost = 45000  
-                fiscal_leakage = private_diverted * avg_private_icu_cost
+                df_econ = df_analytics.copy()
+                
+                retained_rev = df_econ[df_econ['routing_path'] == 'Govt -> Govt (Retained)']['mhis_value'].sum()
+                leakage_val = df_econ[df_econ['routing_path'] == 'Govt -> Private (Leakage)']['mhis_value'].sum()
+                total_burden = df_econ['uncompensated_burden'].sum()
                 
                 k1, k2, k3, k4 = st.columns(4)
-                k1.metric("State Total Referrals", f"{total_cases}")
-                k2.metric("Govt Facility 1st Choice", f"{(gov_first_choice/total_cases)*100:.1f}%")
-                k3.metric("Statewide Acceptance Rate", "78.4%", "-2.1% MoM", delta_color="inverse")
-                k4.metric("AI Triage Downgrades", f"{int(total_cases*0.14)}", "Beds Saved")
+                k1.metric("State Total Referrals", f"{len(df_econ)}")
+                k2.metric("Public Revenue Retained", f"₹ {retained_rev/10000000:.2f} Cr")
+                k3.metric("MHIS Fiscal Leakage", f"₹ {leakage_val/10000000:.2f} Cr", delta="- Drain to Private Sector", delta_color="inverse")
+                k4.metric("ALOS Uncompensated Burden", f"₹ {total_burden/100000:.2f} L", delta="Bed-Blocking Penalties", delta_color="inverse")
 
                 st.markdown("---")
-                st.error("🚨 **THE FISCAL LEAKAGE MATRIX (Capacity-Driven Economic Drain)**")
-                st.markdown("Tracks state insurance funds lost to the Private Sector exclusively because Government facilities lacked capacity (Zero ICU Beds) and forced an AI reroute.")
                 
-                col_e1, col_e2 = st.columns([1, 1.5])
-                with col_e1:
-                    st.metric("Total Patients Diverted to Private", f"{private_diverted} Patients")
-                    st.metric("Estimated Insurance Payout Leakage", f"₹ {fiscal_leakage:,.0f}", "Capital that could have built Govt infrastructure", delta_color="inverse")
+                c_e1, c_e2 = st.columns(2)
                 
-                with col_e2:
-                    flow_data = pd.DataFrame({
-                        "Routing Path": ["Govt -> Govt (Accepted)", "Private -> Private (Accepted)", "Govt -> Private (Forced Diversion)"],
-                        "Volume": [gov_first_choice - gov_rejected, total_cases - gov_first_choice, private_diverted]
-                    })
-                    st.altair_chart(alt.Chart(flow_data).mark_bar().encode(
-                        y=alt.Y('Routing Path:N', sort="-x"),
-                        x='Volume:Q',
-                        color=alt.condition(alt.datum['Routing Path'] == 'Govt -> Private (Forced Diversion)', alt.value('#ff4b4b'), alt.value('#00cc96'))
-                    ).properties(height=200), use_container_width=True)
+                with c_e1:
+                    st.markdown("**1. The MHIS Twin Ledger (Pathology-Weighted)**")
+                    st.caption("Comparing Government claims retained vs. Insurance capital lost to forced private diversions.")
+                    
+                    ledger_data = df_econ[df_econ['routing_path'].isin(['Govt -> Govt (Retained)', 'Govt -> Private (Leakage)'])]
+                    ledger_chart = alt.Chart(ledger_data).mark_bar().encode(
+                        x=alt.X('sum(mhis_value):Q', title="Total MHIS Value (₹)"),
+                        y=alt.Y('routing_path:N', title=""),
+                        color=alt.Color('routing_path:N', scale=alt.Scale(domain=['Govt -> Govt (Retained)', 'Govt -> Private (Leakage)'], range=['#00cc96', '#ff4b4b']), legend=None)
+                    ).properties(height=200)
+                    st.altair_chart(ledger_chart, use_container_width=True)
+
+                with c_e2:
+                    st.markdown("**2. District Capital Flight Radar**")
+                    st.caption("Identifying which districts bleed the most MHIS funds due to zero-capacity diversions.")
+                    
+                    flight_data = df_econ[df_econ['routing_path'] == 'Govt -> Private (Leakage)']
+                    flight_chart = alt.Chart(flight_data).mark_bar().encode(
+                        x=alt.X('sum(mhis_value):Q', title="Leakage (₹)"),
+                        y=alt.Y('origin_district:N', sort='-x', title="Origin District"),
+                        color=alt.value('#ff4b4b')
+                    ).properties(height=200)
+                    st.altair_chart(flight_chart, use_container_width=True)
+                    
+                st.markdown("---")
+                st.markdown("**3. Uncompensated ALOS Burden (Bed-Blocking Economics)**")
+                st.caption("Tracking fixed-package financial penalties incurred by Government hospitals when patients overstay benchmark ALOS (e.g., awaiting step-down beds).")
+                
+                burden_bar = alt.Chart(df_econ[df_econ['uncompensated_burden'] > 0]).mark_bar().encode(
+                    x=alt.X('bundle:N', sort='-y', title="Pathology Category"),
+                    y=alt.Y('sum(uncompensated_burden):Q', title="Total Penalty (₹)"),
+                    color=alt.value('#faca2b')
+                ).properties(height=250)
+                st.altair_chart(burden_bar, use_container_width=True)
+                
+                st.info(f"💡 **MHIS Policy Formulation:** Over ₹{leakage_val/10000000:.2f} Crores was lost to the private sector this month exclusively because Government facilities lacked capacity. Furthermore, delayed discharges caused an uncompensated ALOS burden of ₹{total_burden/100000:.2f} Lakhs. By investing in step-down wards and a 20-bed ICU annex in the worst-performing districts, the state can instantly recapture this capital within the MHIS framework.")
