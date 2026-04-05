@@ -7,19 +7,112 @@ import os
 import hashlib
 from datetime import datetime, timedelta
 
+# --- Page Configuration (MUST BE FIRST) ---
+st.set_page_config(
+    page_title="MCECN Command Center", 
+    layout="wide", 
+    initial_sidebar_state="expanded"
+)
+
+# ==========================================
+# 🎨 ENTERPRISE UI/UX CSS INJECTION
+# ==========================================
+st.markdown("""
+<style>
+    /* Global App Background & Typography */
+    .stApp {
+        background-color: #F5F7FB;
+        font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    
+    /* Transform Streamlit Containers into Modern EMR Cards */
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        background-color: #FFFFFF !important;
+        border-radius: 12px !important;
+        border: 1px solid #E5E9F2 !important;
+        box-shadow: 0px 4px 16px rgba(0, 0, 0, 0.04) !important;
+        padding: 1.5rem !important;
+        transition: box-shadow 0.2s ease-in-out;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"]:hover {
+        box-shadow: 0px 6px 20px rgba(0, 0, 0, 0.08) !important;
+    }
+
+    /* Sidebar Modernization */
+    [data-testid="stSidebar"] {
+        background-color: #FFFFFF !important;
+        border-right: 1px solid #E5E9F2 !important;
+        box-shadow: 2px 0px 10px rgba(0, 0, 0, 0.02) !important;
+    }
+    
+    /* Primary Gradient Buttons */
+    button[kind="primary"] {
+        background: linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%) !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+        padding: 0.5rem 1rem !important;
+        box-shadow: 0 4px 6px rgba(37, 99, 235, 0.2) !important;
+        transition: all 0.3s ease !important;
+    }
+    button[kind="primary"]:hover {
+        transform: translateY(-2px) !important;
+        box-shadow: 0 6px 12px rgba(37, 99, 235, 0.3) !important;
+    }
+
+    /* Standard/Secondary Buttons */
+    button[kind="secondary"] {
+        border-radius: 8px !important;
+        border: 1px solid #CBD5E1 !important;
+        color: #334155 !important;
+        font-weight: 500 !important;
+        background-color: #FFFFFF !important;
+    }
+    button[kind="secondary"]:hover {
+        background-color: #F1F5F9 !important;
+        border-color: #94A3B8 !important;
+    }
+
+    /* Header & Title Colors */
+    h1, h2, h3, h4 {
+        color: #0F172A !important;
+        font-weight: 700 !important;
+        letter-spacing: -0.02em !important;
+    }
+    
+    /* Metric Analytics Styling */
+    [data-testid="stMetricValue"] {
+        color: #1E3A8A !important;
+        font-size: 2.2rem !important;
+        font-weight: 800 !important;
+    }
+    [data-testid="stMetricLabel"] {
+        font-size: 1rem !important;
+        color: #64748B !important;
+        font-weight: 500 !important;
+    }
+    
+    /* Clean up the input boxes */
+    .stTextInput>div>div>input, .stSelectbox>div>div>div {
+        border-radius: 6px !important;
+        border: 1px solid #CBD5E1 !important;
+    }
+    
+    /* Information / Alert Pills */
+    .stAlert {
+        border-radius: 8px !important;
+        border: none !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # --- Architecture Imports ---
 from clinical_engine import validated_triage_decision
 from scoring_engine import calculate_facility_score
 from routing_engine import get_eta, haversine_km
 from analytics_engine import mortality_risk
 from synthetic_cases import seed_synthetic_referrals_v2
-
-# --- Page Configuration ---
-st.set_page_config(
-    page_title="AHECN Command Center", 
-    layout="wide", 
-    initial_sidebar_state="expanded"
-)
 
 # --- State Management & Fleet Rosters ---
 if 'active_case' not in st.session_state:
@@ -81,11 +174,11 @@ facilities_df, icd_df = load_datasets_v3()
     
 # --- Sidebar Navigation & RBAC Security ---
 with st.sidebar:
-    st.title("AHECN OS")
-    st.caption("Runo Health Enterprise v6.0")
+    st.title("MCECN OS")
+    st.caption("Meghalaya Comprehensive Emergency Care Network v6.5")
     
     st.markdown("---")
-    st.subheader("🔐 Security & Access Control")
+    st.subheader("🔐 Access Control")
     simulated_role = st.selectbox(
         "Simulate Active User Login:",
         [
@@ -105,7 +198,7 @@ with st.sidebar:
         ["REFERRAL INITIATION", "ACTIVE TRANSIT TELEMETRY", "RECEIVING HOSPITAL BAY", "STATE COMMAND & AI"]
     )
     st.markdown("---")
-    st.caption("Status: All Systems Operational")
+    st.caption("🟢 Status: All Systems Operational")
 
 # ==========================================
 # VIEW 1: REFERRAL INITIATION
@@ -251,7 +344,7 @@ if nav_selection == "REFERRAL INITIATION":
     # ---------------------------------------------------------
     # STANDARD HOSPITAL-TO-HOSPITAL VIEW
     # ---------------------------------------------------------
-    st.header("Triage & Referral Initiation")
+    st.header("Clinical Triage & Referral")
     st.caption("Secure, dual-vector triage and topography-aware facility matching.")
     
     with st.container(border=True):
@@ -480,7 +573,7 @@ if nav_selection == "REFERRAL INITIATION":
     if st.session_state.transfer_initiated and st.session_state.active_case:
         with st.container(border=True):
             st.subheader("📄 Med-Legal Documentation Generated")
-            st.success("Official ISBAR handover securely logged to the State Registry.")
+            st.success("Official ISBAR handover securely logged to the MCECN Registry.")
             case = st.session_state.active_case
             
             transit_note = f"via [ {case['fleet']['allocated']} AMBULANCE ({case['fleet']['vehicle']} - Plate: {case['fleet']['plate']}) | EMT: {case['fleet']['emt']} ]"
@@ -567,7 +660,7 @@ elif nav_selection == "ACTIVE TRANSIT TELEMETRY":
                     st.subheader("📉 Vitals Delta")
                     new_spo2 = st.slider("SpO2 %", 50, 100, case['vitals']['spo2'])
                     new_sbp = st.slider("SBP mmHg", 40, 200, case['vitals']['sbp'])
-                    if st.button("Update ED Board"):
+                    if st.button("Update ED Board", type="secondary"):
                         case['vitals']['spo2'], case['vitals']['sbp'] = new_spo2, new_sbp
                         st.rerun()
 
@@ -611,6 +704,7 @@ elif nav_selection == "RECEIVING HOSPITAL BAY":
                 
                 is_cab = (case['fleet']['allocated'] == 'CAB')
                 
+                # If it's a cab, it means it's a RED case (due to the gate above)
                 if is_cab:
                     st.error(f"🚨 **CRITICAL SCOOP & RUN ALERT: ETA {dest['eta']} mins**")
                     st.markdown(f"**Vehicle:** {case['fleet']['vehicle']} ({case['fleet']['plate']}) | **Status:** Un-resuscitated transit.")
@@ -689,6 +783,7 @@ elif nav_selection == "RECEIVING HOSPITAL BAY":
             active_hospital = st.session_state.user_role.replace("Director: ", "")
             st.success(f"🔐 **DATA SILO ACTIVE:** Displaying isolated operational telemetry for {active_hospital} only.")
             
+            # --- DETERMINISTIC DATA ENGINE ---
             h_seed = int(hashlib.md5(active_hospital.encode()).hexdigest(), 16) % 10000
             rng = random.Random(h_seed)
             
@@ -732,7 +827,7 @@ elif nav_selection == "RECEIVING HOSPITAL BAY":
                 st.altair_chart(alt.Chart(path_data).mark_bar().encode(
                     x=alt.X('Pathology:N', sort='-y'),
                     y='Volume:Q',
-                    color=alt.value('#1f77b4'),
+                    color=alt.value('#1E3A8A'),
                     tooltip=["Pathology", "Volume"]
                 ).properties(height=300), use_container_width=True)
 
@@ -754,11 +849,11 @@ elif nav_selection == "RECEIVING HOSPITAL BAY":
                 st.caption("Assessing Pre-Hospital & ED Resuscitation Efficacy")
                 for i in range(2):
                     with st.container(border=True):
-                        st.markdown(f"**ID: AHECN-24H-{rng.randint(100,999)}** | {random.choice(['Severe Trauma', 'STEMI', 'Stroke'])}")
+                        st.markdown(f"**ID: MCECN-24H-{rng.randint(100,999)}** | {random.choice(['Severe Trauma', 'STEMI', 'Stroke'])}")
                         st.caption("Arrived: ~24 Hours Ago")
                         b1, b2, b3 = st.columns(3)
                         if b1.button("🟢 Stabilized / Admitted", key=f"m1_a_{i}", use_container_width=True): st.success("Logged.")
-                        if b2.button("🔴 Deceased in ED", key=f"m1_d_{i}", type="primary", use_container_width=True): st.error("Logged.")
+                        if b2.button("🔴 Deceased in ED", key=f"m1_d_{i}", type="secondary", use_container_width=True): st.error("Logged.")
                         if b3.button("↪️ Re-Referred", key=f"m1_r_{i}", use_container_width=True): st.warning("Logged.")
 
             with col_q2:
@@ -766,12 +861,12 @@ elif nav_selection == "RECEIVING HOSPITAL BAY":
                 st.caption("Assessing Resource Utilization & Final Outcome")
                 for i in range(2):
                     with st.container(border=True):
-                        st.markdown(f"**ID: AHECN-ALOS-{rng.randint(100,999)}** | {random.choice(['Maternal Hemorrhage', 'Pediatric Resp'])}")
+                        st.markdown(f"**ID: MCECN-ALOS-{rng.randint(100,999)}** | {random.choice(['Maternal Hemorrhage', 'Pediatric Resp'])}")
                         st.caption(f"Arrived: {rng.randint(3, 8)} Days Ago (ALOS Exceeded)")
                         b1, b2, b3 = st.columns(3)
                         if b1.button("🟢 Discharged Home", key=f"m2_d_{i}", use_container_width=True): st.success("Logged.")
                         if b2.button("🟡 Still Admitted", key=f"m2_s_{i}", use_container_width=True): st.info("Logged.")
-                        if b3.button("🔴 Deceased in ICU", key=f"m2_x_{i}", type="primary", use_container_width=True): st.error("Logged.")
+                        if b3.button("🔴 Deceased in ICU", key=f"m2_x_{i}", type="secondary", use_container_width=True): st.error("Logged.")
 
 # ==========================================
 # VIEW 4: STATE COMMAND & AI
@@ -925,8 +1020,8 @@ elif nav_selection == "STATE COMMAND & AI":
                             y=alt.Y('Total_Trips:Q', title="Total Missions Executed"),
                             color=alt.condition(
                                 alt.datum.Total_Trips > fleet_stats['Total_Trips'].quantile(0.8),
-                                alt.value('#ff4b4b'), 
-                                alt.value('#1f77b4')  
+                                alt.value('#EF4444'), 
+                                alt.value('#2563EB')  
                             ),
                             tooltip=['unit_id', 'Total_Trips', 'Critical_Cases']
                         ).properties(height=300)
@@ -962,7 +1057,7 @@ elif nav_selection == "STATE COMMAND & AI":
                     st.caption("Case volumes mapped against 24-hour cycles to guide shift staffing.")
                     hours = list(range(24))
                     surge_vols = [random.randint(10, 30) if h < 6 or h > 20 else random.randint(40, 100) for h in hours]
-                    st.altair_chart(alt.Chart(pd.DataFrame({"Hour": hours, "Referrals": surge_vols})).mark_area(color="#faca2b", opacity=0.6).encode(
+                    st.altair_chart(alt.Chart(pd.DataFrame({"Hour": hours, "Referrals": surge_vols})).mark_area(color="#2563EB", opacity=0.6).encode(
                         x=alt.X("Hour:O", title="Hour of Day (24H)"), y=alt.Y("Referrals:Q", title="Volume")
                     ).properties(height=250), use_container_width=True)
                     
@@ -983,7 +1078,7 @@ elif nav_selection == "STATE COMMAND & AI":
                 st.subheader("Platform Efficacy & Institutional Quality Assurance")
                 
                 c1, c2, c3 = st.columns(3)
-                c1.metric("24-Hour Resuscitation Survival", "89.4%", "+4.2% Post-AHECN Launch")
+                c1.metric("24-Hour Resuscitation Survival", "89.4%", "+4.2% Post-Launch")
                 c2.metric("Statewide ALOS Compliance", "72%", "28% Bed-Blocking Rate", delta_color="inverse")
                 c3.metric("Secondary Re-Referral (Bounce) Rate", "6.8%", "114 Unnecessary Transfers", delta_color="inverse")
 
@@ -1003,19 +1098,19 @@ elif nav_selection == "STATE COMMAND & AI":
                     st.dataframe(perf_data, use_container_width=True, hide_index=True)
                 
                 with col_p2:
-                    st.markdown("**Mortality Shift Analysis (AHECN Efficacy)**")
+                    st.markdown("**Mortality Shift Analysis (Efficacy)**")
                     st.caption("Tracking when mortalities occur to validate Pre-Hospital platform success.")
                     
                     mortality_shift = pd.DataFrame({
                         "Phase": ["< 24h (Pre-Hospital/ED Failure)", "> 24h (ICU/Ward Complication)"],
-                        "Pre-AHECN OS": [65, 35],
-                        "Post-AHECN OS": [22, 78]
+                        "Pre-MCECN OS": [65, 35],
+                        "Post-MCECN OS": [22, 78]
                     }).melt(id_vars="Phase", var_name="Era", value_name="Percentage of Total Mortalities")
                     
                     shift_chart = alt.Chart(mortality_shift).mark_bar().encode(
                         x=alt.X('Percentage of Total Mortalities:Q', stack='normalize', axis=alt.Axis(format='%')),
-                        y=alt.Y('Era:N', sort=['Pre-AHECN OS', 'Post-AHECN OS']),
-                        color=alt.Color('Phase:N', scale=alt.Scale(domain=['< 24h (Pre-Hospital/ED Failure)', '> 24h (ICU/Ward Complication)'], range=['#ff4b4b', '#5c5c5c']))
+                        y=alt.Y('Era:N', sort=['Pre-MCECN OS', 'Post-MCECN OS']),
+                        color=alt.Color('Phase:N', scale=alt.Scale(domain=['< 24h (Pre-Hospital/ED Failure)', '> 24h (ICU/Ward Complication)'], range=['#EF4444', '#94A3B8']))
                     ).properties(height=200)
                     st.altair_chart(shift_chart, use_container_width=True)
                     
@@ -1048,7 +1143,7 @@ elif nav_selection == "STATE COMMAND & AI":
                     ledger_chart = alt.Chart(ledger_data).mark_bar().encode(
                         x=alt.X('sum(mhis_value):Q', title="Total MHIS Value (₹)"),
                         y=alt.Y('routing_path:N', title=""),
-                        color=alt.Color('routing_path:N', scale=alt.Scale(domain=['Govt -> Govt (Retained)', 'Govt -> Private (Leakage)'], range=['#00cc96', '#ff4b4b']), legend=None)
+                        color=alt.Color('routing_path:N', scale=alt.Scale(domain=['Govt -> Govt (Retained)', 'Govt -> Private (Leakage)'], range=['#10B981', '#EF4444']), legend=None)
                     ).properties(height=200)
                     st.altair_chart(ledger_chart, use_container_width=True)
 
@@ -1060,7 +1155,7 @@ elif nav_selection == "STATE COMMAND & AI":
                     flight_chart = alt.Chart(flight_data).mark_bar().encode(
                         x=alt.X('sum(mhis_value):Q', title="Leakage (₹)"),
                         y=alt.Y('origin_district:N', sort='-x', title="Origin District"),
-                        color=alt.value('#ff4b4b')
+                        color=alt.value('#EF4444')
                     ).properties(height=200)
                     st.altair_chart(flight_chart, use_container_width=True)
                     
@@ -1071,7 +1166,7 @@ elif nav_selection == "STATE COMMAND & AI":
                 burden_bar = alt.Chart(df_econ[df_econ['uncompensated_burden'] > 0]).mark_bar().encode(
                     x=alt.X('bundle:N', sort='-y', title="Pathology Category"),
                     y=alt.Y('sum(uncompensated_burden):Q', title="Total Penalty (₹)"),
-                    color=alt.value('#faca2b')
+                    color=alt.value('#F59E0B')
                 ).properties(height=250)
                 st.altair_chart(burden_bar, use_container_width=True)
                 
