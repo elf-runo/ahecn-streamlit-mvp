@@ -84,7 +84,7 @@ with st.sidebar:
     st.subheader("🔐 Security & Access Control")
     simulated_role = st.selectbox(
         "Simulate Active User Login:",
-        ["State Health Command (Macro View)", "Director: NEIGRIHMS", "Director: Woodland Hospital", "Director: Bethany Hospital"]
+        ["State Health Command (Macro View)", "Authorized Community Node (ASHA/CFR)", "State Tele-Triage Dispatcher", "Director: NEIGRIHMS", "Director: Woodland Hospital", "Director: Bethany Hospital"]
     )
     st.session_state.user_role = simulated_role
     st.markdown("---")
@@ -100,6 +100,43 @@ with st.sidebar:
 # VIEW 1: REFERRAL INITIATION
 # ==========================================
 if nav_selection == "REFERRAL INITIATION":
+    
+    if st.session_state.user_role == "Authorized Community Node (ASHA/CFR)":
+        st.header("Community Gateway (Authorized Node)")
+        st.caption("Initiating heavily subsidized Tier-3 Health Ride for vulnerable populations.")
+        
+        with st.container(border=True):
+            st.subheader("Patient Vitals (First-Responder Input)")
+            c1, c2, c3 = st.columns(3)
+            patient_name = c1.text_input("Patient Name", "Local Resident")
+            age = c2.number_input("Age", 0, 120, 45)
+            symptom_cat = c3.selectbox("Primary Complaint", ["Orthopedic (Fracture/Sprain)", "Fever/Infection", "Maternal (Routine)", "Severe Chest Pain", "Unconscious / Bleeding"])
+            
+            if symptom_cat in ["Severe Chest Pain", "Unconscious / Bleeding"]:
+                st.error("🚨 **CLINICAL AIR-LOCK TRIGGERED:** Volatile pathology detected. Tier-3 Cabs locked. Rerouting to ALS Ambulance dispatch.")
+            else:
+                st.success("✅ **CLEARED:** Patient verified for Tier-3 Cab Dispatch.")
+            
+            if st.button("Authorize State-Subsidized Transport", type="primary"):
+                st.success("✅ Tier-3 Cab Dispatched to your location. State Treasury pre-authorized upon geofence verification at destination clinic.")
+        st.stop()
+
+    elif st.session_state.user_role == "State Tele-Triage Dispatcher":
+        st.header("Tele-Triage Control (Direct Citizen Requests)")
+        st.caption("Validating self-pay WhatsApp/104 public requests.")
+        
+        with st.container(border=True):
+            st.markdown("### 📞 Pending Public Requests")
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.markdown("**Request ID: D2C-9942** (via WhatsApp Bot)")
+                st.caption("Symptoms inputted: 'I fell off my bike and my ankle is swollen. Need ride to Civil Hospital.'")
+                st.info("🤖 **NLP Screener:** Scored GREEN. No volatile trigger words detected.")
+            with col2:
+                if st.button("✅ Authorize Cab"):
+                    st.success("Cab Dispatched. Geofence payload generated to prevent trip fraud.")
+        st.stop()
+
     st.header("Triage & Referral Initiation")
     st.caption("Secure, dual-vector triage and topography-aware facility matching.")
     
@@ -287,18 +324,27 @@ if nav_selection == "REFERRAL INITIATION":
                 if st.button("🚀 Initiate E2EE Transfer & Dispatch Ambulance", type="primary"):
                     selected_idx = next(i for i, r in enumerate(results) if r["facility"] == selected_fac["facility"])
                     
-                    ideal_fleet = "ALS" if triage_color == "RED" or meta['severity_index'] >= 0.6 else "BLS"
-                    als_available = random.choices([True, False], weights=[0.7, 0.3])[0]
+                    # --- UPGRADED: "SCOOP & RUN" DESPERATION ENGINE ---
+                    ideal_fleet = "ALS" if triage_color == "RED" or meta['severity_index'] >= 0.6 else ("BLS" if triage_color == "YELLOW" else "CAB")
+                    als_available = random.choices([True, False], weights=[0.4, 0.6])[0] # Highly constrained simulation
+                    bls_available = random.choices([True, False], weights=[0.5, 0.5])[0] 
                     
-                    if ideal_fleet == "ALS" and not als_available:
-                        allocated_fleet = "BLS"
-                        fleet_status = "DOWNGRADE_RISK"
-                    elif ideal_fleet == "BLS" and random.random() < 0.15: 
-                        allocated_fleet = "ALS"
-                        fleet_status = "RESOURCE_WASTE"
+                    if ideal_fleet == "ALS":
+                        if als_available:
+                            allocated_fleet, fleet_status = "ALS", "OPTIMAL"
+                        elif bls_available:
+                            allocated_fleet, fleet_status = "BLS", "DOWNGRADE_RISK"
+                        else:
+                            allocated_fleet, fleet_status = "CAB", "CRITICAL_CAB_FALLBACK"
+                    elif ideal_fleet == "BLS":
+                        if bls_available:
+                            allocated_fleet, fleet_status = "BLS", "OPTIMAL"
+                        elif als_available:
+                            allocated_fleet, fleet_status = "ALS", "RESOURCE_WASTE"
+                        else:
+                            allocated_fleet, fleet_status = "CAB", "CRITICAL_CAB_FALLBACK"
                     else:
-                        allocated_fleet = ideal_fleet
-                        fleet_status = "OPTIMAL"
+                        allocated_fleet, fleet_status = "CAB", "OPTIMAL"
                     
                     st.session_state.active_case = {
                         "patient_name": patient_name, "age": age, "vitals": vitals, "diagnosis": dx,
@@ -315,6 +361,11 @@ if nav_selection == "REFERRAL INITIATION":
                     st.session_state.transfer_initiated = True
                     st.session_state.patient_accepted = False
                     st.session_state.match_results = None 
+                    
+                    # Auto-trigger civic override if cab is forced to take a critical patient
+                    if fleet_status == "CRITICAL_CAB_FALLBACK":
+                        st.session_state.civic_override_active = True
+                        
                     st.rerun()
 
     if st.session_state.transfer_initiated and st.session_state.active_case:
@@ -331,7 +382,7 @@ I - IDENTIFICATION:
 Patient: {case['patient_name']}, {case['age']} Y/O
 
 S - SITUATION:
-Emergency dispatch to {case['destination']['facility']} via [ {case['fleet']['allocated']} AMBULANCE ]. 
+Emergency dispatch to {case['destination']['facility']} via [ {case['fleet']['allocated']} UNIT ]. 
 Provisional DX: {case['diagnosis']}
 
 B - BACKGROUND: Bundle: {case['bundle']}. Rationale: {case.get('rationale', 'N/A')}
@@ -373,6 +424,8 @@ elif nav_selection == "ACTIVE TRANSIT TELEMETRY":
                 st.warning("⚠️ **FLEET WARNING:** Patient acuity requires ALS. Due to state shortage, BLS allocated. Proceed with maximum caution.")
             elif case['fleet']['status'] == "RESOURCE_WASTE":
                 st.info("ℹ️ **FLEET NOTICE:** Patient is stable, but ALS was autonomously dispatched due to BLS regional shortage.")
+            elif case['fleet']['status'] == "CRITICAL_CAB_FALLBACK":
+                st.error("🚨 **CRITICAL CAB FALLBACK:** State ambulance fleet exhausted. Un-equipped Tier-3 Cab dispatched to save life. Proactive Police Escort Engaged.")
             
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("Topography-Adjusted ETA", f"{dest['eta']} min")
@@ -475,12 +528,15 @@ elif nav_selection == "ACTIVE TRANSIT TELEMETRY":
                         case["transit_log"].append({"time": datetime.now().strftime("%H:%M:%S"), "action": "GREEN CORRIDOR: API Sync to Traffic Command & Public Broadcast."})
                         st.rerun()
                         
-                if st.session_state.get('civic_override_active', False) and traffic_delay > 15:
+                if st.session_state.get('civic_override_active', False):
                     st.success("✅ **Civic Override Executing**")
                     with st.expander("📡 View Active API Broadcasts", expanded=True):
-                        st.info("**Logistics:** ALS Motorcycle Intercept dispatched. ETA: 6 mins.")
-                        st.warning("**Police:** Ping sent to Patrol Unit (MEGH-P-42) for immediate escort.")
-                        st.code(f"URGENT: Critical Medical Emergency in transit. Ambulance approaching {dest['facility']}. Clear the right lane immediately.", language="markdown")
+                        if case['fleet']['status'] == "CRITICAL_CAB_FALLBACK":
+                            st.error("**Logistics:** CRITICAL SCOOP & RUN. Civilian cab carrying un-resuscitated patient.")
+                        else:
+                            st.info("**Logistics:** ALS Motorcycle Intercept dispatched. ETA: 6 mins.")
+                        st.warning("**Police:** Ping sent to Patrol Unit (MEGH-P-42) for immediate escort to Receiving ED.")
+                        st.code(f"URGENT: Critical Medical Emergency in transit. Vehicle approaching {dest['facility']}. Clear the right lane immediately.", language="markdown")
 
             st.markdown("---")
             
@@ -807,21 +863,29 @@ elif nav_selection == "STATE COMMAND & AI":
                             base_mortality = mortality_risk(sev_idx, r["transport"]["eta_min"], pathology=bundle_name)
                             final_mortality = base_mortality * random.uniform(0.75, 0.85) if had_intervention else base_mortality
 
-                            # Fleet Logic
+                            # Synthetic Fleet Allocation Logic (Updated with Desperation Failsafe)
                             ideal = "ALS" if r["triage"]["decision"]["color"] == "RED" or sev_idx >= 0.6 else "BLS"
                             als_avail = random.choices([True, False], weights=[0.75, 0.25])[0]
-                            if ideal == "ALS" and not als_avail: mission_type = "Risk: BLS deployed for Critical Case"
-                            elif ideal == "BLS" and random.random() < 0.15: mission_type = "Waste: ALS deployed for Stable Case"
-                            elif ideal == "ALS": mission_type = "Optimal: ALS for Critical" 
-                            else: mission_type = "Optimal: BLS for Stable"
+                            bls_avail = random.choices([True, False], weights=[0.8, 0.2])[0]
+                            
+                            if ideal == "ALS":
+                                if als_avail: mission_type = "Optimal: ALS for Critical"
+                                elif bls_avail: mission_type = "Risk: BLS deployed for Critical Case"
+                                else: mission_type = "Desperation: Cab used for Critical"
+                            elif ideal == "BLS":
+                                if bls_avail: mission_type = "Optimal: BLS for Stable"
+                                elif als_avail: mission_type = "Waste: ALS deployed for Stable Case"
+                                else: mission_type = "Desperation: Cab used for Critical"
+                            else:
+                                mission_type = "Optimal: Cab for Green"
 
-                            # --- NEW: MHIS ECONOMICS ENGINE ---
+                            # --- MHIS ECONOMICS ENGINE ---
                             mhis_base = {"Cardiac": 120000, "Trauma": 180000, "Maternal": 45000, "Stroke": 85000, "Pediatric": 25000, "Neonatal": 40000}
                             mhis_val = mhis_base.get(bundle_name, 50000) * random.uniform(0.9, 1.1)
                             
                             first_choice_gov = random.choices([True, False], weights=[0.65, 0.35])[0]
                             if first_choice_gov:
-                                if random.random() < 0.3: # Rejected by Govt
+                                if random.random() < 0.3: 
                                     route = "Govt -> Private (Leakage)"
                                     final_sec = "Private"
                                 else:
@@ -882,7 +946,7 @@ elif nav_selection == "STATE COMMAND & AI":
                         st.dataframe(pd.DataFrame(fleet_data), hide_index=True, use_container_width=True)
 
                 with col_ai2:
-                    st.markdown("**Fleet Utilization Matrix (ALS vs BLS)**")
+                    st.markdown("**Fleet Utilization Matrix (Including T-3 Cabs)**")
                     st.caption("Tracking resource misallocation to optimize fleet deployment costs.")
                     
                     if 'mission_type' in df_analytics.columns:
@@ -896,12 +960,14 @@ elif nav_selection == "STATE COMMAND & AI":
                                 'Mission Type:N',
                                 scale=alt.Scale(
                                     domain=[
+                                        'Desperation: Cab used for Critical',
                                         'Risk: BLS deployed for Critical Case', 
                                         'Waste: ALS deployed for Stable Case', 
                                         'Optimal: ALS for Critical', 
-                                        'Optimal: BLS for Stable'
+                                        'Optimal: BLS for Stable',
+                                        'Optimal: Cab for Green'
                                     ],
-                                    range=['#ff4b4b', '#faca2b', '#00cc96', '#00cc96']
+                                    range=['#9c0000', '#ff4b4b', '#faca2b', '#00cc96', '#00cc96', '#00cc96']
                                 )
                             )
                         ).properties(height=200), use_container_width=True)
