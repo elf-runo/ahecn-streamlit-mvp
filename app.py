@@ -302,7 +302,7 @@ with st.sidebar:
         label_visibility="collapsed"
     )
     
-    # THE CRITICAL MISSING LINE: Saving the role to session state!
+    # Saving the role to session state!
     st.session_state.user_role = simulated_role 
     
     st.markdown("---")
@@ -461,7 +461,9 @@ if nav_selection == "REFERRAL INITIATION":
                         "dispatch_time": datetime.now().strftime("%H:%M:%S"),
                         "rationale": rationale,
                         "interventions": [], "viable_destinations": [], "current_dest_index": 0, "rejection_log": [], "medical_orders": [],
-                        "fleet": {"ideal": "ALS" if is_critical else "CAB", "allocated": allocated_fleet, "status": fleet_status, "driver": driver, "plate": plate, "vehicle": model, "emt": emt_name}
+                        "fleet": {"ideal": "ALS" if is_critical else "CAB", "allocated": allocated_fleet, "status": fleet_status, "driver": driver, "plate": plate, "vehicle": model, "emt": emt_name},
+                        "nurse_led": False,
+                        "surgical_override": False
                     }
                     st.session_state.transfer_initiated = True
                     st.session_state.patient_accepted = False
@@ -543,10 +545,15 @@ if nav_selection == "REFERRAL INITIATION":
         st.markdown("---")
         st.markdown("⚕️ **Pre-Transfer Resuscitation & Interventions**")
         
+        # --- NEW: The Provider Identification
+        initiator_role = st.radio("Initiating Provider Status:", ["Attending Medical Officer (Doctor)", "Staff Nurse / ANM (No Doctor on Duty)"], horizontal=True)
+        
         interventions_str = icd_row.get("default_interventions", "")
         available_interventions = [x.strip() for x in str(interventions_str).split(";") if x.strip()]
         
         completed_interventions = []
+        surgical_override = False
+        
         if available_interventions:
             completed_interventions = st.multiselect(
                 "Select life-saving interventions already administered:",
@@ -554,6 +561,10 @@ if nav_selection == "REFERRAL INITIATION":
             )
         else:
             st.info("No standardized resuscitation bundle found for this pathology. Use notes if needed.")
+            
+        # --- NEW: The Surgical "Hail Mary" Override for Doctors
+        if initiator_role == "Attending Medical Officer (Doctor)":
+            surgical_override = st.checkbox("⚠️ **SURGICAL EMERGENCY OVERRIDE:** Patient requires immediate surgical control unavailable here. Hemodynamic resuscitation is ongoing in transit.", value=False)
 
     vitals = {"hr": hr, "rr": rr, "sbp": sbp, "temp": temp, "spo2": spo2, "avpu": avpu}
     context = {"age": age, "pregnant": pregnant, "o2_device": "Air", "spo2_scale": 1, "behavior": "Normal"}
@@ -648,7 +659,25 @@ if nav_selection == "REFERRAL INITIATION":
                     elif details.get('gate_capacity') == "WARNING_ED_STABILIZATION_ONLY":
                         st.error("⚠️ **Capacity Gate Override:** ICU Full. Facility selected for immediate ED Resuscitation ONLY.")
 
-                if st.button("🚀 Initiate E2EE Transfer & Dispatch Transport", type="primary"):
+                # --- NEW: The Medico-Legal Dispatch Interlock
+                dispatch_disabled = False
+                dispatch_warning = ""
+                
+                if triage_color == "RED":
+                    if initiator_role == "Attending Medical Officer (Doctor)":
+                        if not completed_interventions and not surgical_override:
+                            dispatch_disabled = True
+                            dispatch_warning = "🚨 **IFT PROTOCOL LOCK:** Patient must be hemodynamically stabilized prior to transport. Select interventions administered or authorize the Surgical Emergency Override below."
+                    else:
+                        dispatch_warning = "⚠️ **NURSE-LED INITIATION:** No doctor on site. Patient un-resuscitated. Receiving ED will be pre-alerted for immediate stabilization."
+                
+                if dispatch_warning:
+                    if dispatch_disabled:
+                        st.error(dispatch_warning)
+                    else:
+                        st.warning(dispatch_warning)
+
+                if st.button("🚀 Initiate E2EE Transfer & Dispatch Transport", type="primary", disabled=dispatch_disabled):
                     selected_idx = next(i for i, r in enumerate(results) if r["facility"] == selected_fac["facility"])
                     
                     ideal_fleet = "ALS" if triage_color == "RED" or meta['severity_index'] >= 0.6 else ("BLS" if triage_color == "YELLOW" else "CAB")
@@ -691,7 +720,9 @@ if nav_selection == "REFERRAL INITIATION":
                         "current_dest_index": selected_idx,      
                         "rejection_log": [],
                         "medical_orders": [],
-                        "fleet": {"ideal": ideal_fleet, "allocated": allocated_fleet, "status": fleet_status, "driver": driver, "plate": plate, "vehicle": model, "emt": emt_name}
+                        "fleet": {"ideal": ideal_fleet, "allocated": allocated_fleet, "status": fleet_status, "driver": driver, "plate": plate, "vehicle": model, "emt": emt_name},
+                        "nurse_led": (initiator_role == "Staff Nurse / ANM (No Doctor on Duty)"),
+                        "surgical_override": surgical_override
                     }
                     st.session_state.transfer_initiated = True
                     st.session_state.patient_accepted = False
@@ -711,8 +742,11 @@ if nav_selection == "REFERRAL INITIATION":
             if case['fleet']['allocated'] == 'CAB':
                 transit_note = f"via [ TIER-3 CAB ({case['fleet']['plate']}) - NO EMT ON BOARD | Driver: {case['fleet']['driver']} ]"
                 
-            isbar_text = f"""[ISBAR CLINICAL HANDOVER]
-Status: PRIORITY {case['triage_color']} (Severity: {case['severity_index']:.2f})
+            nurse_alert = "\n[⚠️ NURSE-LED PHC INITIATION: NO DOCTOR ON SITE. PREPARE IMMEDIATE ED STABILIZATION.]" if case.get("nurse_led") else ""
+            surg_alert = "\n[⚠️ SURGICAL EMERGENCY OVERRIDE: ONGOING RESUSCITATION IN TRANSIT.]" if case.get("surgical_override") else ""
+
+            isbar_text = f"""[ISBAR CLINICAL HANDOVER]{nurse_alert}{surg_alert}
+Status: PRIORITY {case['triage_color']} (Severity: {case.get('severity_index', 0.0):.2f})
 I - IDENTIFICATION: Patient: {case['patient_name']}, {case['age']} Y/O
 S - SITUATION: Emergency dispatch to {case['destination']['facility']} {transit_note}. Provisional DX: {case['diagnosis']}
 B - BACKGROUND: Bundle: {case['bundle']}. Rationale: {case.get('rationale', 'N/A')}
@@ -844,6 +878,12 @@ elif nav_selection == "RECEIVING HOSPITAL BAY":
                     st.error(f"🚑 **INCOMING PRIORITY {case['triage_color']} AMBULANCE: ETA {dest['eta']} mins**")
                     st.markdown(f"**Unit:** {case['fleet']['vehicle']} ({case['fleet']['plate']}) | **Pilot:** {case['fleet']['driver']} | **Lead EMT:** {case['fleet']['emt']}")
                 
+                # --- NEW: ED Pre-Arrival Resuscitation Warnings ---
+                if case.get("nurse_led"):
+                    st.error("⚠️ **NURSE-LED PHC INITIATION: NO DOCTOR ON SITE. PATIENT UN-RESUSCITATED. PREPARE IMMEDIATE ED STABILIZATION ON ARRIVAL.**")
+                if case.get("surgical_override"):
+                    st.warning("⚠️ **SURGICAL OVERRIDE: Patient requires immediate surgical control. Hemodynamic resuscitation is ongoing in transit.**")
+
                 # --- RESTORED ISBAR HANDOVER SECTION ---
                 st.markdown("---")
                 st.markdown("### 📄 Pre-Hospital Clinical Handover (ISBAR)")
@@ -856,7 +896,10 @@ elif nav_selection == "RECEIVING HOSPITAL BAY":
                 if case.get("rejection_log"):
                     diversion_text = "\n[DIVERSION AUDIT]: " + " -> ".join([f"Bypassed {r['facility']} ({r['reason']})" for r in case["rejection_log"]])
 
-                isbar_text = f"""[ISBAR CLINICAL HANDOVER]
+                nurse_alert = "\n[⚠️ NURSE-LED PHC INITIATION: NO DOCTOR ON SITE. PREPARE IMMEDIATE ED STABILIZATION.]" if case.get("nurse_led") else ""
+                surg_alert = "\n[⚠️ SURGICAL EMERGENCY OVERRIDE: ONGOING RESUSCITATION IN TRANSIT.]" if case.get("surgical_override") else ""
+
+                isbar_text = f"""[ISBAR CLINICAL HANDOVER]{nurse_alert}{surg_alert}
 Status: PRIORITY {case['triage_color']} (Severity: {case.get('severity_index', 0.0):.2f})
 I - IDENTIFICATION: Patient: {case['patient_name']}, {case['age']} Y/O
 S - SITUATION: Emergency dispatch to {dest['facility']} {transit_note}. Provisional DX: {case['diagnosis']}
