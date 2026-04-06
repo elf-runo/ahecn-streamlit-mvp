@@ -844,6 +844,29 @@ elif nav_selection == "RECEIVING HOSPITAL BAY":
                     st.error(f"🚑 **INCOMING PRIORITY {case['triage_color']} AMBULANCE: ETA {dest['eta']} mins**")
                     st.markdown(f"**Unit:** {case['fleet']['vehicle']} ({case['fleet']['plate']}) | **Pilot:** {case['fleet']['driver']} | **Lead EMT:** {case['fleet']['emt']}")
                 
+                # --- RESTORED ISBAR HANDOVER SECTION ---
+                st.markdown("---")
+                st.markdown("### 📄 Pre-Hospital Clinical Handover (ISBAR)")
+                
+                transit_note = f"via [ {case['fleet']['allocated']} AMBULANCE ({case['fleet']['vehicle']} - Plate: {case['fleet']['plate']}) ]"
+                if is_cab:
+                    transit_note = f"via [ TIER-3 CAB ({case['fleet']['plate']}) - NO EMT ON BOARD ]"
+
+                diversion_text = ""
+                if case.get("rejection_log"):
+                    diversion_text = "\n[DIVERSION AUDIT]: " + " -> ".join([f"Bypassed {r['facility']} ({r['reason']})" for r in case["rejection_log"]])
+
+                isbar_text = f"""[ISBAR CLINICAL HANDOVER]
+Status: PRIORITY {case['triage_color']} (Severity: {case.get('severity_index', 0.0):.2f})
+I - IDENTIFICATION: Patient: {case['patient_name']}, {case['age']} Y/O
+S - SITUATION: Emergency dispatch to {dest['facility']} {transit_note}. Provisional DX: {case['diagnosis']}
+B - BACKGROUND: Bundle: {case['bundle']}. Rationale: {case.get('rationale', 'N/A')}
+Pre-Transfer Interventions: {', '.join(case.get('interventions', [])) if case.get('interventions') else 'None / Not Logged'}{diversion_text}
+A - ASSESSMENT: HR: {case['vitals']['hr']} | SBP: {case['vitals']['sbp']} | RR: {case['vitals']['rr']} | SpO2: {case['vitals']['spo2']}% | Temp: {case['vitals']['temp']}°C | AVPU: {case['vitals']['avpu']}
+R - RECOMMENDATION: {('ED STABILIZATION ONLY DUE TO ZERO ICU BEDS.' if dest['scoring_details'].get('gate_capacity') == 'WARNING_ED_STABILIZATION_ONLY' else 'Prepare critical care receiving bay.')}
+"""
+                st.code(isbar_text, language="markdown")
+                
                 st.markdown("---")
                 st.markdown("### 🎙️ Medical Command Uplink")
                 st.caption("Transmit legally-binding counter-orders directly to the paramedic mid-transit. *(Disabled if Cab Transport)*")
