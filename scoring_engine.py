@@ -2,16 +2,26 @@
 from __future__ import annotations
 from typing import Any, Dict, List, Tuple, Optional
 import math
+from analytics_engine import mortality_risk
 
-# --- THE GLOBALLY ACCEPTABLE DEGRADATION MATRIX ---
-# Maps a missing Tier 1 capability to its required Tier 2 medical fallback
 FALLBACK_MATRIX = {
-    "neurosurgeon": ["icu", "ct"],           # Medical management of ICP
-    "cardiologist": ["icu", "thrombolysis"], # Medical management of STEMI
+    "neurosurgeon": ["icu", "ct"],           
+    "cardiologist": ["icu", "thrombolysis"], 
     "cathlab": ["icu", "thrombolysis"],
-    "neonatologist": ["icu", "ventilator"],  # General intensivist bridge
-    "dialysis": ["icu", "crrt"],             # Continuous renal bridge
-    "surgeon": ["icu", "bloodbank"]          # Permissive hypotension bridge
+    "neonatologist": ["icu", "ventilator"],  
+    "dialysis": ["icu", "crrt"],             
+    "surgeon": ["icu", "bloodbank"]          
+}
+
+# [AUDIT FIX]: Taxonomy Normalizer mapping ICD-10 clinical language to registry shorthand
+TAXONOMY_MAP = {
+    "ct scanner": "ct",
+    "computed tomography": "ct",
+    "neuro surgery": "neurosurgeon",
+    "obstetrician": "obgyn",
+    "maternal ot": "obgyn",
+    "pediatrician": "picu",
+    "blood bank": "bloodbank"
 }
 
 def _is_nan(x: Any) -> bool:
@@ -29,9 +39,14 @@ def _to_int(x: Any, default: int = 0) -> int:
 
 def _normalize_required_caps(required_caps: Any) -> List[str]:
     if not required_caps: return []
-    if isinstance(required_caps, (list, tuple, set)): return [str(x).strip().lower() for x in required_caps if str(x).strip()]
-    if isinstance(required_caps, str): return [p.strip().lower() for p in required_caps.replace(",", ";").split(";") if p.strip()]
-    return [str(required_caps).strip().lower()]
+    caps_list = []
+    if isinstance(required_caps, (list, tuple, set)): 
+        caps_list = [str(x).strip().lower() for x in required_caps if str(x).strip()]
+    elif isinstance(required_caps, str): 
+        caps_list = [p.strip().lower() for p in required_caps.replace(",", ";").split(";") if p.strip()]
+    
+    # Apply Taxonomy Normalizer
+    return [TAXONOMY_MAP.get(c, c) for c in caps_list]
 
 def _parse_caps_kv_string(caps_str: str) -> Dict[str, int]:
     out: Dict[str, int] = {}
@@ -65,11 +80,27 @@ def calculate_facility_score(
     req = _normalize_required_caps(required_caps)
     caps = _normalize_caps(facility)
 
+    # [AUDIT FIX]: The 1-Minute NaN Teleportation Bug
+    if _is_nan(eta) or eta is None or eta < 0:
+        details["gate_capacity"] = "FAILED_INVALID_ROUTING_COORDINATES"
+        return 0.0, details
+        
     try: eta_min = float(eta)
     except: eta_min = 999.0
+    
     triage = (triage_color or "GREEN").upper()
     try: sev = max(0.0, min(1.0, float(severity_index or 0.0)))
     except: sev = 0.0
+
+    # ---------------- THE "EDUCATED OPTION" MORTALITY INTERLOCK ----------------
+    predicted_mortality = mortality_risk(sev, eta_min, pathology=str(case_type))
+    details["predicted_mortality_percent"] = predicted_mortality
+    
+    if predicted_mortality > 65.0 and eta_min > 40.0:
+        details["gate_capacity"] = "LETHAL_TRANSIT_RISK"
+        base_score -= 75 
+    else:
+        details["gate_capacity"] = "PASSED"
 
     # ---------------- GATE 1: THE TIERED DEGRADATION MATRIX ----------------
     missing_caps = []
@@ -78,28 +109,23 @@ def calculate_facility_score(
     tier = "Tier 1: Definitive Care"
 
     if req:
-        # What is the hospital explicitly missing?
         missing_caps = [c for c in req if _to_int(caps.get(c, 0), 0) != 1]
-        
         if missing_caps:
-            # Attempt to bridge the missing capabilities using the Fallback Matrix
             for mc in missing_caps:
                 fallbacks_needed = FALLBACK_MATRIX.get(mc, [])
-                # Does the hospital have ALL the fallbacks for this missing specialist?
                 if fallbacks_needed and all(_to_int(caps.get(fb, 0), 0) == 1 for fb in fallbacks_needed):
                     bridged_caps.append({"missing": mc, "bridged_with": fallbacks_needed})
                 else:
                     failed_caps.append(mc)
 
-            # Determine the Globally Acceptable Tier
             if not failed_caps and bridged_caps:
                 tier = "Tier 2: Advanced Medical Bridging"
-                base_score -= 15  # Small penalty, highly acceptable route
+                base_score -= 15  
             else:
-                tier = "Tier 3: Basic Stabilization"
-                base_score -= 60  # Severe penalty, critical hardware/personnel missing
+                tier = "Tier 3: Lacks Definitive Surgical Care"
+                base_score -= 55  
                 
-    details['gate_capability'] = tier
+    details['clinical_tier'] = tier
     details['missing_capabilities'] = missing_caps
     details['bridged_capabilities'] = bridged_caps
     details['failed_capabilities'] = failed_caps
@@ -107,29 +133,32 @@ def calculate_facility_score(
     # ---------------- GATE 2: CAPACITY & ED OVERRIDE ----------------
     icu_open = _to_int(facility.get("ICU_open", 0), 0)
     requires_bed = ("icu" in req) or ("ventilator" in req) or (triage == "RED")
-    has_ed = _to_int(caps.get("ed", 1), 1)
+    
+    # [AUDIT FIX]: Unsafe ED Default. Now defaults to 0 (No ED) if not explicitly stated.
+    has_ed = _to_int(caps.get("ed", 0), 0)
 
     icu_score = 0
     if requires_bed and icu_open < 1:
         if triage == "RED" and has_ed >= 1:
-            details["gate_capacity"] = "WARNING_ED_STABILIZATION_ONLY"
+            if details.get("gate_capacity") != "LETHAL_TRANSIT_RISK":
+                details["gate_capacity"] = "WARNING_ED_STABILIZATION_ONLY"
             base_score -= 40
-            tier = "Tier 3: Basic Stabilization" # Force tier drop due to no ICU
+            details['clinical_tier'] = "Tier 3: Basic Stabilization" 
         else:
-            details["gate_capacity"] = "FAILED"
+            if details.get("gate_capacity") != "LETHAL_TRANSIT_RISK":
+                details["gate_capacity"] = "FAILED"
             return 0.0, details
     else:
-        details["gate_capacity"] = "PASSED"
         if icu_open >= 3: icu_score = 15
         elif icu_open == 2: icu_score = 10
         elif icu_open == 1: icu_score = 5
 
-    # ---------------- SCORING METRICS ----------------
-    adjusted_eta = eta_min * (1.0 + sev)
+    # ---------------- DYNAMIC SCORING METRICS ----------------
+    adjusted_eta = eta_min * (1.0 + (sev * 1.5))
     if adjusted_eta <= 30: prox = 50
-    elif adjusted_eta <= 60: prox = 35
-    elif adjusted_eta <= 90: prox = 15
-    else: prox = 0
+    elif adjusted_eta <= 60: prox = 30
+    elif adjusted_eta <= 90: prox = 10
+    else: prox = -20
 
     ownership = str(facility.get("ownership", "Private") or "Private").strip()
     fiscal_score = 20 if ownership.lower() == "government" else 0
@@ -139,7 +168,6 @@ def calculate_facility_score(
     total = min(100.0, max(0.1, total))
 
     details.update({
-        "clinical_tier": tier,
         "eta_minutes": round(eta_min, 1),
         "proximity_score": prox,
         "icu_score": icu_score,
