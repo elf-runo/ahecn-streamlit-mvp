@@ -72,6 +72,25 @@ if 'match_results' not in st.session_state: st.session_state.match_results = Non
 if 'civic_override_active' not in st.session_state: st.session_state.civic_override_active = False
 if 'bed_locked' not in st.session_state: st.session_state.bed_locked = False
 
+# --- LIVE QUEUE & HANDOFF STATE (PATCH 1) ---
+if 'draft_case' not in st.session_state: st.session_state.draft_case = None
+if 'main_nav' not in st.session_state: st.session_state.main_nav = "108 ERC INTAKE CONSOLE"
+if 'call_queue' not in st.session_state:
+    st.session_state.call_queue = [
+        {"id": "108-MEGH-0942", "loc": "Mawphlang, EKH", "lat": 25.449, "lon": 91.758, "complaint": "Severe breathing issue, turning blue"},
+        {"id": "108-MEGH-0943", "loc": "Tikrikilla, WGH", "lat": 25.926, "lon": 90.134, "complaint": "Pregnant woman, heavy bleeding"},
+        {"id": "108-MEGH-0944", "loc": "Nongpoh NH-40", "lat": 25.900, "lon": 91.879, "complaint": "Road traffic accident, severe head injury"},
+        {"id": "108-MEGH-0945", "loc": "Cherrapunji, EKH", "lat": 25.270, "lon": 91.732, "complaint": "Elderly male, sudden weakness on right side"},
+        {"id": "108-MEGH-0946", "loc": "Tura Civil, WGH", "lat": 25.514, "lon": 90.203, "complaint": "Massive chest pain, sweating profusely"},
+        {"id": "108-MEGH-0947", "loc": "Jowai, WJH", "lat": 25.448, "lon": 92.199, "complaint": "High fever, seizures in a toddler"},
+        {"id": "108-MEGH-0948", "loc": "Baghmara, SGH", "lat": 25.201, "lon": 90.622, "complaint": "Snake bite, leg swelling rapidly"},
+        {"id": "108-MEGH-0949", "loc": "Khliehriat, EJH", "lat": 25.361, "lon": 92.365, "complaint": "Severe abdominal pain, vomiting blood"},
+        {"id": "108-MEGH-0950", "loc": "Dawki, WJH", "lat": 25.185, "lon": 92.015, "complaint": "Fell from height, suspected spinal injury"},
+        {"id": "108-MEGH-0951", "loc": "Williamnagar, EGH", "lat": 25.586, "lon": 90.612, "complaint": "Child drank kerosene"},
+        {"id": "108-MEGH-0952", "loc": "Mairang, EWKH", "lat": 25.564, "lon": 91.638, "complaint": "Asthma attack, inhaler not working"},
+        {"id": "108-MEGH-0953", "loc": "Shillong PB, EKH", "lat": 25.578, "lon": 91.883, "complaint": "Unconscious female, found on street"}
+    ]
+
 PILOTS = ["Khraw", "Mewan", "Donbok", "Bantei", "Pynskhem", "Lamphrang"]
 EMTS = ["Dr. Sarah", "Paramedic Grace", "Paramedic John", "Nurse Riba"]
 
@@ -148,9 +167,12 @@ with st.sidebar:
     
     st.markdown("---")
     st.markdown("<h4 style='color: #0F172A; font-size: 1rem;'><span class='material-symbols-outlined icon-slate' style='font-size:1.2rem;'>explore</span> System Navigation</h4>", unsafe_allow_html=True)
+    
+    # --- PROGRAMMABLE NAVIGATION (PATCH 2) ---
     nav_selection = st.radio(
         "Select Module:",
         ["108 ERC INTAKE CONSOLE", "REFERRAL INITIATION", "ACTIVE TRANSIT TELEMETRY", "RECEIVING HOSPITAL BAY", "STATE COMMAND & AI"],
+        key="main_nav",
         label_visibility="collapsed"
     )
     st.markdown("---")
@@ -169,7 +191,7 @@ st.markdown("""
 # ==========================================
 # VIEW 0: 108 ERC INTAKE CONSOLE
 # ==========================================
-if nav_selection == "108 ERC INTAKE CONSOLE":
+if st.session_state.main_nav == "108 ERC INTAKE CONSOLE":
     st.markdown("<h2><span class='material-symbols-outlined icon-blue'>headset_mic</span> 108 Emergency Response Center</h2>", unsafe_allow_html=True)
     st.caption("Layer 1: Unified Call Capture & Ecosystem Routing")
     
@@ -194,25 +216,33 @@ if nav_selection == "108 ERC INTAKE CONSOLE":
         with l3:
             st.info("**Scheduled (ISFT) (2%)**\n\n**29 Active Cases**\n\n*Routed to Empanelled Cabs*")
 
+    # --- DYNAMIC QUEUE & ESCALATION (PATCH 3) ---
     with st.container(border=True):
-        st.markdown("<h3><span class='material-symbols-outlined icon-slate'>support_agent</span> Live Operator Queue</h3>", unsafe_allow_html=True)
-        st.markdown("**Incoming Call: 108-MEGH-0942 (Ringing...)**")
+        st.markdown("<h3><span class='material-symbols-outlined icon-slate'>support_agent</span> Live Operator Queue (12 Active Cases)</h3>", unsafe_allow_html=True)
         st.warning("SLA Timer: 00:42 (Target: Dispatch within 2 minutes)")
         
-        c_q1, c_q2 = st.columns(2)
+        c_q1, c_q2 = st.columns([1.5, 1])
         with c_q1:
-            st.text_input("Caller Location", "Mawphlang, East Khasi Hills")
-            st.text_input("Raw Chief Complaint", "Severe breathing issue, turning blue")
+            call_options = [f"{c['id']} - {c['loc']}" for c in st.session_state.call_queue]
+            selected_call_str = st.selectbox("Select Active Call from Priority Queue:", call_options)
+            active_call = next(c for c in st.session_state.call_queue if f"{c['id']} - {c['loc']}" == selected_call_str)
+            
+            st.text_input("Caller Location (Triangulated)", active_call['loc'], disabled=True)
+            st.text_input("Raw Chief Complaint (Transcribed)", active_call['complaint'], disabled=True)
+            
         with c_q2:
             st.selectbox("MCECN Lane Assignment", ["Emergency Response", "Hospital Transfer (IFT)"])
             st.markdown("<br>", unsafe_allow_html=True)
+            
             if st.button("Escalate to MCECN Triage Intelligence", type="primary", use_container_width=True):
-                st.success("Call Captured & Logged. Proceed to **REFERRAL INITIATION** tab to execute AI Clinical Triage.")
+                st.session_state.draft_case = active_call
+                st.session_state.main_nav = "REFERRAL INITIATION"
+                st.rerun()
 
 # ==========================================
 # VIEW 1: REFERRAL INITIATION
 # ==========================================
-elif nav_selection == "REFERRAL INITIATION":
+elif st.session_state.main_nav == "REFERRAL INITIATION":
     st.markdown("<h2><span class='material-symbols-outlined icon-blue'>medical_services</span> Clinical Triage & Referral</h2>", unsafe_allow_html=True)
     st.caption("Layer 2: Secure, dual-vector triage and topography-aware facility matching.")
     render_plotly_timeline(1)
@@ -300,9 +330,22 @@ elif nav_selection == "REFERRAL INITIATION":
     # --- STANDARD HOSPITAL-TO-HOSPITAL VIEW ---
     with st.container(border=True):
         st.markdown("<h3><span class='material-symbols-outlined icon-slate'>vital_signs</span> 1. Patient Physiology & Context</h3>", unsafe_allow_html=True)
+        
+        # --- HANDOFF CATCHER (PATCH 4) ---
+        draft = st.session_state.get('draft_case')
+        if draft:
+            st.success(f"🧠 **MCECN NLP INGESTION COMPLETE:** \n\n**Call ID:** {draft['id']} | **Location:** {draft['loc']} \n**Raw Transcribed Input:** *\"{draft['complaint']}\"*")
+            default_lat = float(draft['lat'])
+            default_lon = float(draft['lon'])
+            default_name = "Unknown (Emergency Intake)"
+        else:
+            default_lat = 25.586936
+            default_lon = 91.809418
+            default_name = "John Doe"
+
         c1, c2, c3, c4 = st.columns(4)
         with c1:
-            patient_name = st.text_input("Patient Name (E2EE)", "John Doe")
+            patient_name = st.text_input("Patient Name (E2EE)", default_name)
             age = st.number_input("Age (years)", 0, 120, 35)
             pregnant = st.checkbox("Pregnant", value=False)
         with c2:
@@ -314,8 +357,8 @@ elif nav_selection == "REFERRAL INITIATION":
             sbp = st.number_input("SBP", 0, 300, 92)
             temp = st.number_input("Temp °C", 30.0, 43.0, 38.4, step=0.1)
         with c4:
-            src_lat = st.number_input("Origin Latitude", value=25.586936, format="%.6f") 
-            src_lon = st.number_input("Origin Longitude", value=91.809418, format="%.6f")
+            src_lat = st.number_input("Origin Latitude", value=default_lat, format="%.6f") 
+            src_lon = st.number_input("Origin Longitude", value=default_lon, format="%.6f")
 
     with st.container(border=True):
         st.markdown("<h3><span class='material-symbols-outlined icon-slate'>stethoscope</span> 2. Provisional Diagnosis</h3>", unsafe_allow_html=True)
@@ -454,12 +497,13 @@ elif nav_selection == "REFERRAL INITIATION":
                     st.session_state.transfer_initiated = True
                     st.session_state.patient_accepted = False
                     st.session_state.match_results = None 
+                    st.session_state.draft_case = None # Clear draft on successful dispatch
                     st.rerun()
 
 # ==========================================
 # VIEW 2: ACTIVE TRANSIT TELEMETRY
 # ==========================================
-elif nav_selection == "ACTIVE TRANSIT TELEMETRY":
+elif st.session_state.main_nav == "ACTIVE TRANSIT TELEMETRY":
     st.markdown("<h2><span class='material-symbols-outlined icon-blue'>ambulance</span> Active Transit & Telemetry Dashboard</h2>", unsafe_allow_html=True)
     render_plotly_timeline(3)
 
@@ -549,7 +593,7 @@ elif nav_selection == "ACTIVE TRANSIT TELEMETRY":
 # ==========================================
 # VIEW 3: RECEIVING HOSPITAL
 # ==========================================
-elif nav_selection == "RECEIVING HOSPITAL BAY":
+elif st.session_state.main_nav == "RECEIVING HOSPITAL BAY":
     st.markdown("<h2><span class='material-symbols-outlined icon-blue'>local_hospital</span> Emergency Department Receiving Board</h2>", unsafe_allow_html=True)
     render_plotly_timeline(4)
     
@@ -577,7 +621,6 @@ elif nav_selection == "RECEIVING HOSPITAL BAY":
                 nurse_alert = "\n[NURSE-LED PHC INITIATION]" if case.get("nurse_led") else ""
                 surg_alert = "\n[SURGICAL EMERGENCY OVERRIDE]" if case.get("surgical_override") else ""
                 
-                # --- The Micro-Regression Fix: Re-integrating the Diversion Audit into the ISBAR ---
                 diversion_text = "\n[DIVERSION AUDIT]: " + " -> ".join([f"Bypassed {r['facility']} ({r['reason']})" for r in case.get("rejection_log", [])]) if case.get("rejection_log") else ""
 
                 isbar_text = f"""[ISBAR CLINICAL HANDOVER]{nurse_alert}{surg_alert}
@@ -708,7 +751,7 @@ A - ASSESSMENT: HR: {case['vitals']['hr']} | SBP: {case['vitals']['sbp']} | RR: 
 # ==========================================
 # VIEW 4: STATE COMMAND & AI
 # ==========================================
-elif nav_selection == "STATE COMMAND & AI":
+elif st.session_state.main_nav == "STATE COMMAND & AI":
     st.markdown("<h2><span class='material-symbols-outlined icon-blue'>dashboard_customize</span> State Command & Control</h2>", unsafe_allow_html=True)
 
     if st.session_state.user_role != "State Health Command (Macro View)":
@@ -744,7 +787,6 @@ elif nav_selection == "STATE COMMAND & AI":
                             fc_gov = random.random() < 0.65
                             route = "Govt -> Private (Leakage)" if (fc_gov and random.random() < 0.3) else ("Govt -> Govt" if fc_gov else "Private -> Private")
                             
-                            # --- The Micro-Regression Fix: Re-integrating the full dictionary payload ---
                             safe_records.append({
                                 "bundle": bundle_name, "triage_color": r["triage"]["decision"]["color"],
                                 "actual_trip_time": r["transport"]["eta_min"] + random.uniform(1.0, 15.0),
