@@ -72,7 +72,7 @@ if 'match_results' not in st.session_state: st.session_state.match_results = Non
 if 'civic_override_active' not in st.session_state: st.session_state.civic_override_active = False
 if 'bed_locked' not in st.session_state: st.session_state.bed_locked = False
 
-# --- LIVE QUEUE & HANDOFF STATE (PATCH 1) ---
+# --- LIVE QUEUE & HANDOFF STATE ---
 if 'draft_case' not in st.session_state: st.session_state.draft_case = None
 if 'main_nav' not in st.session_state: st.session_state.main_nav = "108 ERC INTAKE CONSOLE"
 if 'call_queue' not in st.session_state:
@@ -168,7 +168,6 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("<h4 style='color: #0F172A; font-size: 1rem;'><span class='material-symbols-outlined icon-slate' style='font-size:1.2rem;'>explore</span> System Navigation</h4>", unsafe_allow_html=True)
     
-    # --- PROGRAMMABLE NAVIGATION (PATCH 2) ---
     nav_selection = st.radio(
         "Select Module:",
         ["108 ERC INTAKE CONSOLE", "REFERRAL INITIATION", "ACTIVE TRANSIT TELEMETRY", "RECEIVING HOSPITAL BAY", "STATE COMMAND & AI"],
@@ -216,7 +215,6 @@ if st.session_state.main_nav == "108 ERC INTAKE CONSOLE":
         with l3:
             st.info("**Scheduled (ISFT) (2%)**\n\n**29 Active Cases**\n\n*Routed to Empanelled Cabs*")
 
-    # --- DYNAMIC QUEUE & ESCALATION (PATCH 3) ---
     with st.container(border=True):
         st.markdown("<h3><span class='material-symbols-outlined icon-slate'>support_agent</span> Live Operator Queue (12 Active Cases)</h3>", unsafe_allow_html=True)
         st.warning("SLA Timer: 00:42 (Target: Dispatch within 2 minutes)")
@@ -234,7 +232,6 @@ if st.session_state.main_nav == "108 ERC INTAKE CONSOLE":
             st.selectbox("MCECN Lane Assignment", ["Emergency Response", "Hospital Transfer (IFT)"])
             st.markdown("<br>", unsafe_allow_html=True)
             
-            # The Fix: Using a Streamlit callback to safely alter widget state
             def trigger_escalation(call_payload):
                 st.session_state.draft_case = call_payload
                 st.session_state.main_nav = "REFERRAL INITIATION"
@@ -255,7 +252,6 @@ elif st.session_state.main_nav == "REFERRAL INITIATION":
     st.caption("Layer 2: Secure, dual-vector triage and topography-aware facility matching.")
     render_plotly_timeline(1)
     
-    # Optional gateway rendering if ASHA/Citizen
     if st.session_state.user_role in ["Authorized Community Node (ASHA/CFR)", "Citizen Self-Booking App"]:
         is_asha = (st.session_state.user_role == "Authorized Community Node (ASHA/CFR)")
         if is_asha:
@@ -335,14 +331,14 @@ elif st.session_state.main_nav == "REFERRAL INITIATION":
                     st.rerun()
         st.stop()
 
-    # --- STANDARD HOSPITAL-TO-HOSPITAL VIEW ---
     with st.container(border=True):
         st.markdown("<h3><span class='material-symbols-outlined icon-slate'>vital_signs</span> 1. Patient Physiology & Context</h3>", unsafe_allow_html=True)
         
         # --- REVISED HANDOFF CATCHER (EXPLICIT 108 ATTRIBUTION) ---
         draft = st.session_state.get('draft_case')
-        if draft:
-            # Custom HTML for an aggressive, enterprise-grade CAD Alert
+        is_field_emergency = (draft is not None)
+        
+        if is_field_emergency:
             st.markdown(f"""
             <div style='background-color: #FEF2F2; border: 1px solid #EF4444; border-left: 6px solid #EF4444; padding: 15px; border-radius: 8px; margin-bottom: 20px;'>
                 <h4 style='color: #B91C1C; margin-top: 0; margin-bottom: 10px;'><span class='material-symbols-outlined' style='vertical-align: bottom;'>emergency</span> 108 FIELD EMERGENCY: ACTIVE CAD HANDOFF</h4>
@@ -360,7 +356,6 @@ elif st.session_state.main_nav == "REFERRAL INITIATION":
             default_lon = float(draft['lon'])
             default_name = "Unknown (108 Field Intake)"
         else:
-            # Standard IFT UI (No 108 Draft)
             default_lat = 25.586936
             default_lon = 91.809418
             default_name = "John Doe"
@@ -407,19 +402,27 @@ elif st.session_state.main_nav == "REFERRAL INITIATION":
         selected_rationale = st.selectbox("Standardized Reason for Transfer", auto_rationales)
         
         st.markdown("---")
-        initiator_role = st.radio("Initiating Provider Status:", ["Attending Medical Officer (Doctor)", "Staff Nurse / ANM (No Doctor on Duty)"], horizontal=True)
+        st.markdown("⚕️ **Pre-Transfer Resuscitation & Interventions**")
         
-        interventions_str = icd_row.get("default_interventions", "")
-        available_interventions = [x.strip() for x in str(interventions_str).split(";") if x.strip()]
-        
-        completed_interventions = []
-        surgical_override = False
-        
-        if available_interventions:
-            completed_interventions = st.multiselect("Select life-saving interventions already administered:", available_interventions)
+        if is_field_emergency:
+            st.info("🚑 **FIELD PROTOCOL ACTIVE:** Pre-transfer stabilization logging bypassed. AI assumes patient is un-resuscitated at incident scene.")
+            initiator_role = "Field EMT / First Responder"
+            completed_interventions = []
+            surgical_override = False
+        else:
+            initiator_role = st.radio("Initiating Provider Status:", ["Attending Medical Officer (Doctor)", "Staff Nurse / ANM (No Doctor on Duty)"], horizontal=True)
             
-        if initiator_role == "Attending Medical Officer (Doctor)":
-            surgical_override = st.checkbox("SURGICAL EMERGENCY OVERRIDE: Patient requires immediate surgical control unavailable here. Hemodynamic resuscitation is ongoing in transit.")
+            interventions_str = icd_row.get("default_interventions", "")
+            available_interventions = [x.strip() for x in str(interventions_str).split(";") if x.strip()]
+            
+            completed_interventions = []
+            surgical_override = False
+            
+            if available_interventions:
+                completed_interventions = st.multiselect("Select life-saving interventions already administered:", available_interventions)
+                
+            if initiator_role == "Attending Medical Officer (Doctor)":
+                surgical_override = st.checkbox("SURGICAL EMERGENCY OVERRIDE: Patient requires immediate surgical control unavailable here. Hemodynamic resuscitation is ongoing in transit.")
 
     vitals = {"hr": hr, "rr": rr, "sbp": sbp, "temp": temp, "spo2": spo2, "avpu": avpu}
     context = {"age": age, "pregnant": pregnant, "o2_device": "Air", "spo2_scale": 1, "behavior": "Normal"}
@@ -488,19 +491,24 @@ elif st.session_state.main_nav == "REFERRAL INITIATION":
                 dispatch_disabled = False
                 dispatch_warning = ""
                 
-                if triage_color == "RED":
-                    if initiator_role == "Attending Medical Officer (Doctor)":
-                        if not completed_interventions and not surgical_override:
-                            dispatch_disabled = True
-                            dispatch_warning = "IFT PROTOCOL LOCK: Patient must be hemodynamically stabilized prior to transport. Select interventions administered or authorize Surgical Override."
-                    else:
-                        dispatch_warning = "NURSE-LED INITIATION: No doctor on site. Patient un-resuscitated. Receiving ED will be pre-alerted."
+                if is_field_emergency:
+                    dispatch_warning = "🚨 **FIELD EMERGENCY OVERRIDE:** Bypassing IFT stabilization locks. Routing field unit directly to incident scene for immediate Scoop & Run."
+                    btn_text = "🚀 Dispatch Field Unit (Scoop & Run Protocol)"
+                else:
+                    btn_text = "🚀 Initiate E2EE Transfer & Dispatch Transport"
+                    if triage_color == "RED":
+                        if initiator_role == "Attending Medical Officer (Doctor)":
+                            if not completed_interventions and not surgical_override:
+                                dispatch_disabled = True
+                                dispatch_warning = "IFT PROTOCOL LOCK: Patient must be hemodynamically stabilized prior to transport. Select interventions administered or authorize Surgical Override."
+                        else:
+                            dispatch_warning = "NURSE-LED INITIATION: No doctor on site. Patient un-resuscitated. Receiving ED will be pre-alerted."
                 
                 if dispatch_warning:
                     if dispatch_disabled: st.error(dispatch_warning)
                     else: st.warning(dispatch_warning)
 
-                if st.button("Initiate E2EE Transfer & Dispatch Transport", type="primary", disabled=dispatch_disabled):
+                if st.button(btn_text, type="primary", disabled=dispatch_disabled):
                     ideal_fleet = "ALS" if triage_color == "RED" or meta['severity_index'] >= 0.6 else "BLS"
                     allocated_fleet, fleet_status = ideal_fleet, "OPTIMAL"
                     model, plate, driver, emt_name = f"{ideal_fleet}-{random.randint(101,250)}", f"ML-05-{random.randint(1000,9999)}", random.choice(PILOTS), random.choice(EMTS)
@@ -514,7 +522,8 @@ elif st.session_state.main_nav == "REFERRAL INITIATION":
                         "rejection_log": [], "medical_orders": [],
                         "fleet": {"ideal": ideal_fleet, "allocated": allocated_fleet, "status": fleet_status, "driver": driver, "plate": plate, "vehicle": model, "emt": emt_name},
                         "nurse_led": (initiator_role == "Staff Nurse / ANM (No Doctor on Duty)"),
-                        "surgical_override": surgical_override
+                        "surgical_override": surgical_override,
+                        "field_emergency": is_field_emergency
                     }
                     st.session_state.transfer_initiated = True
                     st.session_state.patient_accepted = False
@@ -640,8 +649,12 @@ elif st.session_state.main_nav == "RECEIVING HOSPITAL BAY":
                 st.markdown("---")
                 st.markdown("<h3><span class='material-symbols-outlined icon-slate'>description</span> Pre-Hospital Clinical Handover (ISBAR)</h3>", unsafe_allow_html=True)
                 
-                nurse_alert = "\n[NURSE-LED PHC INITIATION]" if case.get("nurse_led") else ""
-                surg_alert = "\n[SURGICAL EMERGENCY OVERRIDE]" if case.get("surgical_override") else ""
+                if case.get("field_emergency"):
+                    nurse_alert = "\n[🚑 108 FIELD EMERGENCY: DIRECT SCENE RESPONSE. PATIENT UN-RESUSCITATED.]"
+                    surg_alert = ""
+                else:
+                    nurse_alert = "\n[⚠️ NURSE-LED PHC INITIATION: NO DOCTOR ON SITE. PREPARE IMMEDIATE ED STABILIZATION.]" if case.get("nurse_led") else ""
+                    surg_alert = "\n[⚠️ SURGICAL EMERGENCY OVERRIDE: ONGOING RESUSCITATION IN TRANSIT.]" if case.get("surgical_override") else ""
                 
                 diversion_text = "\n[DIVERSION AUDIT]: " + " -> ".join([f"Bypassed {r['facility']} ({r['reason']})" for r in case.get("rejection_log", [])]) if case.get("rejection_log") else ""
 
