@@ -339,14 +339,28 @@ elif st.session_state.main_nav == "REFERRAL INITIATION":
     with st.container(border=True):
         st.markdown("<h3><span class='material-symbols-outlined icon-slate'>vital_signs</span> 1. Patient Physiology & Context</h3>", unsafe_allow_html=True)
         
-        # --- HANDOFF CATCHER (PATCH 4) ---
+        # --- REVISED HANDOFF CATCHER (EXPLICIT 108 ATTRIBUTION) ---
         draft = st.session_state.get('draft_case')
         if draft:
-            st.success(f"🧠 **MCECN NLP INGESTION COMPLETE:** \n\n**Call ID:** {draft['id']} | **Location:** {draft['loc']} \n**Raw Transcribed Input:** *\"{draft['complaint']}\"*")
+            # Custom HTML for an aggressive, enterprise-grade CAD Alert
+            st.markdown(f"""
+            <div style='background-color: #FEF2F2; border: 1px solid #EF4444; border-left: 6px solid #EF4444; padding: 15px; border-radius: 8px; margin-bottom: 20px;'>
+                <h4 style='color: #B91C1C; margin-top: 0; margin-bottom: 10px;'><span class='material-symbols-outlined' style='vertical-align: bottom;'>emergency</span> 108 FIELD EMERGENCY: ACTIVE CAD HANDOFF</h4>
+                <div style='color: #7F1D1D; font-size: 0.95rem; line-height: 1.5;'>
+                    <b>Data Origin:</b> 108 Central ERC Dispatch ➔ MCECN Telephony Sidecar<br>
+                    <b>Call ID:</b> {draft['id']} | <b>Triangulated Location:</b> {draft['loc']}<br>
+                    <b>NLP Transcribed Complaint:</b> <i>"{draft['complaint']}"</i>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            st.info("💡 **SYSTEM SHIFT:** Origin detected as non-clinical field location. Standard IFT protocol locks are bypassed. Proceed with Scoop & Run logic.")
+            
             default_lat = float(draft['lat'])
             default_lon = float(draft['lon'])
-            default_name = "Unknown (Emergency Intake)"
+            default_name = "Unknown (108 Field Intake)"
         else:
+            # Standard IFT UI (No 108 Draft)
             default_lat = 25.586936
             default_lon = 91.809418
             default_name = "John Doe"
