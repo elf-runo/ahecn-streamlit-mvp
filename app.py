@@ -234,10 +234,18 @@ if st.session_state.main_nav == "108 ERC INTAKE CONSOLE":
             st.selectbox("MCECN Lane Assignment", ["Emergency Response", "Hospital Transfer (IFT)"])
             st.markdown("<br>", unsafe_allow_html=True)
             
-            if st.button("Escalate to MCECN Triage Intelligence", type="primary", use_container_width=True):
-                st.session_state.draft_case = active_call
+            # The Fix: Using a Streamlit callback to safely alter widget state
+            def trigger_escalation(call_payload):
+                st.session_state.draft_case = call_payload
                 st.session_state.main_nav = "REFERRAL INITIATION"
-                st.rerun()
+
+            st.button(
+                "Escalate to MCECN Triage Intelligence", 
+                type="primary", 
+                use_container_width=True, 
+                on_click=trigger_escalation, 
+                args=(active_call,)
+            )
 
 # ==========================================
 # VIEW 1: REFERRAL INITIATION
