@@ -334,12 +334,14 @@ elif st.session_state.main_nav == "REFERRAL INITIATION":
                 st.button(button_text, type="primary", on_click=handle_asha_dispatch)
         st.stop()
 
+    # --- MAIN TRIAGE WORKFLOW ---
+    draft = st.session_state.get('draft_case')
+    is_field_emergency = (draft is not None)
+
     with st.container(border=True):
         st.markdown("<h3><span class='material-symbols-outlined icon-slate'>vital_signs</span> 1. Patient Physiology & Context</h3>", unsafe_allow_html=True)
         
-        draft = st.session_state.get('draft_case')
-        is_field_emergency = (draft is not None)
-        
+        # --- THE FIX: AI NLP Form Collapse for Field Emergencies ---
         if is_field_emergency:
             st.markdown(f"""
             <div style='background-color: #FEF2F2; border: 1px solid #EF4444; border-left: 6px solid #EF4444; padding: 15px; border-radius: 8px; margin-bottom: 20px;'>
@@ -352,66 +354,107 @@ elif st.session_state.main_nav == "REFERRAL INITIATION":
             </div>
             """, unsafe_allow_html=True)
             
-            st.info("💡 **SYSTEM SHIFT:** Origin detected as non-clinical field location. Standard IFT protocol locks are bypassed. Proceed with Scoop & Run logic.")
+            st.info("🤖 **AI NLP EXTRACTION:** Core vitals dynamically estimated from 108 caller description to bypass manual entry blocks. Pending physical EMT assessment upon arrival.")
             
-            default_lat = float(draft['lat'])
-            default_lon = float(draft['lon'])
-            default_name = "Unknown (108 Field Intake)"
+            c_text = draft['complaint'].lower()
+            is_crit = any(word in c_text for word in ["severe", "massive", "unconscious", "bleeding", "turning blue", "profusely"])
+            hr = 130 if is_crit else 95
+            rr = 30 if is_crit else 20
+            sbp = 85 if is_crit else 115
+            spo2 = 88 if is_crit else 97
+            avpu = "U" if "unconscious" in c_text else ("V" if is_crit else "A")
+            temp = 38.5 if "fever" in c_text else 37.0
+            
+            c1, c2, c3, c4, c5, c6 = st.columns(6)
+            c1.metric("Est. HR", f"{hr} bpm")
+            c2.metric("Est. SBP", f"{sbp} mmHg")
+            c3.metric("Est. RR", f"{rr} /min")
+            c4.metric("Est. SpO₂", f"{spo2} %")
+            c5.metric("Temp", f"{temp} °C")
+            c6.metric("AVPU", avpu)
+            
+            patient_name = "Unknown (108 Field Intake)"
+            age = 35 
+            pregnant = "pregnant" in c_text
+            src_lat, src_lon = float(draft['lat']), float(draft['lon'])
+            
         else:
-            default_lat = 25.586936
-            default_lon = 91.809418
-            default_name = "John Doe"
-
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            patient_name = st.text_input("Patient Name (E2EE)", default_name)
-            age = st.number_input("Age (years)", 0, 120, 35)
-            pregnant = st.checkbox("Pregnant", value=False)
-        with c2:
-            rr = st.number_input("RR", 0, 80, 22)
-            spo2 = st.number_input("SpO₂", 50, 100, 92)
-            avpu = st.selectbox("AVPU", ["A","V","P","U"], index=0)
-        with c3:
-            hr = st.number_input("HR", 0, 250, 118)
-            sbp = st.number_input("SBP", 0, 300, 92)
-            temp = st.number_input("Temp °C", 30.0, 43.0, 38.4, step=0.1)
-        with c4:
-            src_lat = st.number_input("Origin Latitude", value=default_lat, format="%.6f") 
-            src_lon = st.number_input("Origin Longitude", value=default_lon, format="%.6f")
+            # Standard IFT UI (Manual Input)
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                patient_name = st.text_input("Patient Name (E2EE)", "John Doe")
+                age = st.number_input("Age (years)", 0, 120, 35)
+                pregnant = st.checkbox("Pregnant", value=False)
+            with c2:
+                rr = st.number_input("RR", 0, 80, 22)
+                spo2 = st.number_input("SpO₂", 50, 100, 92)
+                avpu = st.selectbox("AVPU", ["A","V","P","U"], index=0)
+            with c3:
+                hr = st.number_input("HR", 0, 250, 118)
+                sbp = st.number_input("SBP", 0, 300, 92)
+                temp = st.number_input("Temp °C", 30.0, 43.0, 38.4, step=0.1)
+            with c4:
+                src_lat = st.number_input("Origin Latitude", value=25.586936, format="%.6f") 
+                src_lon = st.number_input("Origin Longitude", value=91.809418, format="%.6f")
 
     with st.container(border=True):
         st.markdown("<h3><span class='material-symbols-outlined icon-slate'>stethoscope</span> 2. Provisional Diagnosis</h3>", unsafe_allow_html=True)
-        col_b, col_d = st.columns(2)
-        with col_b:
-            bundle = st.selectbox("Case Bundle", sorted(icd_df["bundle"].unique().tolist()))
-        with col_d:
+        
+        if is_field_emergency:
+            avail_bundles = sorted(icd_df["bundle"].unique().tolist())
+            b_target = "Standard"
+            if any(w in c_text for w in ["pregnant", "bleeding"]): b_target = next((b for b in avail_bundles if "Maternal" in b), avail_bundles[0])
+            elif any(w in c_text for w in ["traffic", "fell", "injury"]): b_target = next((b for b in avail_bundles if "Trauma" in b), avail_bundles[0])
+            elif any(w in c_text for w in ["chest", "sweating"]): b_target = next((b for b in avail_bundles if "Cardiac" in b), avail_bundles[0])
+            elif any(w in c_text for w in ["weakness", "unconscious", "seizure"]): b_target = next((b for b in avail_bundles if "Neurology" in b or "Neuro" in b), avail_bundles[0])
+            elif any(w in c_text for w in ["breathing", "asthma"]): b_target = next((b for b in avail_bundles if "Respiratory" in b), avail_bundles[0])
+            
+            bundle = b_target if b_target in avail_bundles else avail_bundles[0]
             dfb = icd_df[icd_df["bundle"] == bundle].copy()
-            dx = st.selectbox("Select Diagnosis", dfb["label"].tolist())
-            icd_row = dfb[dfb["label"] == dx].iloc[0].to_dict()
+            dx = dfb["label"].iloc[0]
+            icd_row = dfb.iloc[0].to_dict()
+            
+            st.info("🤖 **AI NLP EXTRACTION:** Provisional disease category autonomously mapped from 108 CAD text.")
+            d1, d2 = st.columns(2)
+            d1.markdown(f"**Predicted Case Bundle:** `{bundle}`")
+            d2.markdown(f"**Provisional Diagnosis:** `{dx}`")
+        else:
+            col_b, col_d = st.columns(2)
+            with col_b:
+                bundle = st.selectbox("Case Bundle", sorted(icd_df["bundle"].unique().tolist()))
+            with col_d:
+                dfb = icd_df[icd_df["bundle"] == bundle].copy()
+                dx = st.selectbox("Select Diagnosis", dfb["label"].tolist())
+                icd_row = dfb[dfb["label"] == dx].iloc[0].to_dict()
+                
         required_caps = [x.strip() for x in (icd_row.get("default_caps","") or "").split(";") if x.strip()]
 
     with st.container(border=True):
         st.markdown("<h3><span class='material-symbols-outlined icon-slate'>assignment</span> 3. Clinical Rationale & Pre-Transfer Stabilization</h3>", unsafe_allow_html=True)
-        auto_rationales = [f"General escalation of care required for {dx}."]
-        caps_lower = [c.lower() for c in required_caps]
-        
-        if "neurosurgeon" in caps_lower or "neurosurgery" in caps_lower: auto_rationales.insert(0, "Emergent Neurosurgical evaluation required.")
-        if "cathlab" in caps_lower or "cardiologist" in caps_lower: auto_rationales.insert(0, "Requires emergent Cath Lab activation.")
-        if "icu" in caps_lower or "ventilator" in caps_lower: auto_rationales.insert(0, "Requires immediate ICU admission.")
-        if "bloodbank" in caps_lower or "surgeon" in caps_lower: auto_rationales.insert(0, "Requires emergent surgical control.")
-        if bundle == "Maternal": auto_rationales.insert(0, "High-risk obstetric emergency requiring tertiary OBGYN OT.")
-        
-        selected_rationale = st.selectbox("Standardized Reason for Transfer", auto_rationales)
-        
-        st.markdown("---")
-        st.markdown("⚕️ **Pre-Transfer Resuscitation & Interventions**")
         
         if is_field_emergency:
-            st.info("🚑 **FIELD PROTOCOL ACTIVE:** Pre-transfer stabilization logging bypassed. AI assumes patient is un-resuscitated at incident scene.")
+            selected_rationale = "108 Primary Field Emergency - Rapid Extrication & Transport"
+            st.markdown(f"**Clinical Rationale:** `{selected_rationale}`")
+            st.markdown("---")
+            st.markdown("⚕️ **Pre-Transfer Resuscitation & Interventions**")
+            st.warning("🚑 **FIELD PROTOCOL ACTIVE:** Pre-transfer stabilization logging bypassed. AI assumes patient is un-resuscitated at incident scene.")
             initiator_role = "Field EMT / First Responder"
             completed_interventions = []
             surgical_override = False
         else:
+            auto_rationales = [f"General escalation of care required for {dx}."]
+            caps_lower = [c.lower() for c in required_caps]
+            
+            if "neurosurgeon" in caps_lower or "neurosurgery" in caps_lower: auto_rationales.insert(0, "Emergent Neurosurgical evaluation required.")
+            if "cathlab" in caps_lower or "cardiologist" in caps_lower: auto_rationales.insert(0, "Requires emergent Cath Lab activation.")
+            if "icu" in caps_lower or "ventilator" in caps_lower: auto_rationales.insert(0, "Requires immediate ICU admission.")
+            if "bloodbank" in caps_lower or "surgeon" in caps_lower: auto_rationales.insert(0, "Requires emergent surgical control.")
+            if bundle == "Maternal": auto_rationales.insert(0, "High-risk obstetric emergency requiring tertiary OBGYN OT.")
+            
+            selected_rationale = st.selectbox("Standardized Reason for Transfer", auto_rationales)
+            
+            st.markdown("---")
+            st.markdown("⚕️ **Pre-Transfer Resuscitation & Interventions**")
             initiator_role = st.radio("Initiating Provider Status:", ["Attending Medical Officer (Doctor)", "Staff Nurse / ANM (No Doctor on Duty)"], horizontal=True)
             
             interventions_str = icd_row.get("default_interventions", "")
@@ -530,7 +573,7 @@ elif st.session_state.main_nav == "REFERRAL INITIATION":
                     st.session_state.transfer_initiated = True
                     st.session_state.patient_accepted = False
                     st.session_state.match_results = None 
-                    st.session_state.draft_case = None # Clear draft on successful dispatch
+                    st.session_state.draft_case = None 
                     st.session_state.main_nav = "ACTIVE TRANSIT TELEMETRY"
 
                 st.button(btn_text, type="primary", disabled=dispatch_disabled, on_click=handle_dispatch)
@@ -602,7 +645,10 @@ elif st.session_state.main_nav == "ACTIVE TRANSIT TELEMETRY":
 
             with col_traffic:
                 st.markdown("<h3><span class='material-symbols-outlined icon-slate'>traffic</span> ETA Drift Telemetry</h3>", unsafe_allow_html=True)
-                traffic_delay = st.slider("Live Traffic/Blockade Delay (Mins)", 0, 60, 0)
+                if 'traffic_delay' not in st.session_state: st.session_state.traffic_delay = 0
+                traffic_delay = st.slider("Live Traffic/Blockade Delay (Mins)", 0, 60, st.session_state.traffic_delay)
+                st.session_state.traffic_delay = traffic_delay
+                
                 live_eta = dest['eta'] + traffic_delay
                 st.metric("Live GPS ETA", f"{live_eta} mins", delta=f"+{traffic_delay} mins" if traffic_delay > 0 else "On Time", delta_color="inverse")
                 
@@ -648,11 +694,12 @@ elif st.session_state.main_nav == "RECEIVING HOSPITAL BAY":
                 st.success(f"SECURE TERMINAL ACTIVE: YOU ARE VIEWING AS **{dest_name.upper()}**")
                 st.markdown("---")
                 
-                # --- VISUAL ALERT FIX FOR RECEIVING BAY ---
+                actual_eta = dest['eta'] + st.session_state.get('traffic_delay', 0)
+                
                 if case.get("field_emergency"):
-                    st.error("🚨 **108 FIELD EMERGENCY: NO DOCTOR ON SCENE. PATIENT UN-RESUSCITATED. PREPARE TRAUMA/RESUSCITATION BAY IMMEDIATELY.**")
+                    st.error(f"🚨 **108 FIELD EMERGENCY: NO DOCTOR ON SCENE. PATIENT UN-RESUSCITATED. PREPARE TRAUMA BAY IMMEDIATELY.** (ETA: {actual_eta} mins)")
                 else:
-                    st.error(f"INCOMING PRIORITY {case['triage_color']} AMBULANCE: ETA {dest['eta']} mins")
+                    st.error(f"INCOMING PRIORITY {case['triage_color']} AMBULANCE: ETA {actual_eta} mins")
                     if case.get("nurse_led"): st.error("⚠️ **NURSE-LED PHC INITIATION: NO DOCTOR ON SITE. PREPARE IMMEDIATE ED STABILIZATION.**")
                     if case.get("surgical_override"): st.warning("⚠️ **SURGICAL OVERRIDE: Patient requires immediate surgical control. Resuscitation ongoing.**")
 
@@ -667,13 +714,15 @@ elif st.session_state.main_nav == "RECEIVING HOSPITAL BAY":
                     surg_alert = "\n[⚠️ SURGICAL EMERGENCY OVERRIDE: ONGOING RESUSCITATION IN TRANSIT.]" if case.get("surgical_override") else ""
                 
                 diversion_text = "\n[DIVERSION AUDIT]: " + " -> ".join([f"Bypassed {r['facility']} ({r['reason']})" for r in case.get("rejection_log", [])]) if case.get("rejection_log") else ""
+                transit_actions = [log['action'] for log in case.get('transit_log', [])]
+                transit_text = f"\nIn-Transit Interventions (Live): {', '.join(transit_actions)}" if transit_actions else ""
 
                 isbar_text = f"""[ISBAR CLINICAL HANDOVER]{nurse_alert}{surg_alert}
 Status: PRIORITY {case['triage_color']} (Severity: {case.get('severity_index', 0.0):.2f})
 I - IDENTIFICATION: Patient: {case['patient_name']}, {case['age']} Y/O
 S - SITUATION: Emergency dispatch to {dest['facility']}. Provisional DX: {case['diagnosis']}
 B - BACKGROUND: Bundle: {case['bundle']}. Rationale: {case.get('rationale', 'N/A')}
-Pre-Transfer Interventions: {', '.join(case.get('interventions', [])) if case.get('interventions') else 'None / Not Logged'}{diversion_text}
+Pre-Transfer Interventions: {', '.join(case.get('interventions', [])) if case.get('interventions') else 'None / Not Logged'}{transit_text}{diversion_text}
 A - ASSESSMENT: HR: {case['vitals']['hr']} | SBP: {case['vitals']['sbp']} | RR: {case['vitals']['rr']} | SpO2: {case['vitals']['spo2']}% | Temp: {case['vitals']['temp']}°C | AVPU: {case['vitals']['avpu']}
 """
                 st.code(isbar_text, language="markdown")
