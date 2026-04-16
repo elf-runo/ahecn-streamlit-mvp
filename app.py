@@ -305,7 +305,7 @@ elif st.session_state.main_nav == "REFERRAL INITIATION":
                 else:
                     button_text, allocated_fleet, fleet_status = "Dispatch Standard Health Cab", "CAB", "OPTIMAL"
 
-                if st.button(button_text, type="primary"):
+                def handle_asha_dispatch():
                     sel_fac_name = sel_opt.split(" (ETA:")[0]
                     sel_fac_details = next(r for r in res if r["facility"] == sel_fac_name)["details"]
                     sel_fac_details["scoring_details"] = {"gate_capacity": "PASSED", "clinical_tier": "Basic"}
@@ -323,18 +323,20 @@ elif st.session_state.main_nav == "REFERRAL INITIATION":
                         "destination": {"facility": sel_fac_name, "eta": next(r for r in res if r["facility"] == sel_fac_name)["eta"], "scoring_details": {"gate_capacity": "PASSED"}}, 
                         "dispatch_time": datetime.now().strftime("%H:%M:%S"), "rationale": "Direct Booking", "interventions": [], "rejection_log": [], "medical_orders": [],
                         "fleet": {"ideal": "ALS" if is_critical else "CAB", "allocated": allocated_fleet, "status": fleet_status, "driver": driver, "plate": plate, "vehicle": model, "emt": emt_name},
-                        "nurse_led": False, "surgical_override": False
+                        "nurse_led": False, "surgical_override": False, "field_emergency": False
                     }
                     st.session_state.transfer_initiated = True
                     st.session_state.patient_accepted = False
+                    st.session_state.asha_match_results = None 
                     if fleet_status == "CRITICAL_CAB_FALLBACK": st.session_state.civic_override_active = True
-                    st.rerun()
+                    st.session_state.main_nav = "ACTIVE TRANSIT TELEMETRY"
+
+                st.button(button_text, type="primary", on_click=handle_asha_dispatch)
         st.stop()
 
     with st.container(border=True):
         st.markdown("<h3><span class='material-symbols-outlined icon-slate'>vital_signs</span> 1. Patient Physiology & Context</h3>", unsafe_allow_html=True)
         
-        # --- REVISED HANDOFF CATCHER (EXPLICIT 108 ATTRIBUTION) ---
         draft = st.session_state.get('draft_case')
         is_field_emergency = (draft is not None)
         
@@ -508,7 +510,7 @@ elif st.session_state.main_nav == "REFERRAL INITIATION":
                     if dispatch_disabled: st.error(dispatch_warning)
                     else: st.warning(dispatch_warning)
 
-                if st.button(btn_text, type="primary", disabled=dispatch_disabled):
+                def handle_dispatch():
                     ideal_fleet = "ALS" if triage_color == "RED" or meta['severity_index'] >= 0.6 else "BLS"
                     allocated_fleet, fleet_status = ideal_fleet, "OPTIMAL"
                     model, plate, driver, emt_name = f"{ideal_fleet}-{random.randint(101,250)}", f"ML-05-{random.randint(1000,9999)}", random.choice(PILOTS), random.choice(EMTS)
@@ -529,7 +531,9 @@ elif st.session_state.main_nav == "REFERRAL INITIATION":
                     st.session_state.patient_accepted = False
                     st.session_state.match_results = None 
                     st.session_state.draft_case = None # Clear draft on successful dispatch
-                    st.rerun()
+                    st.session_state.main_nav = "ACTIVE TRANSIT TELEMETRY"
+
+                st.button(btn_text, type="primary", disabled=dispatch_disabled, on_click=handle_dispatch)
 
 # ==========================================
 # VIEW 2: ACTIVE TRANSIT TELEMETRY
@@ -547,7 +551,10 @@ elif st.session_state.main_nav == "ACTIVE TRANSIT TELEMETRY":
             is_cab = (case['fleet']['allocated'] == 'CAB')
             if "transit_log" not in case: case["transit_log"] = []
 
-            if is_cab:
+            if case.get("field_emergency"):
+                st.error(f"🚨 **108 FIELD EMERGENCY: SCOOP & RUN EN ROUTE TO {dest['facility'].upper()} [{case['fleet']['allocated']} UNIT]**")
+                st.caption("Active Highway Rescue - No Pre-Hospital Stabilization Performed")
+            elif is_cab:
                 if case['triage_color'] == 'RED':
                     st.error(f"CRITICAL CAB FALLBACK TO {dest['facility'].upper()}")
                 else:
@@ -641,10 +648,13 @@ elif st.session_state.main_nav == "RECEIVING HOSPITAL BAY":
                 st.success(f"SECURE TERMINAL ACTIVE: YOU ARE VIEWING AS **{dest_name.upper()}**")
                 st.markdown("---")
                 
-                st.error(f"INCOMING PRIORITY {case['triage_color']} AMBULANCE: ETA {dest['eta']} mins")
-                
-                if case.get("nurse_led"): st.error("NURSE-LED PHC INITIATION: NO DOCTOR ON SITE. PREPARE IMMEDIATE ED STABILIZATION.")
-                if case.get("surgical_override"): st.warning("SURGICAL OVERRIDE: Patient requires immediate surgical control. Resuscitation ongoing.")
+                # --- VISUAL ALERT FIX FOR RECEIVING BAY ---
+                if case.get("field_emergency"):
+                    st.error("🚨 **108 FIELD EMERGENCY: NO DOCTOR ON SCENE. PATIENT UN-RESUSCITATED. PREPARE TRAUMA/RESUSCITATION BAY IMMEDIATELY.**")
+                else:
+                    st.error(f"INCOMING PRIORITY {case['triage_color']} AMBULANCE: ETA {dest['eta']} mins")
+                    if case.get("nurse_led"): st.error("⚠️ **NURSE-LED PHC INITIATION: NO DOCTOR ON SITE. PREPARE IMMEDIATE ED STABILIZATION.**")
+                    if case.get("surgical_override"): st.warning("⚠️ **SURGICAL OVERRIDE: Patient requires immediate surgical control. Resuscitation ongoing.**")
 
                 st.markdown("---")
                 st.markdown("<h3><span class='material-symbols-outlined icon-slate'>description</span> Pre-Hospital Clinical Handover (ISBAR)</h3>", unsafe_allow_html=True)
