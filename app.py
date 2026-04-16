@@ -341,7 +341,6 @@ elif st.session_state.main_nav == "REFERRAL INITIATION":
     with st.container(border=True):
         st.markdown("<h3><span class='material-symbols-outlined icon-slate'>vital_signs</span> 1. Patient Physiology & Context</h3>", unsafe_allow_html=True)
         
-        # --- THE FIX: AI NLP Form Collapse for Field Emergencies ---
         if is_field_emergency:
             st.markdown(f"""
             <div style='background-color: #FEF2F2; border: 1px solid #EF4444; border-left: 6px solid #EF4444; padding: 15px; border-radius: 8px; margin-bottom: 20px;'>
@@ -379,7 +378,6 @@ elif st.session_state.main_nav == "REFERRAL INITIATION":
             src_lat, src_lon = float(draft['lat']), float(draft['lon'])
             
         else:
-            # Standard IFT UI (Manual Input)
             c1, c2, c3, c4 = st.columns(4)
             with c1:
                 patient_name = st.text_input("Patient Name (E2EE)", "John Doe")
@@ -927,15 +925,29 @@ elif st.session_state.main_nav == "STATE COMMAND & AI":
                     base_chart = alt.Chart(base_data).mark_bar(cornerRadiusEnd=4, size=20).encode(y=alt.Y('Base:N', sort='x', title=None), x=alt.X('Target Met %:Q', title="Target Met (%)"), color=alt.condition(alt.datum['Target Met %'] < 40, alt.value('#E11D48'), alt.value('#94A3B8'))).properties(height=250)
                     st.altair_chart(apply_tufte_theme(base_chart), use_container_width=True)
                 else:
-                    st.markdown("**State Fleet Workload Distribution (Dynamic Synthetic)**")
-                    fleet_stats = df_synth[df_synth['unit_id'] != 'CAB-CIVILIAN'].groupby('unit_id').size().reset_index(name='Trips')
-                    fleet_chart = alt.Chart(fleet_stats).mark_bar(size=15).encode(x=alt.X('unit_id:N', sort='-y', title=None), y=alt.Y('Trips:Q', title=None), color=alt.condition(alt.datum.Trips > fleet_stats['Trips'].quantile(0.8), alt.value('#E11D48'), alt.value('#94A3B8'))).properties(height=250)
-                    st.altair_chart(apply_tufte_theme(fleet_chart), use_container_width=True)
+                    # NEW FIX: Actual Fleet Workload + Response Time (SLA) Distribution
+                    st.markdown("**System-Wide P90 Response Time Distribution (Live SLA)**")
+                    sla_chart = alt.Chart(df_synth).mark_bar(size=4).encode(
+                        x=alt.X('actual_trip_time:Q', bin=alt.Bin(maxbins=40), title="Response Time (Minutes)"),
+                        y=alt.Y('count():Q', title="Number of Critical Cases"),
+                        color=alt.condition(alt.datum.actual_trip_time > 30, alt.value('#E11D48'), alt.value('#10B981')) # Red if over 30 mins
+                    ).properties(height=250)
+                    
+                    # Add a 30-minute NHM Mandate Rule Line
+                    rule = alt.Chart(pd.DataFrame({'x': [30]})).mark_rule(strokeDash=[4, 4], color='#0F172A', strokeWidth=2).encode(x='x:Q')
+                    st.altair_chart(apply_tufte_theme(sla_chart + rule), use_container_width=True)
                     
             with col_f2:
-                st.error("CRITICAL WORKFORCE ALERT")
-                st.markdown("Audit identifies **Manpower (81 cases)** as the leading cause of fleet deassignments.")
-                st.markdown("**AI Repositioning Recommendations:**\n* **Shift 2 BLS Relievers** to Jarain (Severe Fatigue Risk).\n* **Upgrade Jowai Corridor** to ALS coverage.\n* **Night Transport Risk** identified in West Garo Hills.")
+                if df_synth is None:
+                    st.error("CRITICAL WORKFORCE ALERT")
+                    st.markdown("Audit identifies **Manpower (81 cases)** as the leading cause of fleet deassignments.")
+                else:
+                    st.error("🚨 LIVE FLEET EXHAUSTION DETECTED")
+                    failed_sla = len(df_synth[df_synth['actual_trip_time'] > 30])
+                    sla_fail_pct = (failed_sla / len(df_synth)) * 100
+                    st.metric("NHM Mandate Failures (>30m)", f"{failed_sla} Cases", f"{sla_fail_pct:.1f}% of Network", delta_color="inverse")
+                    
+                    st.markdown("**AI Repositioning Recommendations:**\n* 🔄 **Deploy 4 BLS Relievers** to high-failure zones.\n* 🚑 **Upgrade Highway Corridors** with 2 ALS interceptors.")
 
         with tab_geo:
             st.markdown("<h3><span class='material-symbols-outlined icon-slate'>public</span> Meghalaya Case-Type Intelligence</h3>", unsafe_allow_html=True)
@@ -955,29 +967,64 @@ elif st.session_state.main_nav == "STATE COMMAND & AI":
                     st.info("Clinical Routing Insight:")
                     st.markdown("**Obstetric & Neonatal (218 cases)** is the single largest high-volume cluster. \n* **Current Failure:** Outcomes are highly pathway-dependent, but routing is blind to NICU/OBGYN availability.\n* **MCECN Solution:** Dual-Vector triage forces MEOWS scoring and routes exclusively to proven Maternal OT facilities.")
                 else:
-                    st.error("EPIDEMIC ANOMALY DETECTOR (Sub-District Alerts)")
-                    anomaly_data = pd.DataFrame({"Origin": ["Mawphlang", "Tikrikilla", "Khliehriat"], "Flag": ["Pediatric Resp", "Maternal Hemorrhage", "Acute Trauma"], "Deviation": ["+420% Surge", "+185% Surge", "+210% Surge"]})
+                    # NEW FIX: Dynamic Epidemic Anomaly Generation
+                    st.error("🚨 EPIDEMIC ANOMALY DETECTOR (Live Spatial Clustering)")
+                    # Group by district and bundle to find the top 3 highest concentrations
+                    cluster_df = df_synth.groupby(['origin_district', 'bundle']).size().reset_index(name='cases')
+                    cluster_df = cluster_df.sort_values(by='cases', ascending=False).head(3)
+                    
+                    anomaly_data = pd.DataFrame({
+                        "Origin District": cluster_df['origin_district'], 
+                        "Pathology Spike": cluster_df['bundle'], 
+                        "Detection Alert": ["Critical Surge", "Elevated Load", "Elevated Load"]
+                    })
                     st.dataframe(anomaly_data, use_container_width=True, hide_index=True)
 
         with tab_perf:
             st.markdown("<h3><span class='material-symbols-outlined icon-slate'>domain_verification</span> Institutional Performance & Heatboard</h3>", unsafe_allow_html=True)
             c_p1, c_p2 = st.columns(2)
             with c_p1:
-                st.markdown("**Hospital Acceptance Heatboard**")
-                heat_data = pd.DataFrame({"Hospital": ["NEIGRIHMS", "Shillong Civil", "Woodland Hosp", "Bethany Hosp", "Tura Civil"], "Acceptance": ["94%", "42%", "88%", "85%", "71%"], "Status": ["Green", "Red", "Green", "Amber", "Amber"], "Primary Diversion Reason": ["None", "Zero ICU Beds (Surge)", "None", "CT Scanner Down", "Specialist Scrubbed In"]})
+                st.markdown("**Live Hospital Acceptance Heatboard**")
+                if df_synth is None:
+                    heat_data = pd.DataFrame({"Hospital": ["NEIGRIHMS", "Shillong Civil", "Woodland Hosp", "Bethany Hosp"], "Acceptance": ["94%", "42%", "88%", "85%"], "Status": ["Green", "Red", "Green", "Amber"]})
+                else:
+                    # NEW FIX: Live Acceptance Rate Calculation
+                    acc_calc = df_synth.groupby('dest_facility')['status'].apply(lambda x: (x == 'Accepted').mean() * 100).reset_index()
+                    acc_calc.columns = ['Hospital', 'Acceptance_Pct']
+                    acc_calc = acc_calc.sort_values(by='Acceptance_Pct', ascending=False).head(5)
+                    
+                    def assign_status(pct):
+                        if pct >= 85: return "Green"
+                        elif pct >= 60: return "Amber"
+                        else: return "Red"
+                        
+                    heat_data = pd.DataFrame({
+                        "Hospital": acc_calc['Hospital'].apply(lambda x: str(x)[:15] + "..."),
+                        "Acceptance": acc_calc['Acceptance_Pct'].apply(lambda x: f"{x:.1f}%"),
+                        "Status": acc_calc['Acceptance_Pct'].apply(assign_status)
+                    })
+
                 def color_status(val):
                     if val == 'Green': return 'color: #10B981; font-weight: bold;'
                     elif val == 'Red': return 'color: #E11D48; font-weight: bold;'
                     return 'color: #F59E0B; font-weight: bold;'
                 st.dataframe(heat_data.style.map(color_status, subset=['Status']), use_container_width=True, hide_index=True)
+                
             with c_p2:
                 if df_synth is not None:
-                    st.markdown("**Mortality Shift Analysis (Efficacy)**")
-                    mortality_shift = pd.DataFrame({"Phase": ["< 24h (Pre-Hospital/ED Failure)", "> 24h (ICU/Ward Complication)"], "Pre-MCECN OS": [65, 35], "Post-MCECN OS": [22, 78]}).melt(id_vars="Phase", var_name="Era", value_name="Percentage of Total Mortalities")
-                    shift_chart = alt.Chart(mortality_shift).mark_bar().encode(x=alt.X('Percentage of Total Mortalities:Q', stack='normalize', axis=alt.Axis(format='%')), y=alt.Y('Era:N', sort=['Pre-MCECN OS', 'Post-MCECN OS']), color=alt.Color('Phase:N', scale=alt.Scale(domain=['< 24h (Pre-Hospital/ED Failure)', '> 24h (ICU/Ward Complication)'], range=['#E11D48', '#94A3B8']))).properties(height=200)
-                    st.altair_chart(apply_tufte_theme(shift_chart), use_container_width=True)
+                    # NEW FIX: Actual Mortality Risk Averted Plotting
+                    st.markdown("**System Efficacy: Modeled Mortality Risk by Fleet Allocation**")
+                    st.caption("Lowering mortality through AI-enforced optimal fleet assignments.")
+                    
+                    mort_df = df_synth.groupby('mission_type')['mortality_risk'].mean().reset_index()
+                    mort_chart = alt.Chart(mort_df).mark_bar(cornerRadiusEnd=4, size=30).encode(
+                        x=alt.X('mission_type:N', title=None, axis=alt.Axis(labelAngle=0)),
+                        y=alt.Y('mortality_risk:Q', title="Avg Modeled Mortality Risk (%)"),
+                        color=alt.condition(alt.datum.mortality_risk > 15, alt.value('#E11D48'), alt.value('#10B981'))
+                    ).properties(height=200)
+                    st.altair_chart(apply_tufte_theme(mort_chart), use_container_width=True)
                 else:
-                    st.info("Inject Synthetic Data to view Mortality Shift Analysis.")
+                    st.info("Inject Synthetic Data to view Live Mortality Efficacy plotting.")
 
         with tab_econ:
             st.markdown("<h3><span class='material-symbols-outlined icon-slate'>account_balance</span> MHIS Health Economics & Fiscal Governance</h3>", unsafe_allow_html=True)
