@@ -252,6 +252,9 @@ elif st.session_state.main_nav == "REFERRAL INITIATION":
     st.caption("Layer 2: Secure, dual-vector triage and topography-aware facility matching.")
     render_plotly_timeline(1)
     
+    # ---------------------------------------------------------
+    # THE RESTORED UNIVERSAL COMMUNITY & CITIZEN GATEWAY
+    # ---------------------------------------------------------
     if st.session_state.user_role in ["Authorized Community Node (ASHA/CFR)", "Citizen Self-Booking App"]:
         is_asha = (st.session_state.user_role == "Authorized Community Node (ASHA/CFR)")
         if is_asha:
@@ -332,9 +335,13 @@ elif st.session_state.main_nav == "REFERRAL INITIATION":
                     st.session_state.main_nav = "ACTIVE TRANSIT TELEMETRY"
 
                 st.button(button_text, type="primary", on_click=handle_asha_dispatch)
+        
+        # Stop rendering the rest of the page for ASHA/Citizen
         st.stop()
 
-    # --- MAIN TRIAGE WORKFLOW ---
+    # ---------------------------------------------------------
+    # MAIN TRIAGE WORKFLOW (DOCTORS & 108 CAD INGESTION)
+    # ---------------------------------------------------------
     draft = st.session_state.get('draft_case')
     is_field_emergency = (draft is not None)
 
@@ -925,15 +932,12 @@ elif st.session_state.main_nav == "STATE COMMAND & AI":
                     base_chart = alt.Chart(base_data).mark_bar(cornerRadiusEnd=4, size=20).encode(y=alt.Y('Base:N', sort='x', title=None), x=alt.X('Target Met %:Q', title="Target Met (%)"), color=alt.condition(alt.datum['Target Met %'] < 40, alt.value('#E11D48'), alt.value('#94A3B8'))).properties(height=250)
                     st.altair_chart(apply_tufte_theme(base_chart), use_container_width=True)
                 else:
-                    # NEW FIX: Actual Fleet Workload + Response Time (SLA) Distribution
                     st.markdown("**System-Wide P90 Response Time Distribution (Live SLA)**")
                     sla_chart = alt.Chart(df_synth).mark_bar(size=4).encode(
                         x=alt.X('actual_trip_time:Q', bin=alt.Bin(maxbins=40), title="Response Time (Minutes)"),
                         y=alt.Y('count():Q', title="Number of Critical Cases"),
-                        color=alt.condition(alt.datum.actual_trip_time > 30, alt.value('#E11D48'), alt.value('#10B981')) # Red if over 30 mins
+                        color=alt.condition(alt.datum.actual_trip_time > 30, alt.value('#E11D48'), alt.value('#10B981'))
                     ).properties(height=250)
-                    
-                    # Add a 30-minute NHM Mandate Rule Line
                     rule = alt.Chart(pd.DataFrame({'x': [30]})).mark_rule(strokeDash=[4, 4], color='#0F172A', strokeWidth=2).encode(x='x:Q')
                     st.altair_chart(apply_tufte_theme(sla_chart + rule), use_container_width=True)
                     
@@ -967,9 +971,7 @@ elif st.session_state.main_nav == "STATE COMMAND & AI":
                     st.info("Clinical Routing Insight:")
                     st.markdown("**Obstetric & Neonatal (218 cases)** is the single largest high-volume cluster. \n* **Current Failure:** Outcomes are highly pathway-dependent, but routing is blind to NICU/OBGYN availability.\n* **MCECN Solution:** Dual-Vector triage forces MEOWS scoring and routes exclusively to proven Maternal OT facilities.")
                 else:
-                    # NEW FIX: Dynamic Epidemic Anomaly Generation
                     st.error("🚨 EPIDEMIC ANOMALY DETECTOR (Live Spatial Clustering)")
-                    # Group by district and bundle to find the top 3 highest concentrations
                     cluster_df = df_synth.groupby(['origin_district', 'bundle']).size().reset_index(name='cases')
                     cluster_df = cluster_df.sort_values(by='cases', ascending=False).head(3)
                     
@@ -988,7 +990,6 @@ elif st.session_state.main_nav == "STATE COMMAND & AI":
                 if df_synth is None:
                     heat_data = pd.DataFrame({"Hospital": ["NEIGRIHMS", "Shillong Civil", "Woodland Hosp", "Bethany Hosp"], "Acceptance": ["94%", "42%", "88%", "85%"], "Status": ["Green", "Red", "Green", "Amber"]})
                 else:
-                    # NEW FIX: Live Acceptance Rate Calculation
                     acc_calc = df_synth.groupby('dest_facility')['status'].apply(lambda x: (x == 'Accepted').mean() * 100).reset_index()
                     acc_calc.columns = ['Hospital', 'Acceptance_Pct']
                     acc_calc = acc_calc.sort_values(by='Acceptance_Pct', ascending=False).head(5)
@@ -1012,7 +1013,6 @@ elif st.session_state.main_nav == "STATE COMMAND & AI":
                 
             with c_p2:
                 if df_synth is not None:
-                    # NEW FIX: Actual Mortality Risk Averted Plotting
                     st.markdown("**System Efficacy: Modeled Mortality Risk by Fleet Allocation**")
                     st.caption("Lowering mortality through AI-enforced optimal fleet assignments.")
                     
